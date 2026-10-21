@@ -36,6 +36,7 @@ const GOLDEN: Array<[string, WorkspaceLocation]> = [
   ['#/p/P/board', { place: { view: 'board' }, inspector: [] }],
   ['#/p/P/board?task=T', { place: { view: 'board' }, inspector: [task('T')] }],
   ['#/p/P/resources', { place: { view: 'resources' }, inspector: [] }],
+  ['#/p/P/needs-you', { place: { view: 'needs-you' }, inspector: [] }],
   ['#/p/P/members', { place: { view: 'members' }, inspector: [] }],
   ['#/p/P/members?member=M', { place: { view: 'members' }, inspector: [member('M')] }],
   ['#/p/P/dm/M', { place: { view: 'dm', member: 'M' }, inspector: [] }],
@@ -96,6 +97,8 @@ describe('locations and routes', () => {
     expect(locationOfHash('#/p/P/question/Q?task=T&inspect=task~T2')).toEqual({
       place: { view: 'question', question: 'Q' }, inspector: [],
     })
+    // Needs you opens each entry where it is answered.
+    expect(locationOfHash('#/p/P/needs-you?task=T&inspect=member~M')).toEqual({ place: { view: 'needs-you' }, inspector: [] })
     // The app never wrote a Task on Members.
     expect(locationOfHash('#/p/P/members?task=T')).toEqual({ place: { view: 'members' }, inspector: [] })
     // Nor does it write one for Sessions, whatever the stack says.

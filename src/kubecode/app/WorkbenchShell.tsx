@@ -75,6 +75,7 @@ import { useInspectorPresentation } from './inspector/useInspectorPresentation'
 import { WithInspector } from './inspector/WithInspector'
 import type { InspectMode, InspectorEntry } from './location/inspector'
 import type { NeedsYouTarget } from './location/needsYou'
+import { NeedsYouView } from '../attention/NeedsYouView'
 import { locationFromRoute, routeFromLocation } from './location/locationRoute'
 import { createPlaceMemory, placeKey, type Landing, type ReadingPosition } from './location/placeMemory'
 import { PlaceMemoryProvider } from './location/PlaceMemoryProvider'
@@ -863,6 +864,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
       case 'general': return t('kubecode.channel.general')
       case 'board': return t('kubecode.nav.board')
       case 'resources': return t('kubecode.nav.resources')
+      case 'needs-you': return t('kubecode.nav.needsYou')
       case 'members': return t('kubecode.nav.members')
       case 'dm':
         return rosterMembers?.find((member) => member.id === shown.member)?.name
@@ -1040,7 +1042,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
         onOpenTarget={openNeedsYouTarget}
         onOpenWorkspaceNeeds={(nextProjectId) => {
           enterWorkspace(nextProjectId)
-          setSessionSidebarOpen(true)
+          move({ type: 'go', projectId: nextProjectId, target: { view: 'needs-you' } })
         }}
         onRetryConnection={reconciliation.retry}
         onSessionSidebarOpenChange={setSessionSidebarOpen}
@@ -1146,11 +1148,8 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
                 active={place.view === 'sessions' || place.view === 'question' ? null : viewKeyOf(place)}
                 members={liveMembers ?? NO_MEMBERS}
                 needsYou={needsYou}
-                needsYouIncomplete={(attention.snapshot?.incomplete.length ?? 0) > 0}
-                needsYouStatus={attention.status}
                 taskCount={taskBoard.board?.total ?? 0}
                 undeliveredGeneral={attention.snapshot?.undelivered.general ?? 0}
-                onRetryNeedsYou={attention.reload}
                 t={t}
                 onInspectMember={(memberId) => {
                   inspect({ kind: 'member', id: memberId })
@@ -1161,7 +1160,6 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
                   landFromNavigation(projectId)
                 }}
                 onOpenDm={(memberId) => openPlace({ view: 'dm', member: memberId })}
-                onOpenTarget={openNeedsYouTarget}
               />
             ) : null}
           />
@@ -1218,6 +1216,15 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
                   workspaceName={project?.name ?? t('kubecode.appName')}
                 />
               </WithInspector>
+            ) : place.view === 'needs-you' ? (
+              <NeedsYouView
+                entries={needsYou}
+                incomplete={(attention.snapshot?.incomplete.length ?? 0) > 0}
+                status={attention.status}
+                t={t}
+                onOpenTarget={openNeedsYouTarget}
+                onRetryLoad={attention.reload}
+              />
             ) : place.view === 'members' ? (
               <WithInspector inspector={inspectorPane} presentation={presentation}>
                 <MembersView

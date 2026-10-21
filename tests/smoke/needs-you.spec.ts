@@ -32,7 +32,17 @@ async function roster(request: APIRequestContext, api: string, projectId: string
 const composer = (page: Page) => page.getByRole('combobox', { name: 'Message the Workspace' })
 const log = (page: Page) => page.getByRole('log', { name: 'Messages' })
 const row = (page: Page, text: string) => page.locator('article[data-message-id]').filter({ hasText: text })
-const decisions = (page: Page) => workspaceNav(page).getByRole('list', { name: 'Decisions' })
+const needsYouView = (page: Page) => page.getByRole('region', { name: 'Needs you', exact: true })
+const decisions = (page: Page) => needsYouView(page).getByRole('list', { name: 'Decisions' })
+/** The navigation's Needs you place, with its count of what waits. */
+const needsYouPlace = (page: Page) => workspaceNav(page).getByRole('button', { name: /^Needs you/ })
+
+/** Needs you is a destination of its own (ADR 0234): its header, its address, its list. */
+async function openNeedsYou(page: Page) {
+  await needsYouPlace(page).click()
+  await expect.poll(() => page.url()).toMatch(/\/needs-you$/)
+  await expect(needsYouView(page).getByRole('heading', { name: 'Needs you', level: 2 })).toBeVisible()
+}
 const strip = (page: Page) => page.getByRole('region', { name: 'Working now' })
 
 async function send(page: Page, text: string) {
@@ -41,10 +51,10 @@ async function send(page: Page, text: string) {
   await expect(log(page).getByText(text, { exact: true })).toBeVisible()
 }
 
-/** Nothing waits: said in the (then closed) Needs you, never just an empty list. */
+/** Nothing waits: the navigation counts a quiet zero. */
 async function nothingWaits(page: Page) {
-  await expect(workspaceNav(page).getByText('Nothing is waiting for you.')).toBeAttached({ timeout: 20_000 })
-  await expect(workspaceNav(page).locator('.kubecode-needs-you')).toHaveAttribute('data-waiting', 'false')
+  await expect(needsYouPlace(page).locator('.kubecode-research-badge')).toHaveText('0', { timeout: 20_000 })
+  await expect(needsYouPlace(page).locator('.kubecode-research-badge')).toHaveAttribute('data-tone', 'muted')
 }
 
 test.describe('on a desktop', () => {
@@ -80,14 +90,11 @@ test.describe('on a desktop', () => {
       await expect(page.getByRole('heading', { name: 'General', exact: true, level: 2 })).toBeVisible()
       await nothingWaits(page)
 
-      // 1. A member asks permission: one row, one bell entry, one prompt above the composer.
+      // 1. A member asks permission: one count, one bell entry, one prompt above the composer.
       await send(page, '@analyst [smoke:permission] run the tests')
       await waitForPrompt(analyst.public_conversation_id!, (text) => text.includes('[smoke:permission]'))
-      const asked = decisions(page).getByRole('button', { name: /Analyst wants to use Run pytest -q/ })
-      await expect(asked).toBeVisible({ timeout: 30_000 })
-      await expect(decisions(page).getByRole('button')).toHaveCount(1)
-      await expect(asked).toContainText('Permission')
-      await expect(strip(page)).toContainText('Analyst is waiting for your permission')
+      await expect(strip(page)).toContainText('Analyst is waiting for your permission', { timeout: 30_000 })
+      await expect(needsYouPlace(page).locator('.kubecode-research-badge')).toHaveText('1')
       // The bell has this Workspace's request and the other Workspace's review.
       const bell = page.getByRole('button', { name: 'Needs you: 2' })
       await expect(bell).toBeVisible()
@@ -101,8 +108,15 @@ test.describe('on a desktop', () => {
       await expect(row(page, 'Meanwhile, keep notes on the sweep.')).toContainText(/Delivered to /, { timeout: 30_000 })
       await expect(row(page, '@analyst [smoke:permission] run the tests')).not.toContainText('Delivered to')
 
-      // 3. The row opens the prompt where it is answered, focused; answering clears every surface.
+      // 3. Needs you lists it once; the row opens the prompt where it is answered,
+      // focused; answering clears every surface.
+      await openNeedsYou(page)
+      const asked = decisions(page).getByRole('button', { name: /Analyst wants to use Run pytest -q/ })
+      await expect(asked).toBeVisible({ timeout: 30_000 })
+      await expect(decisions(page).getByRole('button')).toHaveCount(1)
+      await expect(asked).toContainText('Permission')
       await asked.click()
+      await expect.poll(() => page.url()).toMatch(/\/general$/)
       const prompt = page.getByTestId('permission-queue-card')
       await expect(prompt).toBeFocused()
       await expect(prompt).toContainText('Analyst asks permission')
@@ -113,7 +127,7 @@ test.describe('on a desktop', () => {
 
       // 4. Stop names the one turn it ends; stopping it ends its request too.
       await send(page, '@analyst [smoke:permission] once more')
-      await expect(decisions(page).getByRole('button', { name: /Analyst wants to use/ })).toBeVisible({ timeout: 30_000 })
+      await expect(needsYouPlace(page).locator('.kubecode-research-badge')).toHaveText('1', { timeout: 30_000 })
       const stop = strip(page).getByRole('button', { name: "Stop Analyst's current turn" })
       await expect(stop).toBeVisible()
       await stop.click()
@@ -147,7 +161,8 @@ test.describe('on a desktop', () => {
       await page.unroute('**/channels/*/messages')
 
       // 6. A review is one row, though its Task is in Review too; it opens the review, focused, and leaves once decided.
-      await page.goto(`${workspaceUrl}/#/p/${reviewId}/general`)
+      await page.goto(`${workspaceUrl}/#/p/${reviewId}/needs-you`)
+      await expect(needsYouView(page).getByRole('heading', { name: 'Needs you', level: 2 })).toBeVisible()
       const review = decisions(page).getByRole('button', { name: new RegExp(`Review the results of ${seed.taskTitle}`) })
       await expect(review).toBeVisible({ timeout: 30_000 })
       await expect(decisions(page).getByRole('button')).toHaveCount(1)
@@ -162,6 +177,8 @@ test.describe('on a desktop', () => {
       await expect(page.getByRole('button', { name: /^Needs you: / })).toHaveCount(0)
       await page.reload()
       await nothingWaits(page)
+      await openNeedsYou(page)
+      await expect(needsYouView(page).getByText('Nothing is waiting for you.')).toBeVisible()
     } finally {
       for (const id of registered) await request.delete(`${api}/projects/${id}`)
     }

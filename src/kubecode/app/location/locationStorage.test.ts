@@ -8,6 +8,7 @@ import {
 } from './locationStorage'
 import {
   EMPTY_MEMORY,
+  locationOf,
   locationReducer,
   MAX_REMEMBERED_VIEWS,
   MAX_REMEMBERED_WORKSPACES,
@@ -191,5 +192,14 @@ describe('stored workspace locations', () => {
     expect(() => writeLocationMemory(throwing, run({ type: 'go', projectId: 'p1', target: { view: 'board' } })))
       .not.toThrow()
     expect(() => writeLocationMemory(null, EMPTY_MEMORY)).not.toThrow()
+  })
+})
+
+describe('the Needs you view', () => {
+  it('is remembered as the current view of a Workspace', () => {
+    const memory = locationReducer(EMPTY_MEMORY, { type: 'go', projectId: 'p1', target: { view: 'needs-you' } })
+    const storage = memoryStorage()
+    writeLocationMemory(storage, memory)
+    expect(locationOf(readLocationMemory(storage), 'p1')).toEqual({ place: { view: 'needs-you' }, inspector: [] })
   })
 })

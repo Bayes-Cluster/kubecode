@@ -3,7 +3,10 @@ import {
   BellDot,
   Circle,
   CircleAlert,
+  FolderGit2,
+  PanelLeft,
   RotateCw,
+  SquareTerminal,
 } from 'lucide-react'
 
 import { StatusBadge } from '@/components/workspace/StatusBadge'
@@ -203,15 +206,11 @@ export function WorkbenchTitlebar({
             </DropdownMenuContent>
           </DropdownMenu>
         )}
-        <Button aria-label={t('kubecode.toggleNavigation')} aria-pressed={sessionSidebarOpen} className="kubecode-layout-toggle" size="icon-xs" variant="ghost" onClick={toggleNavigation}>
-          <PanelToggleIcon active={sessionSidebarOpen} panel="left" />
-        </Button>
-        <Button aria-label={t('kubecode.toggleTerminal')} aria-pressed={terminalOpen} className="kubecode-layout-toggle" size="icon-xs" variant="ghost" onClick={toggleTerminal}>
-          <PanelToggleIcon active={terminalOpen} panel="bottom" />
-        </Button>
-        <Button aria-label={t('kubecode.toggleContext')} aria-pressed={contextOpen} className="kubecode-layout-toggle" size="icon-xs" variant="ghost" onClick={toggleContext}>
-          <PanelToggleIcon active={contextOpen} panel="right" />
-        </Button>
+        {/* The navigation, then the secondary execution tools: the terminal, and Files and Git. */}
+        <ToolToggle glyph={PanelLeft} label={t('kubecode.toggleNavigation')} pressed={sessionSidebarOpen} onClick={toggleNavigation} />
+        <span aria-hidden="true" className="kubecode-topbar-divider" />
+        <ToolToggle glyph={SquareTerminal} label={t('kubecode.toggleTerminal')} pressed={terminalOpen} onClick={toggleTerminal} />
+        <ToolToggle glyph={FolderGit2} label={t('kubecode.toggleContext')} pressed={contextOpen} onClick={toggleContext} />
       </div>
     </header>
   )
@@ -274,17 +273,24 @@ function RuntimeConnectionMenu({
   )
 }
 
-function PanelToggleIcon({
-  active,
-  panel,
-}: {
-  active: boolean
-  panel: 'left' | 'bottom' | 'right'
+/** A title-bar toggle for the navigation or an execution tool: one glyph, pressed while it is open. */
+function ToolToggle({ glyph: Glyph, label, onClick, pressed }: {
+  glyph: typeof PanelLeft
+  label: string
+  pressed: boolean
+  onClick: () => void
 }) {
   return (
-    <span className="kubecode-panel-toggle-icon" data-active={active} data-panel={panel}>
-      <span />
-    </span>
+    <Button
+      aria-label={label}
+      aria-pressed={pressed}
+      className="kubecode-layout-toggle"
+      size="icon-xs"
+      title={label}
+      variant="ghost"
+      onClick={onClick}
+    >
+      <Glyph aria-hidden="true" size={16} />
+    </Button>
   )
 }
-

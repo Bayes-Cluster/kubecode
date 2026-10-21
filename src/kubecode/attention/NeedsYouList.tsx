@@ -17,6 +17,8 @@ export type NeedsYouListProps = {
   t: Translator
   onOpenTarget: (target: NeedsYouTarget) => void
   onRetryLoad: () => void
+  /** Every entry at once, as the Needs you view shows them; otherwise the first few and "Show all". */
+  showAll?: boolean
 }
 
 function Rows({ entries, label, onOpenTarget, t }: {
@@ -69,10 +71,11 @@ function Rows({ entries, label, onOpenTarget, t }: {
  * until the server's next snapshot drops it; a list that could not be read
  * completely says so instead of claiming nothing waits. What newly waits, or
  * left, is announced by the shell (`useNeedsYouAnnouncement`), not here: this
- * list is folded away or out of the DOM on a phone.
+ * list is on screen only while the Needs you view is (ADR 0234).
  */
-export function NeedsYouList({ entries, incomplete, onOpenTarget, onRetryLoad, status, t }: NeedsYouListProps) {
-  const [all, setAll] = useState(false)
+export function NeedsYouList({ entries, incomplete, onOpenTarget, onRetryLoad, showAll = false, status, t }: NeedsYouListProps) {
+  const [expanded, setAll] = useState(false)
+  const all = showAll || expanded
   const shown = all ? entries : entries.slice(0, SHOWN)
   const decisions = shown.filter((entry) => entry.group !== 'setup')
   const setup = shown.filter((entry) => entry.group === 'setup')

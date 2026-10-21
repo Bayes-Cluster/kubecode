@@ -2,10 +2,9 @@ import { useCallback, useContext, useEffect, useMemo, useRef, useState, type Rea
 
 import { Button } from '@/components/ui/button'
 import { ReferenceChip } from '@/components/workspace/ReferenceChip'
-import { ViewHeader } from '@/components/workspace/ViewHeader'
-import { Icon } from '@/kubecode/icons'
-import { WORKSPACE_DESTINATION_ICONS } from '@/kubecode/icons/workspaceIcons'
 import type { AppLocale, Translator } from '@/lib/i18n'
+
+import { DestinationHeader } from '../app/DestinationHeader'
 
 import type {
   ChannelMessage,
@@ -309,10 +308,10 @@ export function ChannelWorkspace({
       onFocusCapture={(event) => noteFocus(event.target)}
     >
       <div className="kubecode-channel-main" inert={detail !== null && detailCovers ? true : undefined}>
-        <ViewHeader
+        <DestinationHeader
           className="kubecode-channel-header"
           description={t('kubecode.channel.description')}
-          icon={<Icon role="navigation" source={WORKSPACE_DESTINATION_ICONS.general.Icon} />}
+          destination="general"
           meta={research.length > 0 || taskFilter ? (
             <div className="kubecode-channel-filter">
               {research.length > 0 && (
@@ -341,7 +340,8 @@ export function ChannelWorkspace({
               )}
             </div>
           ) : undefined}
-          title={channel && !channel.is_default ? channel.name : t('kubecode.channel.general')}
+          t={t}
+          title={channel && !channel.is_default ? channel.name : undefined}
         />
         {status === 'error' && (
           <p className="kubecode-research-error" role="alert">

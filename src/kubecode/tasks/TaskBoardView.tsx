@@ -3,10 +3,11 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { StatusBadge } from '@/components/workspace/StatusBadge'
-import { ViewHeader } from '@/components/workspace/ViewHeader'
 import { Icon } from '@/kubecode/icons'
 import { WORKSPACE_DESTINATION_ICONS } from '@/kubecode/icons/workspaceIcons'
 import type { Translator } from '@/lib/i18n'
+
+import { DestinationHeader } from '../app/DestinationHeader'
 
 import type { TaskBoard, TaskDraft, TaskStage } from '../api'
 import { usePlaceState, useScrollMemory } from '../app/location/placeMemory'
@@ -109,16 +110,15 @@ export function TaskBoardView({
 
   return (
     <section aria-label={t('kubecode.nav.board')} className="kubecode-task-board" ref={scroller}>
-      <ViewHeader
+      <DestinationHeader
         actions={(
           <span className="kubecode-task-needs-you">
             <Switch aria-labelledby={switchId} checked={needsYou} onCheckedChange={setNeedsYou} />
             <span id={switchId}>{t('kubecode.task.needsYouOnly')}</span>
           </span>
         )}
-        icon={<Icon role="navigation" source={WORKSPACE_DESTINATION_ICONS.board.Icon} />}
-        level={2}
-        title={t('kubecode.nav.board')}
+        destination="board"
+        t={t}
       />
       {status === 'error' && (
         <p className="kubecode-research-error" role="alert">

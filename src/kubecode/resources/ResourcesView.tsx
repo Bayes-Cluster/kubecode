@@ -1,10 +1,9 @@
 import { useContext, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
-import { ViewHeader } from '@/components/workspace/ViewHeader'
-import { Icon } from '@/kubecode/icons'
-import { WORKSPACE_DESTINATION_ICONS } from '@/kubecode/icons/workspaceIcons'
 import type { Translator } from '@/lib/i18n'
+
+import { DestinationHeader } from '../app/DestinationHeader'
 
 import type { KubecodeApi, WorkspaceEvent } from '../api'
 import { InspectorServicesContext } from '../app/inspector/inspectorContext'
@@ -47,11 +46,11 @@ export function ResourcesView({ api, events, locale, projectId, t, workspaceName
 
   return (
     <section aria-label={t('kubecode.nav.resources')} className="kubecode-resources">
-      <ViewHeader
+      <DestinationHeader
         className="kubecode-channel-header"
         description={t('kubecode.resources.description')}
-        icon={<Icon role="navigation" source={WORKSPACE_DESTINATION_ICONS.resources.Icon} />}
-        title={t('kubecode.nav.resources')}
+        destination="resources"
+        t={t}
       />
       {target && (
         <div className="kubecode-attach-bar" role="status">

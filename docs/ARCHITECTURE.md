@@ -509,10 +509,10 @@ servers and prompts under `.local/playwright-fixtures-<port>`, and the test acts
 as a member through that Session's own MCP endpoint. The service-level
 counterpart is `server/tests/workspace_blueprint_acceptance.rs`.
 
-Workspace shell (ADRs 0224 and 0228): `app/WorkbenchShell.tsx` owns the active
+Workspace shell (ADRs 0224, 0228 and 0234): `app/WorkbenchShell.tsx` owns the active
 Project; where the researcher is in each Workspace is a location kept by the
 pure reducer in `app/location/workspaceLocation.ts` (a place — General with an
-optional message, Task filter and Thread, Kanban, Resources, Members, a private
+optional message, Task filter and Thread, Kanban, Resources, Needs you, Members, a private
 conversation, execution history with its Session, or a legacy question — plus an
 inspector stack of ids), remembered per Workspace and per view and stored by
 `useWorkspaceLocation` in `kubecode:workspace-location:v1` as formatted routes
@@ -529,10 +529,11 @@ reports a link still being reached as `pending` (the main pane shows "Opening
 Workspace…", never a Session), abandons a link to an unknown Project at once,
 and replaces the history entry for quiet changes. `app/ProjectNavigator.tsx` is
 the Workspaces navigation: `app/WorkspaceList.tsx` (one row per Project), then
-`app/WorkspaceNav.tsx` (General, Kanban, Resources, Needs you —
-`attention/NeedsYouList.tsx` over `NeedsYouEntry` from `location/needsYou.ts` —
-Members, then the roster and Direct messages under
-their own headings), then a collapsed History and execution section with the
+`app/WorkspaceNav.tsx` (the five destinations General, Kanban, Resources, Needs
+you — a count; the list is the `attention/NeedsYouView.tsx` destination over
+`NeedsYouEntry` from `location/needsYou.ts`, hosting no inspector — and
+Members, then the roster with private-message shortcuts and Direct messages
+under their own headings), then a collapsed History and execution section with the
 Session search across all Workspaces, this Workspace's Sessions and Teams,
 Threads and questions. Reference chips in General and rows in Resources open
 through the shell's one `openReference` (`location/references.ts`): a Task or a
@@ -540,11 +541,12 @@ record in the inspector of the view they were chosen in, a Thread in General
 with nothing over it, a work item on Kanban with its Task, and a Session as
 execution history. The inspector (`app/inspector/`) is one stack per
 inspector-hosting view (General, Kanban, Resources, Members, a private
-conversation): `InspectorPane` renders each entry through `INSPECTOR_PANELS`
+conversation; every destination is titled by `app/DestinationHeader.tsx`): `InspectorPane` renders each entry through `INSPECTOR_PANELS`
 (`tasks/TaskPanel.tsx`, `members/MemberPanel.tsx`, `work/EvidencePanel.tsx`,
 `resources/ResourcePanel.tsx`) with the Back and Close the shell computes, keeps
 lower entries mounted under `visibility: hidden` and `inert`, and is shown beside
-the view or over it by the width of the row (`useInspectorPresentation`, a
+the view as the 360-pixel `--ws-panel-inspector` column or over it by the width
+of the row (`useInspectorPresentation`, a
 container rule; the navigation overlay keeps its 980px viewport rule). Slices
 move the researcher through `location/WorkspaceNavigation.ts` and never import
 the shell. `location/placeMemory.ts` keeps what a place holds besides its address

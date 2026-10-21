@@ -20,6 +20,8 @@ export type WorkspaceView =
   | 'board'
   /** Shared Project context: artifacts, findings, experiments, imports. */
   | 'resources'
+  /** Everything that waits for the researcher, in one list (ADR 0234). */
+  | 'needs-you'
   /** The roster of agents. */
   | 'members'
   /** A private conversation with one member. */
@@ -52,7 +54,7 @@ export type WorkspaceRoute = {
   inspect?: InspectorEntry[]
 }
 
-const VIEWS: readonly WorkspaceView[] = ['sessions', 'general', 'board', 'resources', 'members', 'dm', 'question']
+const VIEWS: readonly WorkspaceView[] = ['sessions', 'general', 'board', 'resources', 'needs-you', 'members', 'dm', 'question']
 
 function safe(value: string | null | undefined): string | undefined {
   return isRouteId(value) ? value : undefined

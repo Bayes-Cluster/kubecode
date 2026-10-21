@@ -91,6 +91,8 @@ export function routeFromLocation(
     }
     case 'question':
       return { project, view: 'question', question: place.question }
+    case 'needs-you':
+      return { project, view: 'needs-you' }
     default:
       break
   }
@@ -135,7 +137,7 @@ function placeOf(route: WorkspaceRoute): Place {
 /** The location a route names: its place, and the stack its parameters spell. */
 export function locationFromRoute(route: WorkspaceRoute): WorkspaceLocation {
   const place = placeOf(route)
-  if (place.view === 'sessions' || place.view === 'question') return { place, inspector: [] }
+  if (place.view === 'sessions' || place.view === 'question' || place.view === 'needs-you') return { place, inspector: [] }
   const bottom: InspectorEntry | null = place.view === 'members'
     ? (route.member ? { kind: 'member', id: route.member } : null)
     : (route.task ? { kind: 'task', id: route.task } : null)
