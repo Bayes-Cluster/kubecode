@@ -73,7 +73,8 @@ describe('TaskPanel and what waits on the researcher (ADR 0232)', () => {
     const { api } = mount(taskDetail({ stage: 'in_progress', review_requests: [], pending: [], execution: executing }), null, { setRoundExecutionPolicy })
     const pause = await panel().findByRole('button', { name: 'Pause new work on Pruning heads' })
     expect(pause).toHaveAttribute('aria-pressed', 'false')
-    expect(panel().getByText(/Running turns and experiments continue/)).toBeInTheDocument()
+    // The pressed state says it; no explanatory line sits beside it (#229).
+    expect(panel().queryByText(/Running turns and experiments continue/)).not.toBeInTheDocument()
     fireEvent.click(pause)
     await waitFor(() => expect(setRoundExecutionPolicy).toHaveBeenCalledWith('p1', 'round1', 3, { paused: true }))
     expect(await panel().findByText("The Task's limits changed elsewhere; the current state is shown.")).toBeInTheDocument()

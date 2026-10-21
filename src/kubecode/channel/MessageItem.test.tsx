@@ -95,12 +95,35 @@ describe('MessageItem', () => {
     expect(article).not.toHaveTextContent(/\bAgent\b/)
   })
 
+  it('folds whom a message was handed to into its author line, behind an arrow, keeping the words for screen readers', () => {
+    const { article } = item()
+    const header = article.querySelector('.kubecode-ai-message-author') as HTMLElement
+    const recipients = header.querySelector('.kubecode-message-recipients') as HTMLElement
+    expect(recipients).not.toBeNull()
+    expect(within(recipients).getByText('Handed to')).toHaveClass('sr-only')
+    expect(recipients.querySelector('.kubecode-message-recipients-arrow')).toHaveAttribute('aria-hidden', 'true')
+    expect(within(recipients).getByText('Analyst')).toBeInTheDocument()
+  })
+
   it('renders the body as Markdown and shows the Task once, as a chip that opens it', () => {
     const { article, on } = item()
     expect(within(article).getByText('prune').tagName).toBe('STRONG')
     const chips = article.querySelectorAll('.kubecode-reference-chip')
     expect(chips).toHaveLength(1)
     fireEvent.click(within(article).getByRole('button', { name: 'Task Structured pruning' }))
+    expect(on.openTask).toHaveBeenCalled()
+  })
+
+  it('drops the Task chip while General shows only that Task, so it is not repeated under every message', () => {
+    const { article } = item({ filtered: true })
+    expect(article.querySelectorAll('.kubecode-reference-chip')).toHaveLength(0)
+    expect(within(article).queryByRole('button', { name: 'Task Structured pruning' })).not.toBeInTheDocument()
+  })
+
+  it('still opens the Task from More actions while General shows only that Task', async () => {
+    const { on } = item({ filtered: true })
+    const items = await openMore(/More actions/)
+    fireEvent.click(items.find((entry) => entry.textContent === 'Open the Task') as HTMLElement)
     expect(on.openTask).toHaveBeenCalled()
   })
 

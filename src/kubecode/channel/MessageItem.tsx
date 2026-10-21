@@ -111,17 +111,36 @@ export function MessageItem({
     ...(message.task_id && !filtered && on.filterTask
       ? [{ id: 'filter', label: t('kubecode.channel.showTaskOnly'), onSelect: on.filterTask }]
       : []),
+    // Its chip is dropped while General shows only this Task; it still opens from here.
+    ...(message.task_id && filtered && on.openTask
+      ? [{ id: 'open-task', label: t('kubecode.task.openTask'), onSelect: on.openTask }]
+      : []),
     ...(replies > 0 && on.openThread
       ? [{ id: 'thread', label: t('kubecode.channel.legacyThread.action'), onSelect: on.openThread }]
       : []),
   ]
-  const taskChip = task && (
+  // While General shows only this Task, its chip would repeat under every message.
+  const taskChip = task && !filtered && (
     <ReferenceChip kind="task" kindLabel={t('kubecode.vocab.object.task')} title={task.title} onOpen={on.openTask} />
   )
   const focusKey = `message:${message.id}`
   const own = message.author_kind === 'researcher'
   const time = date && (
     <time dateTime={date.toISOString()} title={date.toLocaleString(dateLocale)}>{shortTime(date, dateLocale)}</time>
+  )
+  // Whom it reached sits in the author line: "Investigate → General" (#229).
+  const recipientLine = recipients.kind !== 'none' && (
+    <span className="kubecode-message-recipients">
+      <span aria-hidden="true" className="kubecode-message-recipients-arrow">→</span>
+      <span className="sr-only">
+        {recipients.kind === 'members' && recipients.handedOff ? t('kubecode.channel.handedOff') : t('kubecode.channel.to')}
+      </span>
+      {recipients.kind === 'members'
+        ? recipients.members.map((member) => <Identity from={focusKey} key={member.key} size="sm" view={member} />)
+        : recipients.manager
+          ? <Identity from={focusKey} size="sm" view={recipients.manager} />
+          : <span>{t('kubecode.channel.toManager')}</span>}
+    </span>
   )
   return (
     <Message
@@ -132,16 +151,20 @@ export function MessageItem({
             // The researcher's own message, on the right (ADR 0239): only the time shows.
             <span className="kubecode-message-author kubecode-message-self-meta">
               <span className="sr-only">{author.name}</span>
+              {recipientLine}
               {time}
             </span>
           ) : (
-            <Identity
-              className="kubecode-message-author"
-              from={focusKey}
-              meta={time}
-              size={continued ? 'sm' : 'md'}
-              view={author}
-            />
+            <>
+              <Identity
+                className="kubecode-message-author"
+                from={focusKey}
+                meta={time}
+                size={continued ? 'sm' : 'md'}
+                view={author}
+              />
+              {recipientLine}
+            </>
           )}
           {message.intent !== 'say' && (
             <StatusBadge tone="muted">
@@ -186,18 +209,6 @@ export function MessageItem({
               : t('kubecode.channel.citation', { author: cited.author.name, excerpt: cited.excerpt })}
           </button>
         )}
-        {recipients.kind !== 'none' && (
-          <p className="kubecode-message-recipients">
-            <span className="kubecode-message-recipients-label">
-              {recipients.kind === 'members' && recipients.handedOff ? t('kubecode.channel.handedOff') : t('kubecode.channel.to')}
-            </span>
-            {recipients.kind === 'members'
-              ? recipients.members.map((member) => <Identity from={focusKey} key={member.key} size="sm" view={member} />)
-              : recipients.manager
-                ? <Identity from={focusKey} size="sm" view={recipients.manager} />
-                : <span>{t('kubecode.channel.toManager')}</span>}
-          </p>
-        )}
         {proposal && (
           <p className="kubecode-channel-proposal">
             <StatusBadge tone="info">{t('kubecode.task.proposalBadge', { revision: Number(proposal[1]) })}</StatusBadge>
@@ -219,7 +230,7 @@ export function MessageItem({
             t={t}
             onOpen={on.openReference}
           />
-        ) : task && (
+        ) : taskChip && (
           <ul aria-label={t('kubecode.channel.references')} className="kubecode-message-references">
             <li>{taskChip}</li>
           </ul>

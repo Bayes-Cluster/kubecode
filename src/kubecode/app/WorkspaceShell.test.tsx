@@ -469,7 +469,9 @@ describe('Workspace navigation and routes', () => {
     const box = await composer()
     fireEvent.change(box, { target: { value: 'Half a thought' } })
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Task Task (no title)' }))
+    // Filtered to the Task, its chip is not repeated under the message; More actions opens it.
+    fireEvent.pointerDown(await screen.findByRole('button', { name: /More actions for .*message/ }), { button: 0, ctrlKey: false, pointerType: 'mouse' })
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Open the Task' }))
     expect(await inspector('Task details')).toBeInTheDocument()
     await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/general/m/m1?task=r1&filter=r1'))
 

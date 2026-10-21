@@ -58,10 +58,10 @@ describe('ExecutionStrip', () => {
     const value = store(snapshot({ executions: [execution({ queued: 2 })] }))
     const { api } = strip(value)
     const region = screen.getByRole('region', { name: 'Working now' })
-    expect(region).toHaveTextContent('Analyst is working on Structured pruning')
-    expect(region).toHaveTextContent('2 more messages queued')
+    expect(region).toHaveTextContent('Analyst')
+    expect(region).toHaveTextContent('2 queued')
     // Work in progress shimmers, in words (AI Elements Shimmer, #232).
-    expect(region.querySelector('.kubecode-ai-shimmer')).toHaveTextContent('Analyst is working on Structured pruning')
+    expect(region.querySelector('.kubecode-ai-shimmer')).toHaveTextContent('Structured pruning')
     // One run is one compact row, never folded behind a count.
     expect(within(region).queryByRole('button', { name: /running/ })).not.toBeInTheDocument()
     const stop = within(region).getByRole('button', { name: 'Stop Structured pruning' })
@@ -154,6 +154,22 @@ describe('ExecutionStrip', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   })
 
+  it('opens the running list without a focus ring when opened by a pointer, and with one from the keyboard', async () => {
+    const runs = [execution(), execution({ run_id: 'run2', conversation_id: 's2', tasks: [] })]
+    strip(store(snapshot({ executions: runs })))
+    const toggle = screen.getByRole('button', { name: '2 running' })
+    fireEvent.pointerDown(toggle)
+    fireEvent.click(toggle)
+    const list = await screen.findByRole('dialog', { name: 'Working now' })
+    expect(list).toHaveAttribute('data-opened-by', 'pointer')
+    expect(list).toHaveFocus()
+    fireEvent.keyDown(list, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    fireEvent.keyDown(toggle, { key: 'Enter' })
+    fireEvent.click(toggle)
+    expect(await screen.findByRole('dialog', { name: 'Working now' })).toHaveAttribute('data-opened-by', 'keyboard')
+  })
+
   it('names the reply it stops in a private conversation, and only ends that reply', async () => {
     const value = store(snapshot({ executions: [execution({ binding: 'dm', conversation_id: 'dm1', tasks: [] })] }))
     const { api } = strip(value, { scope: { binding: 'dm', memberId: 'm1' } })
@@ -185,7 +201,7 @@ describe('ExecutionStrip', () => {
       executions: [execution({ status: 'waiting_permission', waiting_keys: [item.key] })],
     }))
     const { api } = strip(value)
-    expect(screen.getByText('Analyst is waiting for your permission')).toBeInTheDocument()
+    expect(screen.getByText(/Waiting for your permission/)).toBeInTheDocument()
     const prompt = screen.getByTestId('permission-queue-card')
     expect(prompt).toHaveAttribute('data-focus-key', 'permission:q1')
     expect(prompt).toHaveTextContent('Analyst asks permission · For Structured pruning')
@@ -219,9 +235,9 @@ describe('ExecutionStrip', () => {
     expect(screen.queryByText("Analyst's last turn failed")).not.toBeInTheDocument()
   })
 
-  it('counts one queued message in the singular', () => {
+  it('counts one queued message as a small count', () => {
     strip(store(snapshot({ executions: [execution({ queued: 1 })] })))
-    expect(screen.getByRole('region', { name: 'Working now' })).toHaveTextContent('1 more message queued')
+    expect(screen.getByRole('region', { name: 'Working now' })).toHaveTextContent('1 queued')
   })
 
   it('keeps an answered prompt busy until the server drops it: no button or 1–9 key answers it twice', () => {
@@ -248,8 +264,8 @@ describe('ExecutionStrip', () => {
 
   it('says a turn waits for its Team leader, not for the researcher, when no request is the researcher\'s', () => {
     strip(store(snapshot({ executions: [execution({ status: 'waiting_permission', waiting_keys: [] })] })))
-    expect(screen.getByText("Analyst is waiting for the Team leader's answer")).toBeInTheDocument()
-    expect(screen.queryByText('Analyst is waiting for your permission')).not.toBeInTheDocument()
+    expect(screen.getByText(/Waiting for the Team leader/)).toBeInTheDocument()
+    expect(screen.queryByText(/Waiting for your permission/)).not.toBeInTheDocument()
   })
 
   it('offers a step for a failed turn: the member in Members, where its Session and setup are', () => {

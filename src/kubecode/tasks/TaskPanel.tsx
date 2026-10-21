@@ -149,6 +149,7 @@ export function TaskPanel({ entry, projectId }: InspectorPanelProps<Extract<Insp
   ]
 
   const next = archived && !detail ? { kind: 'archived' as const, tone: 'muted' as const } : nextStepOf(detail, draft)
+  const nextText = nextStepText(t, next, detail)
   const overview = (
     <TaskOverview
       bundle={bundle}
@@ -179,7 +180,7 @@ export function TaskPanel({ entry, projectId }: InspectorPanelProps<Extract<Insp
       <div className="kubecode-task-panel">
         {/* What happens next, and where it is said: the header keeps only the Task's own facts (360px inspector). */}
         <div aria-label={t('kubecode.task.nextTitle')} className="kubecode-task-next-step" data-tone={next.tone} role="group">
-          <p className="kubecode-task-next" data-tone={next.tone}>{nextStepText(t, next, detail)}</p>
+          {nextText && <p className="kubecode-task-next" data-tone={next.tone}>{nextText}</p>}
           <Button size="sm" variant="outline" onClick={discuss}>
             <Icon role="command" source={WORKSPACE_DESTINATION_ICONS.general.Icon} />
             {t('kubecode.task.discuss')}
@@ -259,7 +260,8 @@ function blockedText(t: Translator, reason: TaskAvailability['reason']): string 
   }
 }
 
-function nextStepText(t: Translator, next: TaskNextStep, detail: TaskDetail | null): string {
+/** What happens next, or nothing while the specialists simply work (#229). */
+function nextStepText(t: Translator, next: TaskNextStep, detail: TaskDetail | null): string | null {
   switch (next.kind) {
     case 'archived': return t('kubecode.task.next.archived')
     case 'draft': return t('kubecode.task.notOnBoard')
@@ -267,7 +269,7 @@ function nextStepText(t: Translator, next: TaskNextStep, detail: TaskDetail | nu
     case 'review': return t('kubecode.task.next.review')
     case 'questions': return t('kubecode.task.next.questions')
     case 'returned': return t('kubecode.task.next.returned')
-    case 'working': return t('kubecode.task.next.working')
+    case 'working': return null
     case 'ready': return t('kubecode.task.next.ready')
     case 'done': {
       const outcome = outcomeLabel(t, detail?.outcome)
