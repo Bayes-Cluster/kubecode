@@ -154,6 +154,8 @@ export function MessageComposer({
         ? t('kubecode.channel.mentionUnavailable', { name: named.name })
         : t('kubecode.channel.mentionUnavailableUnknown')
     }
+    // A dropped connection rejects fetch with the browser's own, untranslated words.
+    if (cause instanceof TypeError) return t('kubecode.error')
     return errorMessage(cause, t('kubecode.error'))
   }
 
