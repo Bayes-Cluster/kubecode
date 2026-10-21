@@ -76,6 +76,7 @@ describe('NeedsYouView', () => {
       ],
     })
     const list = screen.getByRole('list', { name: 'Decided by the project manager' })
+    expect(screen.queryByText(/Nothing here waits for you/)).not.toBeInTheDocument()
     const rows = within(list).getAllByRole('listitem')
     expect(rows).toHaveLength(2)
     expect(rows[0]).toHaveTextContent('Approved')

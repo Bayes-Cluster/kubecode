@@ -6,8 +6,8 @@
  * Adaptations (ADR 0233): no `ai` SDK types — a message is from `self` (the
  * researcher viewing) or a `member`; every message carries its author through
  * `MemberIdentity` because General is a group conversation; the researcher's
- * own message is tinted rather than right-aligned so long research reads in
- * one column; `MessageResponse` is a reading container instead of
+ * own message is a tinted bubble on the right (ADR 0239, superseding the
+ * left-aligned rule of ADR 0233); `MessageResponse` is a reading container instead of
  * `streamdown`; actions are Workspace `IconButton`s. Branch switching and
  * attachments previews are left out (no regenerate and no upload, see ADR).
  */

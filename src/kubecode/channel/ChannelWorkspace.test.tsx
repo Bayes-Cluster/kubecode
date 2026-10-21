@@ -187,18 +187,18 @@ const channelEvent = (id: number): WorkspaceEvent => ({
 
 const box = () => screen.getByRole('combobox', { name: 'Message the Workspace' }) as HTMLTextAreaElement
 const send = () => fireEvent.click(screen.getByRole('button', { name: 'Send' }))
-const toRow = () => document.querySelector('.kubecode-composer-to') as HTMLElement
+const toRow = () => document.querySelector('.kubecode-composer-to')
 const row = (seq: number) => screen.getByTestId(`message-${seq}`)
 
 describe('ChannelWorkspace', () => {
-  it('is General with its description, posts a message, and keeps one client id across a failed send', async () => {
+  it('is General with no description line, posts a message, and keeps one client id across a failed send', async () => {
     const s = server()
     view(s)
     const empty = await screen.findByText('No messages yet. Start the discussion.')
     // An empty General is the AI Elements empty state of the #230 prototypes, not a stray line.
     expect(empty.closest('.kubecode-ai-conversation-empty')).not.toBeNull()
     expect(screen.getByRole('heading', { name: 'General' })).toBeInTheDocument()
-    expect(screen.getByText(/Messages go to the project manager unless you @mention someone/)).toBeInTheDocument()
+    expect(screen.queryByText(/Messages go to the project manager unless you @mention someone/)).not.toBeInTheDocument()
     fireEvent.change(box(), { target: { value: '  Should we prune?  ' } })
     s.failNext(1)
     send()
@@ -245,9 +245,9 @@ describe('ChannelWorkspace', () => {
     view(s)
     await screen.findByText('No messages yet. Start the discussion.')
     expect(screen.queryByRole('combobox', { name: 'Message type' })).not.toBeInTheDocument()
-    expect(toRow()).toHaveTextContent(/General.*Project manager/)
+    expect(toRow()).toBeNull()
     fireEvent.change(box(), { target: { value: '@analyst run the sweep', selectionStart: 22 } })
-    expect(within(toRow()).getByRole('list', { name: 'To' })).toHaveTextContent('Analyst')
+    expect(toRow()).toBeNull()
     send()
     await screen.findByText('run the sweep', { exact: false })
     expect(s.posted[0]).toEqual({
@@ -334,13 +334,11 @@ describe('ChannelWorkspace replies (ADR 0229 §4)', () => {
     expect(box().selectionStart).toBe(9)
     expect(screen.getByText('Replying to Analyst: Sweep finished; accuracy held.')).toBeInTheDocument()
     expect(screen.getAllByText('Replying to Analyst').some((element) => element.getAttribute('role') === 'status')).toBe(true)
-    expect(within(toRow()).getByRole('list', { name: 'To' })).toHaveTextContent('Analyst')
+    expect(toRow()).toBeNull()
     // The cited message's Task comes along, visibly.
     expect(within(document.querySelector('.kubecode-composer-about') as HTMLElement).getByText('Pruning')).toBeInTheDocument()
-    // Taking the mention off sends the reply to the manager instead; the citation stays.
-    fireEvent.click(screen.getByRole('button', { name: "Don't send to Analyst" }))
-    expect(box()).toHaveValue('')
-    expect(toRow()).toHaveTextContent(/General.*Project manager/)
+    // Taking the mention out of the text sends the reply to the manager instead; the citation stays.
+    fireEvent.change(box(), { target: { value: '' } })
     fireEvent.change(box(), { target: { value: 'yes, add it' } })
     send()
     await screen.findByText('yes, add it')
@@ -364,7 +362,7 @@ describe('ChannelWorkspace replies (ADR 0229 §4)', () => {
     view(s)
     fireEvent.click(await screen.findByRole('button', { name: 'Reply to General' }))
     expect(box()).toHaveValue('')
-    expect(toRow()).toHaveTextContent(/General.*Project manager/)
+    expect(toRow()).toBeNull()
   })
 
   it('jumps to a cited message, loads it when it is not loaded, and keeps routing notes collapsed', async () => {
@@ -487,6 +485,7 @@ describe('ChannelWorkspace Tasks and references', () => {
     expect(screen.getAllByText('Task proposal, revision 2')).toHaveLength(1)
     expect(screen.queryByText('Task proposal, revision 9')).not.toBeInTheDocument()
     expect(screen.getByText('Not on the board yet')).toBeInTheDocument()
+    expect(screen.queryByText(/tell the General Agent in your own words/)).not.toBeInTheDocument()
   })
 
   it('shows on a message that it was not delivered', async () => {

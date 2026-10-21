@@ -132,7 +132,6 @@ export function DmPane({
             </Button>
           )}
           className="kubecode-channel-header"
-          description={t('kubecode.dm.private', { name: member.name })}
           icon={<Icon role="navigation" source={WORKSPACE_DESTINATION_ICONS.directMessage.Icon} />}
           meta={(
             <>
@@ -171,13 +170,13 @@ export function DmPane({
           )}
           {turns.map((turn) => (
             <div className="kubecode-dm-turn" data-testid={`dm-turn-${turn.run_id}`} key={turn.run_id}>
-              <Message author={<Identity size="sm" view={you} />} from="self">
+              <Message aria-label={you.name} author={<span className="sr-only">{you.name}</span>} from="self">
                 <MessageContent>
                   <MessageResponse className="kubecode-message-body"><MarkdownContent content={turn.user} images="text" /></MessageResponse>
                 </MessageContent>
               </Message>
               {turn.assistant && (
-                <Message author={<Identity size="sm" view={them} />} from="member">
+                <Message aria-label={them.name} author={<Identity size="sm" view={them} />} from="member">
                   <MessageContent>
                     <MessageResponse className="kubecode-message-body"><MarkdownContent content={turn.assistant} images="text" /></MessageResponse>
                   </MessageContent>
@@ -186,7 +185,7 @@ export function DmPane({
             </div>
           ))}
           {newest && !newest.assistant && (
-            <Message author={<Identity size="sm" view={them} />} from="member" state="pending">
+            <Message aria-label={them.name} author={<Identity size="sm" view={them} />} from="member" state="pending">
               <MessageContent>
                 <p className="kubecode-dm-waiting" role="status">
                   <Shimmer>{t('kubecode.dm.waitingReply', { name: member.name })}</Shimmer>
@@ -195,7 +194,7 @@ export function DmPane({
             </Message>
           )}
           {queue.pending.map((item) => (
-            <Message author={<Identity size="sm" view={you} />} from="self" key={item.client_message_id} state="pending">
+            <Message aria-label={you.name} author={<span className="sr-only">{you.name}</span>} from="self" key={item.client_message_id} state="pending">
               <MessageContent>
                 <MessageResponse className="kubecode-message-body"><MarkdownContent content={item.text} images="text" /></MessageResponse>
                 <p className="kubecode-message-delivery" data-delivery="queued">{t('kubecode.dm.queued', { name: member.name })}</p>
@@ -223,6 +222,7 @@ export function DmPane({
                 focusKey={`composer:dm:${member.id}`}
                 label={t('kubecode.dm.placeholder', { name: member.name })}
                 placeholder={t('kubecode.dm.placeholder', { name: member.name })}
+                rows={2}
                 sendLabel={t('kubecode.channel.send')}
                 value={draft.body}
                 onChange={(body) => setDraft((current) => ({ ...current, body }))}
@@ -230,22 +230,20 @@ export function DmPane({
               />
             </PromptInputBody>
             <PromptInputFooter className="kubecode-composer-footer">
-              {ready
-                ? <p className="kubecode-composer-hint">{t('kubecode.dm.destination', { name: member.name })}</p>
-                : (
-                  <p className="kubecode-composer-warning" role="status">
-                    {t('kubecode.dm.needsSetup', { name: member.name })}{' '}
-                    {navigation && (
-                      <Button
-                        size="xs"
-                        variant="outline"
-                        onClick={() => navigation.openPlace({ view: 'members' }, { inspect: { kind: 'member', id: member.id } })}
-                      >
-                        {t('kubecode.dm.fixInMembers')}
-                      </Button>
-                    )}
-                  </p>
-                )}
+              {!ready && (
+                <p className="kubecode-composer-warning" role="status">
+                  {t('kubecode.dm.needsSetup', { name: member.name })}{' '}
+                  {navigation && (
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      onClick={() => navigation.openPlace({ view: 'members' }, { inspect: { kind: 'member', id: member.id } })}
+                    >
+                      {t('kubecode.dm.fixInMembers')}
+                    </Button>
+                  )}
+                </p>
+              )}
             </PromptInputFooter>
           </PromptInput>
         </div>

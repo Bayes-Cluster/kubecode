@@ -141,7 +141,6 @@ export function TaskBoardView({
       {drafts.length > 0 && (
         <details className="kubecode-task-drafts" open={board !== null && board.cards.length === 0 ? true : undefined}>
           <summary>{t('kubecode.task.proposals', { count: drafts.length })}</summary>
-          <p className="kubecode-research-muted">{t('kubecode.task.proposalsHint')}</p>
           <ul>
             {drafts.map((draft) => (
               <li key={draft.id}>

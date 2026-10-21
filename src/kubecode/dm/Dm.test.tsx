@@ -85,12 +85,14 @@ describe('DmPane', () => {
     expect(await screen.findByText('is 0.91 enough?')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: /Analyst/ })).toBeInTheDocument()
     expect(screen.getByText('Private')).toBeInTheDocument()
-    expect(screen.getByText(/Only you and Analyst see this/)).toBeInTheDocument()
+    expect(screen.queryByText(/Only you and Analyst see this/)).not.toBeInTheDocument()
     expect(screen.getByText('within').tagName).toBe('STRONG')
     const log = screen.getByRole('log')
-    expect(within(log).getAllByText('You')).toHaveLength(2)
+    // The researcher's own turns sit on the right with no visible "You", but keep an accessible author.
+    expect(within(log).queryByText('You', { selector: ':not(.sr-only)' })).not.toBeInTheDocument()
+    expect(within(log).getAllByRole('article', { name: 'You' })).toHaveLength(2)
     expect(within(log).getAllByText('Specialist · Analysis').length).toBeGreaterThan(0)
-    expect(screen.getByText('Only Analyst sees this message.')).toBeInTheDocument()
+    expect(screen.queryByText('Only Analyst sees this message.')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Mention someone' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Add context' })).not.toBeInTheDocument()
   })
@@ -104,7 +106,9 @@ describe('DmPane', () => {
     expect(waiting.closest('.kubecode-ai-message')).toHaveAttribute('data-state', 'pending')
     const card = document.querySelector('.kubecode-ai-prompt-input') as HTMLElement
     expect(card).toContainElement(box())
-    expect(card.querySelector('.kubecode-ai-prompt-input-footer')).toHaveTextContent('Only Analyst sees this message.')
+    expect(card).not.toHaveTextContent('Only Analyst sees this message.')
+    // Empty, the card is compact: two lines that grow with the text.
+    expect(box()).toHaveAttribute('rows', '2')
   })
 
   it('sends privately and never into General, and waits visibly for the reply', async () => {
