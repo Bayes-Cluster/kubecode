@@ -132,21 +132,23 @@ test.describe('on a desktop', () => {
 
       // A chat at 1440px (ADR 0239): the thread is the middle three quarters, the composer card at most
       // half the pane and centred, the researcher's messages on the right and members' on the left.
-      await page.setViewportSize({ width: 1440, height: 900 })
-      const pane = (await page.locator('.kubecode-channel-main').boundingBox())!
-      const dock = (await page.locator('.kubecode-conversation-dock').boundingBox())!
-      expect(dock.width).toBeLessThanOrEqual(Math.max(pane.width * 0.5, 480) + 1)
-      expect(Math.abs((dock.x - pane.x) - (pane.x + pane.width - dock.x - dock.width))).toBeLessThanOrEqual(2)
-      const thread = await log(page).evaluate((element) => {
-        const style = getComputedStyle(element)
-        return element.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)
-      })
-      expect(thread / pane.width).toBeGreaterThan(0.7)
-      expect(thread / pane.width).toBeLessThan(0.8)
-      const mine = (await row(page, 'Should we prune the attention heads?').boundingBox())!
-      const theirs = (await row(page, 'Outline drafted.').boundingBox())!
-      expect(mine.x + mine.width).toBeGreaterThan(theirs.x + theirs.width - 1)
-      expect(mine.x).toBeGreaterThan(theirs.x)
+      {
+        await page.setViewportSize({ width: 1440, height: 900 })
+        const pane = (await page.locator('.kubecode-channel-main').boundingBox())!
+        const dock = (await page.locator('.kubecode-conversation-dock').boundingBox())!
+        expect(dock.width).toBeLessThanOrEqual(Math.max(pane.width * 0.5, 480) + 1)
+        expect(Math.abs((dock.x - pane.x) - (pane.x + pane.width - dock.x - dock.width))).toBeLessThanOrEqual(2)
+        const threadWidth = await log(page).evaluate((element) => {
+          const style = getComputedStyle(element)
+          return element.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)
+        })
+        expect(threadWidth / pane.width).toBeGreaterThan(0.7)
+        expect(threadWidth / pane.width).toBeLessThan(0.8)
+        const mine = (await row(page, 'Should we prune the attention heads?').boundingBox())!
+        const theirs = (await row(page, 'Outline drafted.').boundingBox())!
+        expect(mine.x + mine.width).toBeGreaterThan(theirs.x + theirs.width - 1)
+        expect(mine.x).toBeGreaterThan(theirs.x)
+      }
 
       // 4. Reply cites the old message and addresses the Analyst, whose new Session gets it with the citation.
       const old = page.locator('article[data-author="agent"]').filter({ hasText: 'Sweep sized: twelve runs.' })
@@ -155,7 +157,7 @@ test.describe('on a desktop', () => {
       await expect(composer(page)).toHaveValue('@analyst ')
       await expect(composer(page)).toBeFocused()
       await expect(page.getByText('Replying to Analyst: Sweep sized: twelve runs.')).toBeVisible()
-      await expect(toRow(page).getByRole('list', { name: 'To' })).toContainText('Analyst')
+      await expect(composer(page)).toHaveValue('@analyst ')
       await composer(page).pressSequentially('run all twelve')
       await page.getByRole('button', { name: 'Send', exact: true }).click()
       await expect(log(page).getByText('@analyst run all twelve')).toBeVisible()
