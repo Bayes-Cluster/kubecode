@@ -55,19 +55,27 @@ experiments as an executor, and admits Tasks only on the researcher's words.
 
 ### 2. Specialists' permission requests go to the manager
 
-When a current specialist Session asks permission and is not answered from
-always-allow memory (which only the researcher can write), the request waits
-with `reviewer: "manager"`:
+When a current specialist's public Session (the one that works in General and
+on Tasks) asks permission and is not answered from always-allow memory (which
+only the researcher can write), the request waits with `reviewer: "manager"`.
+A specialist's direct-message Session is the researcher's own conversation:
+its requests go straight to the researcher, as before.
 
 - It is not shown to the researcher as a prompt or in Needs you.
 - One durable `permission_review` route (source: the permission request) is
   written to the General Agent's public Session, naming the specialist, the
   tool, and the request id, and asking it to review. The route follows the
   manager if its Session is replaced (ADR 0229).
-- If the Workspace has no manager Session to route to, or the route cannot be
-  written, the request is escalated to the researcher at once.
+- If the Workspace has no manager Session to route to, the request goes to
+  the researcher.
+- If the manager does not decide within `MANAGER_REVIEW_TIMEOUT` (120
+  seconds), or at once if the route cannot be written, the server escalates
+  it to the researcher by itself. That escalation is recorded like a manager
+  decision, as `escalated` by `system` with a reason code (`timeout` or
+  `route_failed`) that the browser words.
 
-A request still waits until it is answered or its turn stops (ADR 0232).
+Once with the researcher, a request waits until it is answered or its turn
+stops (ADR 0232).
 
 ### 3. The manager decides through `kubecode-work` tools
 
@@ -92,7 +100,8 @@ directly; the first answer wins.
 ### 4. Every manager decision is recorded and shown
 
 Each decision is written to `manager_permission_reviews` (Workspace, request,
-run, Session, member, tool title, decision, chosen option, reason, time).
+run, Session, tool title, decision, who decided — `manager` or `system` —
+chosen option, reason, time).
 A `permission_reviewed` Workspace event announces it carrying only the request
 id, the Session, and the decision; it carries no tool input, reason, prompt
 content, or path. The attention snapshot lists the Workspace's most recent
@@ -102,7 +111,8 @@ not as prompts. Analytics events never include the tool input or the reason.
 ## Consequences
 
 - The researcher is asked about a permission only when the manager escalates
-  it, when a non-member Session asks, or when there is no manager to ask.
+  it, when it times out, when a specialist asks in a direct message, when a
+  non-member Session asks, or when there is no manager to ask.
 - The manager can change the workspace directly with its provider's tools.
   The researcher sees its work in its Session and the manager's permission
   decisions in Needs you, but is not asked first.
@@ -110,10 +120,7 @@ not as prompts. Analytics events never include the tool input or the reason.
   request is gone (its turn stopped) and the tool says it is no longer
   waiting.
 - The manager reviews requests through a prompt-delivered route, so a busy
-  manager delays a specialist until its current turn ends. If that route
-  fails for good, the request keeps waiting (its run shows as waiting for
-  permission) until the researcher stops the turn; it is not escalated
-  automatically.
+  manager delays a specialist, but never by more than the review timeout.
 - A real-agent pilot of the full-access launch and of the review loop has not
   been run; they are covered by tests of the launch configuration, the
   routing, and the tools.

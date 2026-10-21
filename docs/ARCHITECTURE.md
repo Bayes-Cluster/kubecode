@@ -1159,12 +1159,15 @@ session API reports `general_manager`), the member store refuses a `mode`
 setting for the General Agent, and the permission handler grants any request a
 manager's provider still makes with its allow-once option without surfacing it.
 
-A current specialist's permission request that always-allow memory does not
-answer waits with `reviewer: "manager"`: it is left out of the attention
+A current specialist's permission request from its public Session (a DM
+Session's goes to the researcher) that always-allow memory does not answer
+waits with `reviewer: "manager"`: it is left out of the attention
 snapshot and the Session's prompt, and `Orchestrator::route_permission_review`
 writes a durable `permission_review` route (source kind `permission`) to the
-General Agent's public Session. With no manager Session, or if the route
-cannot be written, it is escalated to the researcher at once. The manager
+General Agent's public Session. Undecided after `MANAGER_REVIEW_TIMEOUT`
+(120 s), or at once if the route cannot be written, `system_escalate` hands it
+to the researcher and records it as `escalated` by `system` with a reason code
+(`timeout`, `route_failed`). The manager
 answers with the `kubecode-work` tools `permission_reviews` and
 `permission_review` (approve with an agent-offered allow option, never an
 always option; deny with reject-once or a cancel; or escalate, which sets
