@@ -2888,5 +2888,16 @@
   "kubecode.proto.review.olderVersion": "wcześniejsza wersja",
   "kubecode.resources.findInResources": "Znajdź w Zasobach",
   "kubecode.reference.sources": "Źródła ({count})",
-  "kubecode.reference.sourcesAttention": "Zmienione lub usunięte: {count}"
+  "kubecode.reference.sourcesAttention": "Zmienione lub usunięte: {count}",
+  "kubecode.markdown.copied": "Skopiowano",
+  "kubecode.markdown.copyCode": "Kopiuj kod",
+  "kubecode.markdown.copyTable": "Kopiuj tabelę",
+  "kubecode.markdown.copyTableAsCsv": "Kopiuj tabelę jako CSV",
+  "kubecode.markdown.copyTableAsMarkdown": "Kopiuj tabelę jako Markdown",
+  "kubecode.markdown.copyTableAsTsv": "Kopiuj tabelę jako TSV",
+  "kubecode.markdown.formatCsv": "CSV",
+  "kubecode.markdown.formatMarkdown": "Markdown",
+  "kubecode.markdown.formatTsv": "TSV",
+  "kubecode.markdown.imageNotAvailable": "Obraz niedostępny",
+  "kubecode.composer.attachFromWorkspace": "Dołącz z tego Workspace…"
 }

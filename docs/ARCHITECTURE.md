@@ -862,10 +862,12 @@ The component layer is the official shadcn/ui components in
 hardening (`streamdown-hardening.ts`: no raw HTML, http/https/mailto links
 only, KaTeX math). A surface that has moved onto the official parts sets
 `data-ws-components="official"`, which maps the shadcn variables onto the
-`--ws-*` tokens in `kubecode.css`. Until each product surface moves (slices
-S1–S4 of #229), it keeps the ADR 0233 adaptations, now in
-`src/components/ai-elements/workspace/` and re-exported unchanged from the
-`@/components/ai-elements` barrel. Two development routes render outside the
+`--ws-*` tokens in `kubecode.css`. General and DMs are built on the official
+parts (ADR 0242): Conversation, Message with `MessageResponse`, Prompt Input
+with its command list for `@mentions`, Queue, Confirmation, Sources, Avatar,
+HoverCard, Badge, Empty, Field and Select. The ADR 0233 adaptations and the
+`@/components/ai-elements` barrel are gone; call sites import each official
+file directly. Two development routes render outside the
 Workspace shell on fixture data and are built on the official parts:
 `#/controls` (the control matrix, with an official-components section) and
 `#/prototypes` (connected screen prototypes); see ADR 0233 and ADR 0241.
