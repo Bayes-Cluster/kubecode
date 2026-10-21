@@ -1,7 +1,14 @@
 import { CaretDown } from '@phosphor-icons/react'
 import { useContext, useEffect, useRef, useState, type CSSProperties } from 'react'
 
-import { Shimmer } from '@/components/ai-elements'
+import {
+  Queue,
+  QueueSection,
+  QueueSectionContent,
+  QueueSectionLabel,
+  QueueSectionTrigger,
+} from '@/components/ai-elements/queue'
+import { Shimmer } from '@/components/ai-elements/shimmer'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { ICON_SIZES } from '@/kubecode/icons'
@@ -255,7 +262,7 @@ export function ExecutionStrip({ api, prompts = true, scope, t }: ExecutionStrip
               onKeyDown={() => setOpenedBy('keyboard')}
               onPointerDown={() => setOpenedBy('pointer')}
             >
-              <Shimmer>{t('kubecode.execution.runningCount', { count: entries.length })}</Shimmer>
+              <Shimmer as="span" className="kubecode-shimmer">{t('kubecode.execution.runningCount', { count: entries.length })}</Shimmer>
               <CaretDown aria-hidden size={ICON_SIZES.status} />
             </Button>
           </PopoverTrigger>
@@ -270,7 +277,18 @@ export function ExecutionStrip({ api, prompts = true, scope, t }: ExecutionStrip
               ;(event.currentTarget as HTMLElement).focus()
             }}
           >
-            <ul className="kubecode-execution-rows">{entries.map(row)}</ul>
+            {/* The running list as a Queue (ADR 0242): one section, each row a piece of work with its Stop. */}
+            <Queue className="kubecode-execution-queue">
+              <QueueSection>
+                <QueueSectionTrigger className="kubecode-execution-queue-trigger">
+                  <QueueSectionLabel label={t('kubecode.execution.runningCount', { count: entries.length })} />
+                </QueueSectionTrigger>
+                <QueueSectionContent>
+                  {/* The popover scrolls; a second scroll area inside it would clip the rows. */}
+                  <ul className="kubecode-execution-rows kubecode-execution-queue-list">{entries.map(row)}</ul>
+                </QueueSectionContent>
+              </QueueSection>
+            </Queue>
           </PopoverContent>
         </Popover>
       )}

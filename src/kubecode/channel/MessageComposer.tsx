@@ -1,8 +1,13 @@
 import { useContext, useEffect, useRef, useState, type Dispatch, type Ref, type SetStateAction } from 'react'
 
-import { PromptInput, PromptInputBody, PromptInputFooter, PromptInputHeader } from '@/components/ai-elements'
+import {
+  PromptInputActionMenu,
+  PromptInputActionMenuContent,
+  PromptInputActionMenuItem,
+  PromptInputActionMenuTrigger,
+} from '@/components/ai-elements/prompt-input'
 import { Button } from '@/components/ui/button'
-import { Composer } from '@/components/workspace/Composer'
+import { DropdownMenuGroup } from '@/components/ui/dropdown-menu'
 import { IconButton } from '@/components/workspace/IconButton'
 import { ReferenceChip } from '@/components/workspace/ReferenceChip'
 import { Icon } from '@/kubecode/icons'
@@ -26,6 +31,7 @@ import {
   toNewMessage,
   type GeneralDraft,
 } from './generalDraft'
+import { ConversationComposer } from './ConversationComposer'
 import { mentionOptions } from './mentionOptions'
 import { useOutbox, type OutboxItem } from './outbox'
 import { OutboxRows } from './OutboxRows'
@@ -104,6 +110,8 @@ export function MessageComposer({
 }: MessageComposerProps) {
   const area = useRef<HTMLTextAreaElement | null>(null)
   const [picker, setPicker] = useState(false)
+  // The Add context menu hands focus to the dialog it opens, or back to the text.
+  const openingPicker = useRef(false)
   const outbox = useOutbox<GeneralSend>(outboxKey)
   const lastSent = useRef<GeneralDraft | null>(null)
   // The caret, kept while the researcher finds something to cite (the dialog, or Resources).
@@ -286,10 +294,12 @@ export function MessageComposer({
         onEdit={draft.body.trim() === '' ? edit : undefined}
         onSendAgain={(item) => void deliver(item)}
       />
-      {/* One input surface (#232): what it replies to and cites, the text with its controls, and whom it reaches. */}
-      <PromptInput>
-        {(draft.reply || taskLabel || draft.references.length > 0) && (
-          <PromptInputHeader className="kubecode-composer-context">
+      {/* One input surface (#232): what it replies to and cites, the text with its tools, and what still needs the researcher. */}
+      <ConversationComposer
+        canSend={ready}
+        focusKey={focusKey}
+        header={(draft.reply || taskLabel || draft.references.length > 0) ? (
+          <>
             {draft.reply && (
               <p className="kubecode-channel-replying">
                 <span>{t('kubecode.channel.replyingToExcerpt', { author: draft.reply.authorName, excerpt: draft.reply.excerpt })}</span>
@@ -340,50 +350,61 @@ export function MessageComposer({
                 </ul>
               </div>
             )}
-          </PromptInputHeader>
-        )}
-        <PromptInputBody>
-          <Composer
-            canSend={ready}
-            controls={(
-              <>
-                <IconButton
-                  icon={<Icon role="command" source={WORKSPACE_COMMAND_ICONS.addContext.Icon} />}
-                  label={t('kubecode.vocab.command.addContext')}
-                  onClick={() => {
+          </>
+        ) : undefined}
+        label={placeholder}
+        mentionLabel={t('kubecode.composer.mentions')}
+        mentions={mentionOptions(directory, t)}
+        notices={(notice || (blocked && draft.body.trim() !== '') || gate) ? (
+          <>
+            {notice && <p className="kubecode-composer-notice">{notice}</p>}
+            {blocked && draft.body.trim() !== '' && <p className="kubecode-composer-warning" role="status">{blocked}</p>}
+            {gate && <p className="kubecode-research-error" role="alert">{gate}</p>}
+          </>
+        ) : undefined}
+        placeholder={placeholder}
+        sendDisabledReason={blocked ?? undefined}
+        sendLabel={t('kubecode.channel.send')}
+        stop={stop}
+        textareaRef={setArea}
+        tools={(
+          // Add context (ADR 0242): one menu for what a message can carry besides its words.
+          <PromptInputActionMenu>
+            <PromptInputActionMenuTrigger aria-label={t('kubecode.vocab.command.addContext')} className="kubecode-add-context" tooltip={t('kubecode.vocab.command.addContext')}>
+              <Icon role="command" source={WORKSPACE_COMMAND_ICONS.addContext.Icon} />
+            </PromptInputActionMenuTrigger>
+            <PromptInputActionMenuContent
+              onCloseAutoFocus={(event) => {
+                // The dialog takes focus when it opens; otherwise back to the text.
+                event.preventDefault()
+                if (openingPicker.current) openingPicker.current = false
+                else focusText()
+              }}
+            >
+              <DropdownMenuGroup>
+                <PromptInputActionMenuItem
+                  onSelect={() => {
                     saveCaret()
+                    openingPicker.current = true
                     setPicker(true)
                   }}
-                />
-                <IconButton
-                  icon={<Icon role="command" source={WORKSPACE_COMMAND_ICONS.mention.Icon} />}
-                  label={t('kubecode.vocab.command.mention')}
-                  onClick={insertMention}
-                />
-              </>
-            )}
-            focusKey={focusKey}
-            label={placeholder}
-            mentionLabel={t('kubecode.composer.mentions')}
-            mentions={mentionOptions(directory, t)}
-            placeholder={placeholder}
-            rows={2}
-            sendDisabledReason={blocked ?? undefined}
-            sendLabel={t('kubecode.channel.send')}
-            stop={stop}
-            textareaRef={setArea}
-            value={draft.body}
-            // Emptied by hand: the draft is given up, so the same words later are a new message.
-            onChange={(body) => update({ body })}
-            onSend={send}
-          />
-        </PromptInputBody>
-        <PromptInputFooter className="kubecode-composer-footer">
-          {notice && <p className="kubecode-composer-notice">{notice}</p>}
-          {blocked && draft.body.trim() !== '' && <p className="kubecode-composer-warning" role="status">{blocked}</p>}
-          {gate && <p className="kubecode-research-error" role="alert">{gate}</p>}
-        </PromptInputFooter>
-      </PromptInput>
+                >
+                  <Icon role="command" source={WORKSPACE_COMMAND_ICONS.addContext.Icon} />
+                  {t('kubecode.composer.attachFromWorkspace')}
+                </PromptInputActionMenuItem>
+                <PromptInputActionMenuItem onSelect={insertMention}>
+                  <Icon role="command" source={WORKSPACE_COMMAND_ICONS.mention.Icon} />
+                  {t('kubecode.vocab.command.mention')}
+                </PromptInputActionMenuItem>
+              </DropdownMenuGroup>
+            </PromptInputActionMenuContent>
+          </PromptInputActionMenu>
+        )}
+        value={draft.body}
+        // Emptied by hand: the draft is given up, so the same words later are a new message.
+        onChange={(body) => update({ body })}
+        onSend={send}
+      />
       <span className="sr-only" role="status">{announcement}</span>
       {(
         <AddContextDialog

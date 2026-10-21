@@ -176,15 +176,18 @@ test('@smoke workspace navigation returns to each place, through the inspector s
     await expect(page).toHaveURL(/\/general\/m\/[^?]+$/)
 
     // 7a. General's Task filter survives a round trip; clearing it brings back the unfiltered draft.
-    const taskFilter = page.getByLabel('Show messages about')
-    await taskFilter.selectOption({ label: seed.taskTitle })
+    // The official Select (ADR 0242).
+    const taskFilter = page.getByRole('combobox', { name: 'Show messages about' })
+    await taskFilter.click()
+    await page.getByRole('option', { name: seed.taskTitle }).click()
     await expectUrl(page, `filter=${seed.taskId}`)
     await nav.getByRole('button', { name: 'Resources' }).click()
     await expect(page.getByRole('heading', { name: 'Resources', level: 2 })).toBeVisible()
     await openGeneral(page)
-    await expect(taskFilter).toHaveValue(seed.taskId)
+    await expect(taskFilter).toHaveText(seed.taskTitle)
     await expectUrl(page, `filter=${seed.taskId}`)
-    await taskFilter.selectOption({ label: 'Everything' })
+    await taskFilter.click()
+    await page.getByRole('option', { name: 'Everything' }).click()
     await expect(composer).toHaveValue(draft)
     await expect(page).toHaveURL(/\/general(\/m\/[^?]+)?$/)
 

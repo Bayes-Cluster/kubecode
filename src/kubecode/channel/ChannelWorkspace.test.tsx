@@ -196,7 +196,7 @@ describe('ChannelWorkspace', () => {
     view(s)
     const empty = await screen.findByText('No messages yet. Start the discussion.')
     // An empty General is the AI Elements empty state of the #230 prototypes, not a stray line.
-    expect(empty.closest('.kubecode-ai-conversation-empty')).not.toBeNull()
+    expect(empty.closest('.kubecode-conversation-empty')).not.toBeNull()
     expect(screen.getByRole('heading', { name: 'General' })).toBeInTheDocument()
     expect(screen.queryByText(/Messages go to the project manager unless you @mention someone/)).not.toBeInTheDocument()
     fireEvent.change(box(), { target: { value: '  Should we prune?  ' } })
@@ -403,7 +403,9 @@ describe('ChannelWorkspace Tasks and references', () => {
     const onFilterChange = vi.fn()
     view(s, { props: { onFilterChange } })
     await screen.findByText('about pruning')
-    fireEvent.change(screen.getByLabelText('Show messages about'), { target: { value: 'r1' } })
+    // The filter is the official Select (ADR 0242).
+    fireEvent.keyDown(screen.getByRole('combobox', { name: 'Show messages about' }), { key: 'ArrowDown' })
+    fireEvent.keyDown(await screen.findByRole('option', { name: 'Pruning' }), { key: 'Enter' })
     await waitFor(() => expect(screen.queryByText('general chatter')).not.toBeInTheDocument())
     expect(onFilterChange).toHaveBeenLastCalledWith('r1')
     expect(s.calls.listChannelMessages).toHaveBeenLastCalledWith('p1', 'c1', expect.objectContaining({ taskId: 'r1' }))
@@ -737,7 +739,8 @@ describe('ChannelWorkspace keeps its place (ADR 0228 §4, ADR 0229 §6)', () => 
     const onReadingPositionChange = vi.fn()
     view(s, { props: { onReadingPositionChange } })
     await screen.findByText('message 6')
-    const log = screen.getByRole('log')
+    // The official Conversation's scroller sits inside the named log (ADR 0242).
+    const log = screen.getByRole('log').querySelector('.kubecode-channel-messages') as HTMLElement
     let top = 0
     Object.defineProperty(log, 'scrollTop', { configurable: true, get: () => top, set: (value: number) => { top = value } })
     Object.defineProperty(log, 'scrollHeight', { configurable: true, get: () => 240 })
@@ -773,6 +776,25 @@ describe('ChannelWorkspace keeps its place (ADR 0228 §4, ADR 0229 §6)', () => 
     await waitFor(() => expect(document.getElementById('message-m5')).toHaveFocus())
     expect(await screen.findByText('message 120')).toBeInTheDocument()
     expect(screen.getByText('message 60')).toBeInTheDocument()
+  })
+
+  it('starts at the latest when a linked message never arrives', async () => {
+    const s = server([server().message(1, 'a topic'), server().message(2, 'a reply')])
+    s.calls.getChannelMessage.mockRejectedValue(new ApiError('not_found', 'gone', 404))
+    const tops = new WeakMap<Element, number>()
+    const top = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollTop')!
+    const height = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollHeight')!
+    Object.defineProperty(Element.prototype, 'scrollTop', { configurable: true, get() { return tops.get(this) ?? 0 }, set(value: number) { tops.set(this, value) } })
+    Object.defineProperty(Element.prototype, 'scrollHeight', { configurable: true, get: () => 500 })
+    try {
+      view(s, { props: { focusMessageId: 'm-deleted' } })
+      await screen.findByText('a reply')
+      const log = screen.getByRole('log').querySelector('.kubecode-channel-messages') as HTMLElement
+      await waitFor(() => expect(log.scrollTop).toBe(500))
+    } finally {
+      Object.defineProperty(Element.prototype, 'scrollTop', top)
+      Object.defineProperty(Element.prototype, 'scrollHeight', height)
+    }
   })
 
   it('lands on a message quietly, or in the composer, when asked to', async () => {

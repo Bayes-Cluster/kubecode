@@ -1,4 +1,6 @@
-import { Shimmer } from '@/components/ai-elements'
+import { QueueItem } from '@/components/ai-elements/queue'
+import { Shimmer } from '@/components/ai-elements/shimmer'
+import { Item, ItemActions, ItemContent, ItemDescription, ItemTitle } from '@/components/ui/item'
 import { MemberIdentity } from '@/components/workspace/MemberIdentity'
 import { StopButton } from '@/components/workspace/SendButton'
 import type { Translator } from '@/lib/i18n'
@@ -34,34 +36,41 @@ export function ExecutionRow({ entryKey, onStop, runs, stopping, t, task }: Exec
   const waiting = waitText(runs, t)
   const title = task ? task.title : t('kubecode.execution.replying')
   return (
-    <li className="kubecode-execution-row" data-entry={entryKey}>
-      <span className="kubecode-execution-line">
-        <span className="kubecode-execution-who">
-          {runs.map((run) => (run.member
-            ? <MemberIdentity handle={run.member.handle} key={run.run_id} name={run.member.name} role={run.member.role === 'general' ? 'manager' : 'specialist'} size="sm" />
-            : <strong key={run.run_id}>{askerName(run, t)}</strong>))}
-        </span>
-        {queued > 0 && <span className="kubecode-execution-queued">{t('kubecode.execution.queuedCount', { count: queued })}</span>}
-        <StopButton
-          busy={stopping}
-          description={task
-            ? t('kubecode.execution.stopTaskHint', { task: task.title })
-            : t('kubecode.execution.stopReplyHint', { name })}
-          label={task
-            ? t('kubecode.execution.stopTask', { task: task.title })
-            : t('kubecode.execution.stopReply', { name })}
-          shortLabel={task ? t('kubecode.execution.stopTaskShort') : t('kubecode.execution.stopReplyShort')}
-          variant="ghost"
-          onStop={onStop}
-        />
-      </span>
-      <span className="kubecode-execution-state">
-        {stopping
-          ? t('kubecode.execution.stopping')
-          : waiting
-            ? <>{waiting}{' · '}<span className="kubecode-execution-title" title={title}>{title}</span></>
-            : <span className="kubecode-execution-title" title={title}><Shimmer>{title}</Shimmer></span>}
-      </span>
-    </li>
+    // A Queue item (ADR 0242) holding one Item: who and the Stop on the first line, the work on the second.
+    <QueueItem className="kubecode-execution-row" data-entry={entryKey}>
+      <Item className="kubecode-execution-item" size="sm">
+        <ItemContent className="kubecode-execution-content">
+          <ItemTitle className="kubecode-execution-line">
+            <span className="kubecode-execution-who">
+              {runs.map((run) => (run.member
+                ? <MemberIdentity handle={run.member.handle} key={run.run_id} name={run.member.name} role={run.member.role === 'general' ? 'manager' : 'specialist'} size="sm" />
+                : <strong key={run.run_id}>{askerName(run, t)}</strong>))}
+            </span>
+            {queued > 0 && <span className="kubecode-execution-queued">{t('kubecode.execution.queuedCount', { count: queued })}</span>}
+          </ItemTitle>
+          <ItemDescription className="kubecode-execution-state">
+            {stopping
+              ? t('kubecode.execution.stopping')
+              : waiting
+                ? <>{waiting}{' · '}<span className="kubecode-execution-title" title={title}>{title}</span></>
+                : <span className="kubecode-execution-title" title={title}><Shimmer as="span" className="kubecode-shimmer">{title}</Shimmer></span>}
+          </ItemDescription>
+        </ItemContent>
+        <ItemActions>
+          <StopButton
+            busy={stopping}
+            description={task
+              ? t('kubecode.execution.stopTaskHint', { task: task.title })
+              : t('kubecode.execution.stopReplyHint', { name })}
+            label={task
+              ? t('kubecode.execution.stopTask', { task: task.title })
+              : t('kubecode.execution.stopReply', { name })}
+            shortLabel={task ? t('kubecode.execution.stopTaskShort') : t('kubecode.execution.stopReplyShort')}
+            variant="ghost"
+            onStop={onStop}
+          />
+        </ItemActions>
+      </Item>
+    </QueueItem>
   )
 }

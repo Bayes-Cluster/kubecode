@@ -2888,5 +2888,16 @@
   "kubecode.proto.review.olderVersion": "phiên bản trước",
   "kubecode.resources.findInResources": "Tìm trong Tài nguyên",
   "kubecode.reference.sources": "Nguồn ({count})",
-  "kubecode.reference.sourcesAttention": "{count} đã thay đổi hoặc bị xóa"
+  "kubecode.reference.sourcesAttention": "{count} đã thay đổi hoặc bị xóa",
+  "kubecode.markdown.copied": "Đã sao chép",
+  "kubecode.markdown.copyCode": "Sao chép mã",
+  "kubecode.markdown.copyTable": "Sao chép bảng",
+  "kubecode.markdown.copyTableAsCsv": "Sao chép bảng dạng CSV",
+  "kubecode.markdown.copyTableAsMarkdown": "Sao chép bảng dạng Markdown",
+  "kubecode.markdown.copyTableAsTsv": "Sao chép bảng dạng TSV",
+  "kubecode.markdown.formatCsv": "CSV",
+  "kubecode.markdown.formatMarkdown": "Markdown",
+  "kubecode.markdown.formatTsv": "TSV",
+  "kubecode.markdown.imageNotAvailable": "Không có hình ảnh",
+  "kubecode.composer.attachFromWorkspace": "Đính kèm từ không gian làm việc này…"
 }
