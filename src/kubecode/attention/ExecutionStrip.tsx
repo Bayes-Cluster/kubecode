@@ -3,7 +3,6 @@ import { useContext, useEffect, useRef, useState, type CSSProperties } from 'rea
 
 import {
   Queue,
-  QueueList,
   QueueSection,
   QueueSectionContent,
   QueueSectionLabel,
@@ -285,9 +284,8 @@ export function ExecutionStrip({ api, prompts = true, scope, t }: ExecutionStrip
                   <QueueSectionLabel label={t('kubecode.execution.runningCount', { count: entries.length })} />
                 </QueueSectionTrigger>
                 <QueueSectionContent>
-                  <QueueList className="kubecode-execution-queue-list">
-                    {entries.map(row)}
-                  </QueueList>
+                  {/* The popover scrolls; a second scroll area inside it would clip the rows. */}
+                  <ul className="kubecode-execution-rows kubecode-execution-queue-list">{entries.map(row)}</ul>
                 </QueueSectionContent>
               </QueueSection>
             </Queue>

@@ -155,7 +155,7 @@ export function DmPane({
         )}
         <div className="kubecode-message-list">
           <Conversation aria-label={t('kubecode.channel.messages')} className="kubecode-conversation" initial="instant" resize="smooth">
-            <ConversationContent className="kubecode-channel-thread" scrollClassName="kubecode-channel-messages">
+            <ConversationContent className="kubecode-conversation-thread" scrollClassName="kubecode-channel-messages">
               {status === 'loading' && (
                 <p className="kubecode-research-muted" role="status">{t('kubecode.channel.loading')}</p>
               )}

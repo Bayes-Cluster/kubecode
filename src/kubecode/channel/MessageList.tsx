@@ -211,7 +211,7 @@ export function MessageList({
         initial="instant"
         resize="smooth"
       >
-        <ConversationContent className="kubecode-channel-thread" scrollClassName="kubecode-channel-messages">
+        <ConversationContent className="kubecode-conversation-thread" scrollClassName="kubecode-channel-messages">
           {feed.hasMore && (
             <Button
               className="kubecode-load-older"

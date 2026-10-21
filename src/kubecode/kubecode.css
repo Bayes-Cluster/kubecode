@@ -6006,7 +6006,7 @@ button.kubecode-reference-chip-open:focus-visible,
 .kubecode-message-list > .kubecode-conversation { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }
 .kubecode-message-list > .kubecode-conversation > div { min-height: 0; }
 .kubecode-channel-messages { min-height: 0; overflow-y: auto; }
-.kubecode-channel-thread {
+.kubecode-conversation-thread {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -6125,13 +6125,13 @@ button.kubecode-reference-chip-open:focus-visible,
 .kubecode-execution-queue { background: transparent; border: 0; box-shadow: none; gap: 0; padding: 0; }
 .kubecode-execution-queue-trigger { background: transparent; font: var(--ws-font-meta); padding: var(--ws-space-1) var(--ws-space-2); }
 .kubecode-execution-queue-list { margin: 0; }
-.kubecode-execution-queue-list [data-slot='scroll-area-viewport'] > div { max-height: min(40vh, 22rem); padding-right: 0; }
-.kubecode-execution-queue-list ul { display: flex; flex-direction: column; gap: var(--ws-space-1); list-style: none; margin: 0; padding: 0; }
 .kubecode-execution-row:has(> .kubecode-execution-item) { display: block; min-height: 0; padding: 0; }
 .kubecode-execution-item { flex-wrap: nowrap; gap: var(--ws-space-2); padding: var(--ws-space-1) var(--ws-space-1) var(--ws-space-1) var(--ws-space-3); }
 .kubecode-execution-content { gap: 0; min-width: 0; }
 .kubecode-execution-content > .kubecode-execution-line { width: 100%; }
 .kubecode-execution-content > .kubecode-execution-state {
+  /* In a column the strip's 12rem basis would be a height. */
+  flex: 0 0 auto;
   overflow: hidden;
   padding-inline-start: calc(var(--ws-avatar-sm) + var(--ws-space-2));
   text-overflow: ellipsis;
