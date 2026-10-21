@@ -49,4 +49,19 @@ describe('control matrix (ADR 0227)', () => {
     expect(blocked).toBeDisabled()
     expect(blocked).toHaveAccessibleDescription()
   })
+
+  it('shows the official components themed through the Workspace tokens, labelled from the catalog (ADR 0241)', () => {
+    render(<ControlMatrix t={createTranslator('de-DE')} />)
+    const official = screen.getByTestId('official-components')
+    expect(official).toHaveAttribute('data-ws-components', 'official')
+    expect(official.querySelectorAll('[data-slot="card"], [data-slot="item"], [data-slot="empty"], [data-slot="alert"]').length).toBeGreaterThan(3)
+    expect(screen.getByRole('heading', { name: 'Offizielle Komponenten' })).toBeInTheDocument()
+    for (const button of screen.getAllByRole('button')) {
+      expect(button).toHaveAccessibleName()
+    }
+    for (const english of ['Submit', 'Stop', 'Parameters', 'Result', 'Toggle plan', 'Thinking...', 'What would you like to know?', 'Loading']) {
+      expect(official.textContent).not.toContain(english)
+      expect(official.querySelector(`[aria-label="${english}"], [placeholder="${english}"]`)).toBeNull()
+    }
+  })
 })

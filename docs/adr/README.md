@@ -84,3 +84,4 @@ ADRs are immutable after acceptance; a later decision supersedes an earlier one.
 | [0238](0238-one-stop-per-task-and-a-centered-conversation-dock.md) | One Stop per Task, a folded running list, and one centered conversation column |
 | [0239](0239-chat-aligned-conversation-wide-thread-quiet-composer.md) | Chat-aligned conversation, a wide thread, and a quiet composer |
 | [0240](0240-one-dock-width-and-a-two-line-running-item.md) | One dock width, a two-line running item, and a reading measure on wide panes |
+| [0241](0241-official-shadcn-ui-and-ai-elements-as-the-component-layer.md) | Official shadcn/ui and AI Elements as the component layer |

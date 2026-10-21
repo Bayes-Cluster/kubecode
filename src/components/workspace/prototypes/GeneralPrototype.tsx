@@ -5,6 +5,8 @@ import {
   ConversationContent,
   ConversationEmptyState,
   ConversationScrollButton,
+} from '@/components/ai-elements/conversation'
+import {
   InlineCitation,
   InlineCitationCard,
   InlineCitationCardBody,
@@ -12,44 +14,48 @@ import {
   InlineCitationQuote,
   InlineCitationSource,
   InlineCitationText,
-  Loader,
-  Message,
-  MessageActions,
-  MessageContent,
-  MessageResponse,
+} from '@/components/ai-elements/inline-citation'
+import { Message, MessageAction, MessageActions, MessageContent, MessageResponse } from '@/components/ai-elements/message'
+import {
   PromptInput,
   PromptInputBody,
+  PromptInputButton,
   PromptInputFooter,
   PromptInputHeader,
-  Shimmer,
-  Source,
-  Sources,
-  SourcesContent,
-  SourcesTrigger,
-  Suggestion,
-  Suggestions,
-} from '@/components/ai-elements'
+  PromptInputSubmit,
+  PromptInputTextarea,
+  PromptInputTools,
+} from '@/components/ai-elements/prompt-input'
+import { Shimmer } from '@/components/ai-elements/shimmer'
+import { Source, Sources, SourcesContent, SourcesTrigger } from '@/components/ai-elements/sources'
+import { Suggestion, Suggestions } from '@/components/ai-elements/suggestion'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
+import { Item, ItemContent, ItemDescription, ItemGroup, ItemTitle } from '@/components/ui/item'
+import { Spinner } from '@/components/ui/spinner'
 import { Icon } from '@/kubecode/icons'
 import { WORKSPACE_COMMAND_ICONS, WORKSPACE_DESTINATION_ICONS } from '@/kubecode/icons/workspaceIcons'
 import type { Translator } from '@/lib/i18n'
 
-import { Composer } from '../Composer'
-import { IconButton } from '../IconButton'
-import { MoreActions } from '../MoreActions'
-import { StatusBadge } from '../StatusBadge'
 import { ViewHeader } from '../ViewHeader'
-import { FIXTURE_MEMBERS, FIXTURE_MENTIONS, FIXTURE_REFERENCES, FIXTURE_REQUEST, FIXTURE_RESEARCH } from './fixtures'
+import { FIXTURE_MEMBERS, FIXTURE_REFERENCES, FIXTURE_REQUEST, FIXTURE_RESEARCH } from './fixtures'
 import { Author, FixtureReference, type ScreenProps } from './shared'
 
-function Citation({ index, quote, reference, t }: { index: number; quote: string; reference: keyof typeof FIXTURE_REFERENCES; t: Translator }) {
+/** Paper pages for the two cited papers; the notes are a Workspace file, not a URL. */
+const PAPER_URLS = {
+  longformer: 'https://arxiv.org/abs/2004.05150',
+  bigbird: 'https://arxiv.org/abs/2007.14062',
+} as const
+
+function Citation({ index, quote, reference, t }: { index: number; quote: string; reference: keyof typeof PAPER_URLS; t: Translator }) {
   const source = FIXTURE_REFERENCES[reference]
   return (
     <InlineCitationCard>
-      <InlineCitationCardTrigger index={String(index)} label={t('kubecode.proto.citation', { index, title: source.title })} />
-      <InlineCitationCardBody align="start">
-        <InlineCitationSource description={t('kubecode.proto.citationOpens')}>
-          <FixtureReference kind={source.kind} t={t} title={source.title} version={'version' in source ? source.version : undefined} />
-        </InlineCitationSource>
+      <InlineCitationCardTrigger aria-label={t('kubecode.proto.citation', { index, title: source.title })} sources={[PAPER_URLS[reference]]}>
+        {index}
+      </InlineCitationCardTrigger>
+      <InlineCitationCardBody className="flex flex-col gap-2 p-3">
+        <InlineCitationSource description={t('kubecode.proto.citationOpens')} title={source.title} url={PAPER_URLS[reference]} />
         <InlineCitationQuote>{quote}</InlineCitationQuote>
       </InlineCitationCardBody>
     </InlineCitationCard>
@@ -58,83 +64,76 @@ function Citation({ index, quote, reference, t }: { index: number; quote: string
 
 function MessageTools({ t }: { t: Translator }) {
   return (
-    <MessageActions label={t('kubecode.proto.messageActions')}>
-      <IconButton icon={<Icon role="command" source={WORKSPACE_COMMAND_ICONS.reply.Icon} />} label={t('kubecode.vocab.command.reply')} />
-      <IconButton icon={<Icon role="command" source={WORKSPACE_COMMAND_ICONS.copyLink.Icon} />} label={t('kubecode.vocab.command.copyLink')} />
-      <MoreActions
-        items={[{ id: 'share', label: t('kubecode.vocab.command.share'), onSelect: () => undefined }]}
-        label={t('kubecode.vocab.command.more')}
-      />
+    <MessageActions aria-label={t('kubecode.proto.messageActions')} role="toolbar">
+      <MessageAction label={t('kubecode.vocab.command.reply')} tooltip={t('kubecode.vocab.command.reply')}>
+        <Icon role="command" source={WORKSPACE_COMMAND_ICONS.reply.Icon} />
+      </MessageAction>
+      <MessageAction label={t('kubecode.vocab.command.copyLink')} tooltip={t('kubecode.vocab.command.copyLink')}>
+        <Icon role="command" source={WORKSPACE_COMMAND_ICONS.copyLink.Icon} />
+      </MessageAction>
+      <MessageAction label={t('kubecode.vocab.command.share')} tooltip={t('kubecode.vocab.command.share')}>
+        <Icon role="command" source={WORKSPACE_COMMAND_ICONS.share.Icon} />
+      </MessageAction>
     </MessageActions>
   )
+}
+
+/** The reply as markdown, rendered by the hardened streamdown `MessageResponse`. */
+function researchMarkdown(t: Translator): string {
+  const header = [
+    t('kubecode.proto.general.colMethod'),
+    t('kubecode.proto.general.colContext'),
+    t('kubecode.proto.general.colRecall'),
+    t('kubecode.proto.general.colSource'),
+  ]
+  const rows = [header, header.map(() => '---'), ...FIXTURE_RESEARCH.table]
+  return [
+    FIXTURE_RESEARCH.intro,
+    `### ${t('kubecode.proto.general.whatSourcesSay')}`,
+    rows.map((row) => `| ${row.join(' | ')} |`).join('\n'),
+    `### ${t('kubecode.proto.general.openQuestions')}`,
+    FIXTURE_RESEARCH.openQuestions,
+  ].join('\n\n')
 }
 
 function ResearchReply({ t }: { t: Translator }) {
   const [first, second, third] = FIXTURE_RESEARCH.findings
   return (
-    <Message author={<Author member={FIXTURE_MEMBERS.general} time="10:42" />} from="member">
+    <Message from="assistant">
+      <Author member={FIXTURE_MEMBERS.general} time="10:42" />
       <MessageContent>
-        <MessageResponse>
-          <p>{FIXTURE_RESEARCH.intro}</p>
-          <h3>{t('kubecode.proto.general.whatSourcesSay')}</h3>
-          <ul>
-            <li>
-              <InlineCitation>
-                <InlineCitationText>{first}</InlineCitationText>
-                <Citation index={1} quote="Recall@10 0.89 at 32k for window 512 + 64 global tokens." reference="longformer" t={t} />
-              </InlineCitation>
-            </li>
-            <li>
-              <InlineCitation>
-                <InlineCitationText>{second}</InlineCitationText>
-                <Citation index={2} quote="Needle probes falling across block boundaries account for most misses." reference="bigbird" t={t} />
-              </InlineCitation>
-            </li>
-            <li>
-              <InlineCitation>
-                <InlineCitationText>{third}</InlineCitationText>
-                <Citation index={3} quote="64k windowed: recall@10 = 0.80 (dense 0.89)." reference="notes" t={t} />
-              </InlineCitation>
-            </li>
-          </ul>
-          <div className="kubecode-ai-table-wrap" role="region" aria-label={t('kubecode.proto.general.tableLabel')} tabIndex={0}>
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">{t('kubecode.proto.general.colMethod')}</th>
-                  <th scope="col">{t('kubecode.proto.general.colContext')}</th>
-                  <th scope="col">{t('kubecode.proto.general.colRecall')}</th>
-                  <th scope="col">{t('kubecode.proto.general.colSource')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {FIXTURE_RESEARCH.table.map((row) => (
-                  <tr key={row.join('|')}>{row.map((cell) => <td key={cell}>{cell}</td>)}</tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <h3>{t('kubecode.proto.general.openQuestions')}</h3>
-          <p>{FIXTURE_RESEARCH.openQuestions}</p>
-        </MessageResponse>
+        <MessageResponse>{researchMarkdown(t)}</MessageResponse>
+        <ul className="flex list-disc flex-col gap-1 pl-5">
+          <li>
+            <InlineCitation>
+              <InlineCitationText>{first}</InlineCitationText>
+              <Citation index={1} quote="Recall@10 0.89 at 32k for window 512 + 64 global tokens." reference="longformer" t={t} />
+            </InlineCitation>
+          </li>
+          <li>
+            <InlineCitation>
+              <InlineCitationText>{second}</InlineCitationText>
+              <Citation index={2} quote="Needle probes falling across block boundaries account for most misses." reference="bigbird" t={t} />
+            </InlineCitation>
+          </li>
+          <li>{third}</li>
+        </ul>
         <Sources>
-          <SourcesTrigger label={t('kubecode.proto.sources', { count: 3 })} />
+          <SourcesTrigger count={3}>{t('kubecode.proto.sources', { count: 3 })}</SourcesTrigger>
           <SourcesContent>
-            <Source><FixtureReference kind="file" t={t} title={FIXTURE_REFERENCES.longformer.title} /></Source>
-            <Source><FixtureReference kind="file" t={t} title={FIXTURE_REFERENCES.bigbird.title} /></Source>
-            <Source>
-              <FixtureReference
-                kind="file"
-                state={{ kind: 'changed', label: t('kubecode.proto.changedSinceCited') }}
-                t={t}
-                title={FIXTURE_REFERENCES.notes.title}
-                version={FIXTURE_REFERENCES.notes.version}
-              />
-            </Source>
+            <Source href={PAPER_URLS.longformer} title={FIXTURE_REFERENCES.longformer.title} />
+            <Source href={PAPER_URLS.bigbird} title={FIXTURE_REFERENCES.bigbird.title} />
+            <FixtureReference
+              kind="file"
+              state={{ kind: 'changed', label: t('kubecode.proto.changedSinceCited') }}
+              t={t}
+              title={FIXTURE_REFERENCES.notes.title}
+              version={FIXTURE_REFERENCES.notes.version}
+            />
           </SourcesContent>
         </Sources>
-        <MessageTools t={t} />
       </MessageContent>
+      <MessageTools t={t} />
     </Message>
   )
 }
@@ -145,6 +144,7 @@ export function GeneralMain({ request, t }: Pick<ScreenProps, 'request' | 't'>) 
   const [attached, setAttached] = useState(true)
   const [sent, setSent] = useState<string[]>([])
   const empty = state === 'empty'
+  const busy = state === 'busy'
 
   return (
     <div className="kubecode-proto-conversation">
@@ -154,7 +154,7 @@ export function GeneralMain({ request, t }: Pick<ScreenProps, 'request' | 't'>) 
         level={1}
         title={t('kubecode.channel.general')}
       />
-      <Conversation initial="end" label={t('kubecode.channel.general')}>
+      <Conversation aria-label={t('kubecode.channel.general')} initial="instant">
         {empty ? (
           <ConversationEmptyState
             description={t('kubecode.proto.general.emptyDescription')}
@@ -162,11 +162,12 @@ export function GeneralMain({ request, t }: Pick<ScreenProps, 'request' | 't'>) 
             title={t('kubecode.proto.general.emptyTitle')}
           />
         ) : (
-          <ConversationContent>
-            <Message author={<Author member={FIXTURE_MEMBERS.self} time="10:38" />} from="self">
+          <ConversationContent className="mx-auto w-full max-w-(--ws-conversation-width)">
+            <Message from="user">
+              <Author member={FIXTURE_MEMBERS.self} time="10:38" />
               <MessageContent>
-                <MessageResponse><p>{FIXTURE_REQUEST}</p></MessageResponse>
-                <div className="kubecode-proto-chips">
+                <MessageResponse>{FIXTURE_REQUEST}</MessageResponse>
+                <div className="flex flex-wrap gap-1">
                   <FixtureReference kind="file" t={t} title={FIXTURE_REFERENCES.notes.title} version={FIXTURE_REFERENCES.notes.version} />
                   <FixtureReference kind="file" t={t} title={FIXTURE_REFERENCES.longformer.title} />
                   <FixtureReference kind="file" t={t} title={FIXTURE_REFERENCES.bigbird.title} />
@@ -174,55 +175,71 @@ export function GeneralMain({ request, t }: Pick<ScreenProps, 'request' | 't'>) 
               </MessageContent>
             </Message>
             <ResearchReply t={t} />
-            <Message author={<Author member={FIXTURE_MEMBERS.ada} time="10:45" />} from="member">
+            <Message from="assistant">
+              <Author member={FIXTURE_MEMBERS.ada} time="10:45" />
               <MessageContent>
                 <MessageResponse>
-                  <p>I can extend the comparison with the 2024 follow-ups. That is new work, so it needs to go on the board first.</p>
+                  I can extend the comparison with the 2024 follow-ups. That is new work, so it needs to go on the board first.
                 </MessageResponse>
               </MessageContent>
             </Message>
             {state === 'error' && (
-              <Message author={<Author member={FIXTURE_MEMBERS.self} time="10:47" />} from="self" state="failed">
+              <Message data-state="failed" from="user">
+                <Author member={FIXTURE_MEMBERS.self} time="10:47" />
                 <MessageContent>
-                  <MessageResponse><p>@ada please start on the 2024 follow-ups.</p></MessageResponse>
-                  <p className="kubecode-proto-delivery" role="alert">
-                    <StatusBadge tone="danger">{t('kubecode.proto.notDelivered')}</StatusBadge>
-                    <span>{t('kubecode.proto.notDeliveredHint')}</span>
-                    <IconButton icon={<Icon role="command" source={WORKSPACE_COMMAND_ICONS.retry.Icon} />} label={t('kubecode.vocab.command.retry')} />
-                  </p>
+                  <MessageResponse>@ada please start on the 2024 follow-ups.</MessageResponse>
                 </MessageContent>
+                <Alert role="alert" variant="destructive">
+                  <AlertTitle>{t('kubecode.proto.notDelivered')}</AlertTitle>
+                  <AlertDescription className="flex flex-wrap items-center gap-2">
+                    <span>{t('kubecode.proto.notDeliveredHint')}</span>
+                    <MessageAction label={t('kubecode.vocab.command.retry')} tooltip={t('kubecode.vocab.command.retry')}>
+                      <Icon role="command" source={WORKSPACE_COMMAND_ICONS.retry.Icon} />
+                    </MessageAction>
+                  </AlertDescription>
+                </Alert>
               </Message>
             )}
             {sent.map((text, index) => (
-              <Message author={<Author member={FIXTURE_MEMBERS.self} time="10:50" />} from="self" key={`${index}-${text}`} state="pending">
+              <Message data-state="pending" from="user" key={`${index}-${text}`}>
+                <Author member={FIXTURE_MEMBERS.self} time="10:50" />
                 <MessageContent>
-                  <MessageResponse><p>{text}</p></MessageResponse>
-                  <p className="kubecode-proto-delivery"><StatusBadge tone="muted">{t('kubecode.proto.fixtureNotSent')}</StatusBadge></p>
+                  <MessageResponse>{text}</MessageResponse>
+                  <Badge variant="outline">{t('kubecode.proto.fixtureNotSent')}</Badge>
                 </MessageContent>
               </Message>
             ))}
-            {state === 'busy' && (
-              <Message author={<Author activity={<Shimmer>{t('kubecode.proto.writing')}</Shimmer>} member={FIXTURE_MEMBERS.general} time="10:48" />} from="member" state="pending">
+            {busy && (
+              <Message data-state="pending" from="assistant">
+                <Author activity={<Shimmer as="span">{t('kubecode.proto.writing')}</Shimmer>} member={FIXTURE_MEMBERS.general} time="10:48" />
                 <MessageContent>
-                  <Loader label={t('kubecode.proto.writing')} />
+                  <Spinner aria-label={t('kubecode.proto.writing')} />
                 </MessageContent>
               </Message>
             )}
           </ConversationContent>
         )}
-        <ConversationScrollButton label={t('kubecode.vocab.command.latest')} />
+        <ConversationScrollButton aria-label={t('kubecode.vocab.command.latest')} />
       </Conversation>
-      <div className="kubecode-proto-dock">
+      <div className="kubecode-proto-dock mx-auto w-full max-w-(--ws-composer-width)">
         {!empty && (
-          <Suggestions label={t('kubecode.proto.suggestions')}>
-            {[
-              t('kubecode.proto.suggest.board'),
-              t('kubecode.proto.suggest.ask'),
-              t('kubecode.proto.suggest.summarize'),
-            ].map((text) => <Suggestion key={text} suggestion={text} onClick={setDraft} />)}
-          </Suggestions>
+          <div aria-label={t('kubecode.proto.suggestions')} role="group">
+            <Suggestions>
+              {[
+                t('kubecode.proto.suggest.board'),
+                t('kubecode.proto.suggest.ask'),
+                t('kubecode.proto.suggest.summarize'),
+              ].map((text) => <Suggestion key={text} suggestion={text} onClick={setDraft} />)}
+            </Suggestions>
+          </div>
         )}
-        <PromptInput busy={state === 'busy'}>
+        <PromptInput
+          onSubmit={({ text }) => {
+            if (!text.trim()) return
+            setSent((previous) => [...previous, text])
+            setDraft('')
+          }}
+        >
           {attached && (
             <PromptInputHeader>
               <FixtureReference
@@ -236,32 +253,27 @@ export function GeneralMain({ request, t }: Pick<ScreenProps, 'request' | 't'>) 
             </PromptInputHeader>
           )}
           <PromptInputBody>
-            <Composer
-              busy={state === 'busy'}
-              busyLabel={t('kubecode.proto.sending')}
-              controls={(
-                <IconButton
-                  icon={<Icon role="command" source={WORKSPACE_COMMAND_ICONS.addContext.Icon} />}
-                  label={t('kubecode.vocab.command.addContext')}
-                  onClick={() => setAttached(true)}
-                />
-              )}
-              label={t('kubecode.proto.composerLabel')}
-              mentionLabel={t('kubecode.vocab.command.mention')}
-              mentions={FIXTURE_MENTIONS}
+            <PromptInputTextarea
+              aria-label={t('kubecode.proto.composerLabel')}
               placeholder={t('kubecode.channel.composerPlaceholder')}
-              rows={2}
-              sendLabel={t('kubecode.channel.send')}
               value={draft}
-              onChange={setDraft}
-              onSend={() => {
-                setSent((previous) => [...previous, draft])
-                setDraft('')
-              }}
+              onChange={(event) => setDraft(event.currentTarget.value)}
             />
           </PromptInputBody>
-          <PromptInputFooter>{t('kubecode.proto.publicHint')}</PromptInputFooter>
+          <PromptInputFooter>
+            <PromptInputTools>
+              <PromptInputButton aria-label={t('kubecode.vocab.command.addContext')} onClick={() => setAttached(true)}>
+                <Icon role="command" source={WORKSPACE_COMMAND_ICONS.addContext.Icon} />
+              </PromptInputButton>
+            </PromptInputTools>
+            <PromptInputSubmit
+              aria-label={busy ? t('kubecode.proto.sending') : t('kubecode.channel.send')}
+              disabled={!draft.trim() || busy}
+              status={busy ? 'submitted' : undefined}
+            />
+          </PromptInputFooter>
         </PromptInput>
+        <p className="kubecode-proto-note">{t('kubecode.proto.publicHint')}</p>
       </div>
     </div>
   )
@@ -271,20 +283,18 @@ export function Materials({ t }: { t: Translator }) {
   return (
     <div className="kubecode-proto-inspector-body">
       <ViewHeader description={t('kubecode.proto.materialsDescription')} level={2} title={t('kubecode.proto.materials')} />
-      <ul className="kubecode-proto-list">
-        <li><FixtureReference kind="file" t={t} title={FIXTURE_REFERENCES.notes.title} version={FIXTURE_REFERENCES.notes.version} /></li>
-        <li><FixtureReference kind="file" t={t} title={FIXTURE_REFERENCES.longformer.title} /></li>
-        <li><FixtureReference kind="file" t={t} title={FIXTURE_REFERENCES.bigbird.title} /></li>
-        <li><FixtureReference kind="finding" t={t} title={FIXTURE_REFERENCES.finding.title} version={FIXTURE_REFERENCES.finding.version} /></li>
-        <li>
-          <FixtureReference
-            kind="discussion"
-            state={{ kind: 'unavailable', label: t('kubecode.proto.privateDm') }}
-            t={t}
-            title={FIXTURE_REFERENCES.dmNotes.title}
-          />
-        </li>
-      </ul>
+      <ItemGroup className="gap-1">
+        <FixtureReference kind="file" t={t} title={FIXTURE_REFERENCES.notes.title} version={FIXTURE_REFERENCES.notes.version} />
+        <FixtureReference kind="file" t={t} title={FIXTURE_REFERENCES.longformer.title} />
+        <FixtureReference kind="file" t={t} title={FIXTURE_REFERENCES.bigbird.title} />
+        <FixtureReference kind="finding" t={t} title={FIXTURE_REFERENCES.finding.title} version={FIXTURE_REFERENCES.finding.version} />
+        <Item size="sm" variant="muted">
+          <ItemContent>
+            <ItemTitle>{FIXTURE_REFERENCES.dmNotes.title}</ItemTitle>
+            <ItemDescription>{t('kubecode.proto.privateDm')}</ItemDescription>
+          </ItemContent>
+        </Item>
+      </ItemGroup>
       <p className="kubecode-proto-note">{t('kubecode.proto.dmRule')}</p>
     </div>
   )

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-import { Source, Sources, SourcesContent, SourcesTrigger } from '@/components/ai-elements/sources'
+import { Source, Sources, SourcesContent, SourcesTrigger } from '@/components/ai-elements'
 import type { Translator } from '@/lib/i18n'
 
 import type { ProjectContextRef } from '../api'

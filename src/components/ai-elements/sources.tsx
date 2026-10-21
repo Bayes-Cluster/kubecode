@@ -1,41 +1,77 @@
-/**
- * Adapted from AI Elements `sources`
- * (https://ui.shadcn.com/docs/ai-elements/components/sources,
- * registry https://registry.ai-sdk.dev/sources.json, ai-elements 1.9.1).
- *
- * Adaptations (ADR 0233): the caller words the trigger ("3 sources", localized
- * with its plural); a source is a list item holding a `ReferenceChip` that
- * opens a Workspace object instead of a link opening a new tab; the chevron
- * is the vocabulary's expand glyph.
- */
-import type { ComponentProps } from 'react'
+"use client";
 
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { Icon } from '@/kubecode/icons'
-import { WORKSPACE_COMMAND_ICONS } from '@/kubecode/icons/workspaceIcons'
-import { cn } from '@/lib/utils'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { cn } from "@/lib/utils";
+import { BookIcon, ChevronDownIcon } from "lucide-react";
+import type { ComponentProps } from "react";
 
-export function Sources({ className, ...props }: ComponentProps<typeof Collapsible>) {
-  return <Collapsible className={cn('kubecode-ai-sources', className)} {...props} />
-}
+export type SourcesProps = ComponentProps<"div">;
 
-export function SourcesTrigger({ children, className, label, ...props }: ComponentProps<typeof CollapsibleTrigger> & { label: string }) {
-  return (
-    <CollapsibleTrigger className={cn('kubecode-ai-disclosure', className)} {...props}>
-      {children ?? <span>{label}</span>}
-      <Icon className="kubecode-ai-disclosure-chevron" role="control" source={WORKSPACE_COMMAND_ICONS.expand.Icon} />
-    </CollapsibleTrigger>
-  )
-}
+export const Sources = ({ className, ...props }: SourcesProps) => (
+  <Collapsible
+    className={cn("not-prose mb-4 text-primary text-xs", className)}
+    {...props}
+  />
+);
 
-export function SourcesContent({ children, className, listLabel, ...props }: ComponentProps<typeof CollapsibleContent> & { listLabel?: string }) {
-  return (
-    <CollapsibleContent className={cn('kubecode-ai-sources-content', className)} {...props}>
-      <ul aria-label={listLabel} className="kubecode-ai-sources-list">{children}</ul>
-    </CollapsibleContent>
-  )
-}
+export type SourcesTriggerProps = ComponentProps<typeof CollapsibleTrigger> & {
+  count: number;
+};
 
-export function Source({ className, ...props }: ComponentProps<'li'>) {
-  return <li className={cn('kubecode-ai-source', className)} {...props} />
-}
+export const SourcesTrigger = ({
+  className,
+  count,
+  children,
+  ...props
+}: SourcesTriggerProps) => (
+  <CollapsibleTrigger
+    className={cn("flex items-center gap-2", className)}
+    {...props}
+  >
+    {children ?? (
+      <>
+        <p className="font-medium">Used {count} sources</p>
+        <ChevronDownIcon className="h-4 w-4" />
+      </>
+    )}
+  </CollapsibleTrigger>
+);
+
+export type SourcesContentProps = ComponentProps<typeof CollapsibleContent>;
+
+export const SourcesContent = ({
+  className,
+  ...props
+}: SourcesContentProps) => (
+  <CollapsibleContent
+    className={cn(
+      "mt-3 flex w-fit flex-col gap-2",
+      "data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2 outline-none data-[state=closed]:animate-out data-[state=open]:animate-in",
+      className
+    )}
+    {...props}
+  />
+);
+
+export type SourceProps = ComponentProps<"a">;
+
+export const Source = ({ href, title, children, ...props }: SourceProps) => (
+  <a
+    className="flex items-center gap-2"
+    href={href}
+    rel="noreferrer"
+    target="_blank"
+    {...props}
+  >
+    {children ?? (
+      <>
+        <BookIcon className="h-4 w-4" />
+        <span className="block font-medium">{title}</span>
+      </>
+    )}
+  </a>
+);

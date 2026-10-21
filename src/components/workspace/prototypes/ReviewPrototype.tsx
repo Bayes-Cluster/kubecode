@@ -1,28 +1,33 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 
 import {
   ChainOfThought,
   ChainOfThoughtContent,
   ChainOfThoughtHeader,
   ChainOfThoughtStep,
-  ConversationEmptyState,
+} from '@/components/ai-elements/chain-of-thought'
+import { Checkpoint, CheckpointIcon } from '@/components/ai-elements/checkpoint'
+import {
   InlineCitation,
   InlineCitationCard,
   InlineCitationCardBody,
   InlineCitationCardTrigger,
   InlineCitationSource,
   InlineCitationText,
-  MessageResponse,
-} from '@/components/ai-elements'
+} from '@/components/ai-elements/inline-citation'
+import { MessageResponse } from '@/components/ai-elements/message'
+import { Plan, PlanContent, PlanDescription, PlanHeader, PlanTitle, PlanTrigger } from '@/components/ai-elements/plan'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
+import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
+import { ItemGroup } from '@/components/ui/item'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Textarea } from '@/components/ui/textarea'
 import { Icon } from '@/kubecode/icons'
 import { WORKSPACE_OBJECT_ICONS } from '@/kubecode/icons/workspaceIcons'
 import type { Translator } from '@/lib/i18n'
 
-import { Composer } from '../Composer'
-import { DecisionButton } from '../DecisionButton'
-import { MemberIdentity } from '../MemberIdentity'
-import { StatusBadge } from '../StatusBadge'
 import { ViewHeader } from '../ViewHeader'
 import { FIXTURE_MEMBERS, FIXTURE_REFERENCES, FIXTURE_REVIEW, FIXTURE_TASK_TITLE } from './fixtures'
 import { FixtureReference, type ScreenProps } from './shared'
@@ -33,6 +38,8 @@ export function ReviewMain({ go, request, t }: ScreenProps) {
   const { state } = request
   const [outcome, setOutcome] = useState<Outcome>('open')
   const [reason, setReason] = useState('')
+  const reasonId = useId()
+  const blockedId = useId()
   const empty = state === 'empty'
   const changed = state === 'error'
   const fromLabel = request.from === 'agents' ? t('kubecode.vocab.destination.needsYou') : t('kubecode.channel.general')
@@ -48,10 +55,10 @@ export function ReviewMain({ go, request, t }: ScreenProps) {
         level={1}
         meta={(
           <>
-            <StatusBadge tone={outcome === 'accepted' ? 'ok' : 'warn'}>
+            <Badge variant={outcome === 'accepted' ? 'default' : 'secondary'}>
               {outcome === 'accepted' ? t('kubecode.proto.review.accepted') : t('kubecode.proto.review.waiting')}
-            </StatusBadge>
-            <MemberIdentity name={FIXTURE_MEMBERS.general.name} role="manager" roleLabel={t('kubecode.proto.review.requestedBy')} size="sm" />
+            </Badge>
+            <Badge variant="outline">{t('kubecode.proto.review.requestedBy')} · {FIXTURE_MEMBERS.general.name}</Badge>
           </>
         )}
         title={FIXTURE_TASK_TITLE}
@@ -63,47 +70,60 @@ export function ReviewMain({ go, request, t }: ScreenProps) {
           <TabsTrigger value="activity">{t('kubecode.task.tab.activity')}</TabsTrigger>
         </TabsList>
         <TabsContent value="overview">
-          <MessageResponse>
-            <h3>{t('kubecode.proto.review.brief')}</h3>
-            <p>{FIXTURE_REVIEW.brief}</p>
-            <h3>{t('kubecode.proto.review.criteria')}</h3>
-            <ul>{FIXTURE_REVIEW.criteria.map((item) => <li key={item}>{item}</li>)}</ul>
-          </MessageResponse>
+          <Plan defaultOpen>
+            <PlanHeader>
+              <div className="flex flex-col gap-1">
+                <PlanTitle>{t('kubecode.proto.review.brief')}</PlanTitle>
+                <PlanDescription>{FIXTURE_REVIEW.brief}</PlanDescription>
+              </div>
+              <PlanTrigger label={t('kubecode.proto.review.criteria')} />
+            </PlanHeader>
+            <PlanContent>
+              <h3 className="mb-2 font-medium text-sm">{t('kubecode.proto.review.criteria')}</h3>
+              <ul className="flex list-disc flex-col gap-1 pl-5 text-sm">
+                {FIXTURE_REVIEW.criteria.map((item) => <li key={item}>{item}</li>)}
+              </ul>
+            </PlanContent>
+          </Plan>
         </TabsContent>
         <TabsContent value="results">
           {empty ? (
-            <ConversationEmptyState description={t('kubecode.proto.review.emptyDescription')} title={t('kubecode.proto.review.emptyTitle')} />
+            <Empty>
+              <EmptyHeader>
+                <EmptyTitle>{t('kubecode.proto.review.emptyTitle')}</EmptyTitle>
+                <EmptyDescription>{t('kubecode.proto.review.emptyDescription')}</EmptyDescription>
+              </EmptyHeader>
+            </Empty>
           ) : (
             <div className="kubecode-proto-results">
-              <MessageResponse>
-                <p>
-                  <InlineCitation>
-                    <InlineCitationText>{FIXTURE_REVIEW.summary}</InlineCitationText>
-                    <InlineCitationCard>
-                      <InlineCitationCardTrigger index="1" label={t('kubecode.proto.citation', { index: 1, title: FIXTURE_REFERENCES.recallTable.title })} />
-                      <InlineCitationCardBody align="start">
-                        <InlineCitationSource description={t('kubecode.proto.citationOpens')}>
-                          <FixtureReference kind="evidence" t={t} title={FIXTURE_REFERENCES.recallTable.title} version={FIXTURE_REFERENCES.recallTable.version} />
-                        </InlineCitationSource>
-                      </InlineCitationCardBody>
-                    </InlineCitationCard>
-                  </InlineCitation>
-                </p>
-              </MessageResponse>
+              <p className="text-sm">
+                <InlineCitation>
+                  <InlineCitationText>{FIXTURE_REVIEW.summary}</InlineCitationText>
+                  <InlineCitationCard>
+                    <InlineCitationCardTrigger
+                      aria-label={t('kubecode.proto.citation', { index: 1, title: FIXTURE_REFERENCES.recallTable.title })}
+                      sources={[]}
+                    >
+                      1
+                    </InlineCitationCardTrigger>
+                    <InlineCitationCardBody className="p-3">
+                      <InlineCitationSource description={t('kubecode.proto.citationOpens')} title={FIXTURE_REFERENCES.recallTable.title} />
+                    </InlineCitationCardBody>
+                  </InlineCitationCard>
+                </InlineCitation>
+              </p>
               <h3 className="kubecode-proto-subheading">{t('kubecode.proto.review.evidence')}</h3>
-              <ul className="kubecode-proto-list">
-                <li>
-                  <FixtureReference
-                    kind="evidence"
-                    state={changed ? { kind: 'changed', label: t('kubecode.proto.review.changedTo', { version: 'v4' }) } : undefined}
-                    t={t}
-                    title={FIXTURE_REFERENCES.recallTable.title}
-                    version={FIXTURE_REFERENCES.recallTable.version}
-                  />
-                </li>
-                <li><FixtureReference kind="evidence" t={t} title={FIXTURE_REFERENCES.ablation.title} version={FIXTURE_REFERENCES.ablation.version} /></li>
-                <li><FixtureReference kind="artifact" t={t} title={FIXTURE_REFERENCES.runLog.title} /></li>
-              </ul>
+              <ItemGroup className="gap-1">
+                <FixtureReference
+                  kind="evidence"
+                  state={changed ? { kind: 'changed', label: t('kubecode.proto.review.changedTo', { version: 'v4' }) } : undefined}
+                  t={t}
+                  title={FIXTURE_REFERENCES.recallTable.title}
+                  version={FIXTURE_REFERENCES.recallTable.version}
+                />
+                <FixtureReference kind="evidence" t={t} title={FIXTURE_REFERENCES.ablation.title} version={FIXTURE_REFERENCES.ablation.version} />
+                <FixtureReference kind="artifact" t={t} title={FIXTURE_REFERENCES.runLog.title} />
+              </ItemGroup>
             </div>
           )}
         </TabsContent>
@@ -111,9 +131,9 @@ export function ReviewMain({ go, request, t }: ScreenProps) {
           <ChainOfThought defaultOpen>
             <ChainOfThoughtHeader>{t('kubecode.task.activity.history')}</ChainOfThoughtHeader>
             <ChainOfThoughtContent>
-              <ChainOfThoughtStep label={t('kubecode.task.activity.admitted')} status="complete" statusLabel="10:52" />
-              <ChainOfThoughtStep label={t('kubecode.task.activity.execution_authorized')} status="complete" statusLabel="11:02" />
-              <ChainOfThoughtStep label={t('kubecode.task.activity.review_requested', { actor: FIXTURE_MEMBERS.general.name })} status="active" statusLabel="12:40" />
+              <ChainOfThoughtStep description="10:52" label={t('kubecode.task.activity.admitted')} status="complete" />
+              <ChainOfThoughtStep description="11:02" label={t('kubecode.task.activity.execution_authorized')} status="complete" />
+              <ChainOfThoughtStep description="12:40" label={t('kubecode.task.activity.review_requested', { actor: FIXTURE_MEMBERS.general.name })} status="active" />
             </ChainOfThoughtContent>
           </ChainOfThought>
         </TabsContent>
@@ -127,29 +147,51 @@ export function ReviewMain({ go, request, t }: ScreenProps) {
           <>
             <p className="kubecode-proto-note">{t('kubecode.proto.review.acceptsShown')}</p>
             {outcome === 'sendingBack' && (
-              <Composer
-                label={t('kubecode.proto.review.reasonLabel')}
-                placeholder={t('kubecode.proto.review.reasonPlaceholder')}
-                rows={2}
-                sendLabel={t('kubecode.task.sendBack')}
-                value={reason}
-                onChange={setReason}
-                onSend={() => setOutcome('sentBack')}
-              />
+              <Field>
+                <FieldLabel htmlFor={reasonId}>{t('kubecode.proto.review.reasonLabel')}</FieldLabel>
+                <Textarea
+                  id={reasonId}
+                  placeholder={t('kubecode.proto.review.reasonPlaceholder')}
+                  rows={2}
+                  value={reason}
+                  onChange={(event) => setReason(event.currentTarget.value)}
+                />
+              </Field>
             )}
+            {acceptBlocked && <FieldDescription id={blockedId}>{acceptBlocked}</FieldDescription>}
             <div className="kubecode-proto-decision-actions">
+              <Button
+                variant="outline"
+                onClick={() => setOutcome(outcome === 'sendingBack' ? 'sentBack' : 'sendingBack')}
+              >
+                {t('kubecode.task.sendBack')}
+              </Button>
               {outcome !== 'sendingBack' && (
-                <DecisionButton variant="secondary" onDecide={() => setOutcome('sendingBack')}>{t('kubecode.task.sendBack')}</DecisionButton>
+                <Button
+                  aria-describedby={acceptBlocked ? blockedId : undefined}
+                  disabled={Boolean(acceptBlocked) || state === 'busy'}
+                  onClick={() => setOutcome('accepted')}
+                >
+                  {t('kubecode.task.acceptResults')}
+                </Button>
               )}
-              <DecisionButton busy={state === 'busy'} disabledReason={acceptBlocked} variant="primary" onDecide={() => setOutcome('accepted')}>
-                {t('kubecode.task.acceptResults')}
-              </DecisionButton>
             </div>
           </>
         )}
       </section>
     </div>
   )
+}
+
+/** The evidence table, as hardened streamdown markdown. */
+function recallTable(t: Translator): string {
+  return [
+    `| ${t('kubecode.proto.general.colContext')} | Dense | Window + global |`,
+    '| --- | --- | --- |',
+    '| 16k | 0.912 | 0.905 |',
+    '| 32k | 0.909 | 0.893 |',
+    '| 64k | 0.904 | 0.880 |',
+  ].join('\n')
 }
 
 export function EvidenceDetail({ state, t }: { state: ScreenProps['request']['state']; t: Translator }) {
@@ -161,6 +203,11 @@ export function EvidenceDetail({ state, t }: { state: ScreenProps['request']['st
       </div>
     )
   }
+  const versions = [
+    ...(state === 'error' ? [{ version: 'v4', note: t('kubecode.proto.review.newerVersion') }] : []),
+    { version: 'v3', note: t('kubecode.proto.review.shown') },
+    { version: 'v2', note: t('kubecode.proto.review.olderVersion') },
+  ]
   return (
     <div className="kubecode-proto-inspector-body">
       <ViewHeader
@@ -168,25 +215,17 @@ export function EvidenceDetail({ state, t }: { state: ScreenProps['request']['st
         level={2}
         title={FIXTURE_REFERENCES.recallTable.title}
       />
-      <div className="kubecode-ai-response">
-        <div aria-label={FIXTURE_REFERENCES.recallTable.title} className="kubecode-ai-table-wrap" role="region" tabIndex={0}>
-          <table>
-            <thead>
-              <tr><th scope="col">{t('kubecode.proto.general.colContext')}</th><th scope="col">Dense</th><th scope="col">Window + global</th></tr>
-            </thead>
-            <tbody>
-              <tr><td>16k</td><td>0.912</td><td>0.905</td></tr>
-              <tr><td>32k</td><td>0.909</td><td>0.893</td></tr>
-              <tr><td>64k</td><td>0.904</td><td>0.880</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <MessageResponse>{recallTable(t)}</MessageResponse>
       <h3 className="kubecode-proto-subheading">{t('kubecode.proto.review.versions')}</h3>
-      <ol className="kubecode-proto-versions">
-        {state === 'error' && <li><strong>v4</strong> · {t('kubecode.proto.review.newerVersion')}</li>}
-        <li><strong>v3</strong> · {t('kubecode.proto.review.shown')}</li>
-        <li><strong>v2</strong> · {t('kubecode.proto.review.olderVersion')}</li>
+      <ol className="flex flex-col gap-1">
+        {versions.map(({ note, version }) => (
+          <li key={version}>
+            <Checkpoint className="text-muted-foreground text-sm">
+              <CheckpointIcon />
+              <span><strong className="text-foreground">{version}</strong> · {note}</span>
+            </Checkpoint>
+          </li>
+        ))}
       </ol>
     </div>
   )

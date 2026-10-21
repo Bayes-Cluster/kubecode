@@ -32,13 +32,21 @@ describe('Workspace prototypes', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'General' })).toBeInTheDocument()
   })
 
-  it('General: a suggestion fills the draft, sending stays local, and a reference can be removed', () => {
+  it('is built on the official components, themed through the Workspace tokens (ADR 0241)', () => {
+    render(<WorkspacePrototypes request={base} />)
+    expect(screen.getByTestId('workspace-prototypes')).toHaveAttribute('data-ws-components', 'official')
+    expect(document.querySelector('[data-slot="attachment"]')).not.toBeNull()
+    expect(document.querySelector('[data-slot="input-group"]')).not.toBeNull()
+    expect(document.querySelector('[data-slot="avatar"]')).not.toBeNull()
+  })
+
+  it('General: a suggestion fills the draft, sending stays local, and a reference can be removed', async () => {
     render(<WorkspacePrototypes request={base} />)
     fireEvent.click(screen.getByRole('button', { name: 'Summarize the open questions' }))
-    const box = screen.getByRole('combobox', { name: 'Message General' })
+    const box = screen.getByRole('textbox', { name: 'Message General' })
     expect(box).toHaveValue('Summarize the open questions')
     fireEvent.click(screen.getByRole('button', { name: 'Send' }))
-    expect(screen.getByText('Sample only, not sent')).toBeInTheDocument()
+    expect(await screen.findByText('Sample only, not sent')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Remove notes/related-work.md' }))
     expect(screen.queryByRole('button', { name: 'Remove notes/related-work.md' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Add context' }))
@@ -104,5 +112,16 @@ describe('Workspace prototypes', () => {
   it('localizes interface text', () => {
     render(<WorkspacePrototypes request={{ ...base, locale: 'de-DE' }} />)
     expect(screen.getByRole('heading', { level: 1, name: 'Allgemein' })).toBeInTheDocument()
+  })
+
+  it.each(['general', 'agents', 'review'] as const)('%s: no English default from an official component leaks into de-DE', (screenName) => {
+    const { container } = render(<WorkspacePrototypes request={{ ...base, screen: screenName, locale: 'de-DE' }} />)
+    const defaults = ['What would you like to know?', 'Submit', 'Stop', 'Used 3 sources', 'Chain of Thought', 'Parameters', 'Result', 'Toggle plan', 'Loading', 'unknown', 'No messages yet']
+    const named = [...container.querySelectorAll('[aria-label], [placeholder], [title]')]
+      .flatMap((node) => ['aria-label', 'placeholder', 'title'].map((name) => node.getAttribute(name)))
+    for (const text of defaults) {
+      expect(named).not.toContain(text)
+      expect(container.textContent).not.toContain(text)
+    }
   })
 })

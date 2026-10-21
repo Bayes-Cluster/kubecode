@@ -1,53 +1,169 @@
-/**
- * Adapted from AI Elements `confirmation`
- * (https://ui.shadcn.com/docs/ai-elements/components/confirmation,
- * registry https://registry.ai-sdk.dev/confirmation.json, ai-elements 1.9.1).
- *
- * Adaptations (ADR 0233): presents a pending decision from the server
- * projection (ADR 0232) rather than an `ai` SDK tool approval, so its states
- * are `requested`, `approved`, `rejected`; it is a labelled group instead of
- * an `alert` (it does not interrupt the reader); actions are Workspace
- * `DecisionButton`s supplied by the caller. A mention or a message never
- * stands in for this decision.
- */
-import { createContext, useContext, useId, type ComponentProps, type ReactNode } from 'react'
+"use client";
 
-import { cn } from '@/lib/utils'
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import type { ToolUIPart } from "ai";
+import type { ComponentProps, ReactNode } from "react";
+import { createContext, useContext, useMemo } from "react";
 
-export type ConfirmationState = 'requested' | 'approved' | 'rejected'
+type ToolUIPartApproval =
+  | {
+      id: string;
+      approved?: never;
+      reason?: never;
+    }
+  | {
+      id: string;
+      approved: boolean;
+      reason?: string;
+    }
+  | {
+      id: string;
+      approved: true;
+      reason?: string;
+    }
+  | {
+      id: string;
+      approved: false;
+      reason?: string;
+    }
+  | undefined;
 
-const ConfirmationContext = createContext<{ state: ConfirmationState; titleId: string } | null>(null)
-
-function useConfirmation() {
-  const context = useContext(ConfirmationContext)
-  if (!context) throw new Error('Confirmation parts must be used within Confirmation')
-  return context
+interface ConfirmationContextValue {
+  approval: ToolUIPartApproval;
+  state: ToolUIPart["state"];
 }
 
-export function Confirmation({ className, state, ...props }: ComponentProps<'section'> & { state: ConfirmationState }) {
-  const titleId = useId()
+const ConfirmationContext = createContext<ConfirmationContextValue | null>(
+  null
+);
+
+const useConfirmation = () => {
+  const context = useContext(ConfirmationContext);
+
+  if (!context) {
+    throw new Error("Confirmation components must be used within Confirmation");
+  }
+
+  return context;
+};
+
+export type ConfirmationProps = ComponentProps<typeof Alert> & {
+  approval?: ToolUIPartApproval;
+  state: ToolUIPart["state"];
+};
+
+export const Confirmation = ({
+  className,
+  approval,
+  state,
+  ...props
+}: ConfirmationProps) => {
+  const contextValue = useMemo(() => ({ approval, state }), [approval, state]);
+
+  if (!approval || state === "input-streaming" || state === "input-available") {
+    return null;
+  }
+
   return (
-    <ConfirmationContext.Provider value={{ state, titleId }}>
-      <section aria-labelledby={titleId} className={cn('kubecode-ai-confirmation', className)} data-state={state} {...props} />
+    <ConfirmationContext.Provider value={contextValue}>
+      <Alert className={cn("flex flex-col gap-2", className)} {...props} />
     </ConfirmationContext.Provider>
-  )
+  );
+};
+
+export type ConfirmationTitleProps = ComponentProps<typeof AlertDescription>;
+
+export const ConfirmationTitle = ({
+  className,
+  ...props
+}: ConfirmationTitleProps) => (
+  <AlertDescription className={cn("inline", className)} {...props} />
+);
+
+export interface ConfirmationRequestProps {
+  children?: ReactNode;
 }
 
-export function ConfirmationTitle({ className, ...props }: ComponentProps<'h3'>) {
-  const { titleId } = useConfirmation()
-  return <h3 className={cn('kubecode-ai-confirmation-title', className)} id={titleId} {...props} />
+export const ConfirmationRequest = ({ children }: ConfirmationRequestProps) => {
+  const { state } = useConfirmation();
+
+  // Only show when approval is requested
+  if (state !== "approval-requested") {
+    return null;
+  }
+
+  return children;
+};
+
+export interface ConfirmationAcceptedProps {
+  children?: ReactNode;
 }
 
-function Only({ children, when }: { children?: ReactNode; when: ConfirmationState }) {
-  return useConfirmation().state === when ? <>{children}</> : null
+export const ConfirmationAccepted = ({
+  children,
+}: ConfirmationAcceptedProps) => {
+  const { approval, state } = useConfirmation();
+
+  // Only show when approved and in response states
+  if (
+    !approval?.approved ||
+    (state !== "approval-responded" &&
+      state !== "output-denied" &&
+      state !== "output-available")
+  ) {
+    return null;
+  }
+
+  return children;
+};
+
+export interface ConfirmationRejectedProps {
+  children?: ReactNode;
 }
 
-export const ConfirmationRequest = ({ children }: { children?: ReactNode }) => <Only when="requested">{children}</Only>
-export const ConfirmationAccepted = ({ children }: { children?: ReactNode }) => <Only when="approved">{children}</Only>
-export const ConfirmationRejected = ({ children }: { children?: ReactNode }) => <Only when="rejected">{children}</Only>
+export const ConfirmationRejected = ({
+  children,
+}: ConfirmationRejectedProps) => {
+  const { approval, state } = useConfirmation();
 
-export function ConfirmationActions({ className, ...props }: ComponentProps<'div'>) {
-  const { state } = useConfirmation()
-  if (state !== 'requested') return null
-  return <div className={cn('kubecode-ai-confirmation-actions', className)} {...props} />
-}
+  // Only show when rejected and in response states
+  if (
+    approval?.approved !== false ||
+    (state !== "approval-responded" &&
+      state !== "output-denied" &&
+      state !== "output-available")
+  ) {
+    return null;
+  }
+
+  return children;
+};
+
+export type ConfirmationActionsProps = ComponentProps<"div">;
+
+export const ConfirmationActions = ({
+  className,
+  ...props
+}: ConfirmationActionsProps) => {
+  const { state } = useConfirmation();
+
+  // Only show when approval is requested
+  if (state !== "approval-requested") {
+    return null;
+  }
+
+  return (
+    <div
+      className={cn("flex items-center justify-end gap-2 self-end", className)}
+      {...props}
+    />
+  );
+};
+
+export type ConfirmationActionProps = ComponentProps<typeof Button>;
+
+export const ConfirmationAction = (props: ConfirmationActionProps) => (
+  <Button className="h-8 px-3 text-sm" type="button" {...props} />
+);

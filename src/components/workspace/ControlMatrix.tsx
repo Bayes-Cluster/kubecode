@@ -17,6 +17,7 @@ import { DecisionButton } from './DecisionButton'
 import { IconButton } from './IconButton'
 import { MemberIdentity } from './MemberIdentity'
 import { MoreActions } from './MoreActions'
+import { OfficialComponentMatrix } from './OfficialComponentMatrix'
 import { ReferenceChip } from './ReferenceChip'
 import { PauseButton, SendButton, StopButton } from './SendButton'
 import { StatusBadge } from './StatusBadge'
@@ -375,6 +376,8 @@ export function ControlMatrix({ t }: { t: Translator }) {
           onSend={() => undefined}
         />
       </Section>
+
+      <OfficialComponentMatrix t={t} />
     </main>
   )
 }
