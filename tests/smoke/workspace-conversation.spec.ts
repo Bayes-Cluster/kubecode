@@ -338,4 +338,34 @@ test.describe('on a phone', () => {
       await request.delete(`${api}/projects/${projectId}`)
     }
   })
+
+  test('@smoke General on a phone: the own meta stays one line and Jump to latest covers no message', async ({ page, request }) => {
+    test.setTimeout(180_000)
+    const { api, workspaceUrl } = urls()
+    const projectId = await createProject(request, api, `kubecode-conversation-latest-${Date.now()}`)
+    try {
+      await page.goto(`${workspaceUrl}/#/p/${projectId}/general`)
+      await closeNavigationSheet(page)
+      for (let index = 1; index <= 10; index += 1) {
+        await composer(page).fill(`@general note ${index} that is long enough to wrap across the narrow phone thread`)
+        await page.getByRole('button', { name: 'Send', exact: true }).click()
+        await expect(row(page, `note ${index} that`)).toBeVisible()
+      }
+      // The researcher's own meta (recipient and time) is one line above the bubble (ADR 0239).
+      const header = row(page, 'note 10 that').locator('.kubecode-message-self-meta')
+      const time = await header.locator('time').boundingBox()
+      const recipient = await header.locator('.kubecode-message-recipients').boundingBox()
+      expect(Math.abs((time?.y ?? 0) - (recipient?.y ?? 100))).toBeLessThan(8)
+      // Scrolled back, Jump to latest sits below the thread, over no message.
+      await page.locator('.kubecode-channel-messages').evaluate((element) => { element.scrollTop = 0 })
+      const latest = page.getByRole('button', { name: 'Jump to latest' })
+      await expect(latest).toBeVisible()
+      const button = (await latest.boundingBox())!
+      const scroller = (await page.locator('.kubecode-channel-messages').boundingBox())!
+      expect(button.y).toBeGreaterThanOrEqual(scroller.y + scroller.height - 1)
+      await expectContained(page)
+    } finally {
+      await request.delete(`${api}/projects/${projectId}`)
+    }
+  })
 })

@@ -6011,11 +6011,21 @@ button.kubecode-reference-chip-open:focus-visible,
   flex-direction: column;
   gap: 2px;
   min-height: 100%;
-  padding: var(--ws-space-3) 0 var(--ws-space-4);
+  padding: var(--ws-space-3) 0 var(--ws-space-1);
 }
 .kubecode-load-older { align-self: center; }
 .kubecode-conversation-empty { flex: 1 1 auto; justify-content: center; }
-.kubecode-scroll-latest { box-shadow: var(--ws-elevation-soft); z-index: 2; }
+/* Jump to latest sits in a strip kept under the thread, so it never covers a
+   message (ADR 0239/0242: nothing sits over the readable thread). The strip is
+   always there: the thread does not resize as the button comes and goes. */
+.kubecode-message-list > .kubecode-conversation { padding-block-end: calc(2rem + var(--ws-space-2)); }
+.kubecode-conversation > .kubecode-scroll-latest {
+  bottom: var(--ws-space-1);
+  box-shadow: var(--ws-elevation-soft);
+  height: 2rem;
+  width: 2rem;
+  z-index: 2;
+}
 .kubecode-date-separator { align-items: center; color: var(--text-secondary); display: flex; font: var(--ws-font-meta); gap: var(--ws-space-2); margin: var(--ws-space-2) 0; }
 .kubecode-date-separator::before,
 .kubecode-date-separator::after { content: none; }
@@ -6039,9 +6049,16 @@ button.kubecode-reference-chip-open:focus-visible,
 }
 .kubecode-message[data-from='member'] .kubecode-message-body { max-width: 90ch; }
 .kubecode-message[data-from='self'] { align-self: flex-end; max-width: min(80%, 70ch); }
-.kubecode-message[data-from='self'] .kubecode-message-header { justify-content: flex-end; }
+.kubecode-message[data-from='self'] .kubecode-message-header { flex-wrap: nowrap; justify-content: flex-end; }
+/* The researcher's meta stays one line on a phone: the recipient shortens, the time keeps its place. */
+.kubecode-message[data-from='self'] .kubecode-message-self-meta { align-items: center; color: var(--text-secondary); display: inline-flex; flex: 0 1 auto; flex-wrap: nowrap; font: var(--ws-font-meta); gap: var(--ws-space-2); justify-content: flex-end; min-width: 0; }
+.kubecode-message[data-from='self'] .kubecode-message-self-meta > :not(.kubecode-message-recipients) { flex: none; white-space: nowrap; }
+.kubecode-message[data-from='self'] .kubecode-message-recipients { flex: 0 1 auto; flex-wrap: nowrap; overflow: hidden; }
+.kubecode-message[data-from='self'] .kubecode-message-recipients > * { flex: none; }
+.kubecode-message[data-from='self'] .kubecode-message-recipients > .kubecode-member-identity:last-child { flex: 0 1 auto; min-width: 0; }
+.kubecode-message[data-from='self'] .kubecode-message-recipients .kubecode-member-identity-text { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kubecode-message[data-from='self'] .kubecode-message-recipients .kubecode-member-identity-text > * + * { margin-inline-start: var(--ws-space-2); }
 .kubecode-message[data-from='self'] .kubecode-message-toolbar { margin-left: 0; margin-right: auto; order: -1; }
-.kubecode-message[data-from='self'] .kubecode-message-self-meta { align-items: center; color: var(--text-secondary); display: inline-flex; flex-wrap: wrap; font: var(--ws-font-meta); gap: var(--ws-space-2); justify-content: flex-end; }
 .kubecode-message[data-from='self'] .kubecode-message-inner > :not(.kubecode-message-header) {
   background: var(--ws-surface-self);
   border-radius: var(--ws-radius-md);
