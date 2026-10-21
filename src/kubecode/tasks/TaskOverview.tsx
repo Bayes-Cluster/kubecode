@@ -134,8 +134,11 @@ function BriefSummary({ brief, t }: { brief: ResearchBrief; t: Translator }) {
   ]
   return (
     <dl className="kubecode-task-brief">
-      <dt>{t('kubecode.task.question')}</dt>
-      <dd>{brief.question}</dd>
+      {/* Every section is one group, so labels and lists line up (#229). */}
+      <div>
+        <dt>{t('kubecode.task.question')}</dt>
+        <dd>{brief.question}</dd>
+      </div>
       {lists.filter(([, items]) => items.length > 0).map(([label, items]) => (
         <div key={label}>
           <dt>{label}</dt>

@@ -85,13 +85,15 @@ export type StopButtonProps = {
   description?: string
   /** The stop is being requested: it keeps focus and ignores clicks. */
   busy?: boolean
+  /** A quiet ghost button where it sits in a list row. */
+  variant?: 'outline' | 'ghost'
 }
 
 /**
  * Stops one named run now. It is separate from sending and always says what
  * it stops; on touch screens, where there are no tooltips, it says so in text.
  */
-export function StopButton({ busy = false, description, label, onStop, shortLabel, testId }: StopButtonProps) {
+export function StopButton({ busy = false, description, label, onStop, shortLabel, testId, variant = 'outline' }: StopButtonProps) {
   const descriptionId = useId()
   return (
     <TooltipProvider>
@@ -106,7 +108,7 @@ export function StopButton({ busy = false, description, label, onStop, shortLabe
           data-testid={testId}
           size="sm"
           type="button"
-          variant="outline"
+          variant={variant}
           onClick={unlessBusy(busy, onStop)}
         >
           {busy ? <Spinner /> : <Stop aria-hidden fill="currentColor" size={ICON_SIZES.status} />}

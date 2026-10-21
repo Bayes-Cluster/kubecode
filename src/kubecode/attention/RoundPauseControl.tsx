@@ -50,9 +50,6 @@ export function RoundPauseControl({ api, execution, onChanged, projectId, t, tas
         paused={execution.paused}
         onToggle={() => void toggle()}
       />
-      <p className="kubecode-research-muted">
-        {execution.paused ? t('kubecode.execution.pausedTaskWork') : t('kubecode.execution.pauseHint')}
-      </p>
       {notice && <p className="kubecode-research-muted" role="status">{notice}</p>}
     </div>
   )

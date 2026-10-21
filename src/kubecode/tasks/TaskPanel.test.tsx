@@ -79,7 +79,7 @@ describe('TaskPanel', () => {
     expect(panel().getByText('All of its active work is blocked.')).toBeInTheDocument()
     expect(panel().queryByText(/^(Open|Resolved)$/)).not.toBeInTheDocument()
     expect(panel().queryAllByRole('button').filter((button) => FORBIDDEN.test(button.textContent ?? ''))).toEqual([])
-    expect(panel().getByText('Specialists are working. The General Agent will ask you to review the results.')).toBeInTheDocument()
+    expect(panel().queryByText(/Specialists are working/)).not.toBeInTheDocument()
   })
 
   it('opens on the results while a review waits, and keeps the chosen section', async () => {

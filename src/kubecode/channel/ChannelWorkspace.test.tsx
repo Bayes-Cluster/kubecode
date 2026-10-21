@@ -572,7 +572,7 @@ describe('ChannelWorkspace while members work (ADR 0232)', () => {
     Object.assign(s.calls, { cancelRun, taskDetail })
     render(shell(<AttentionContext.Provider value={attention([execution()])}>{workspace(s)}</AttentionContext.Provider>))
     await screen.findByText('No messages yet. Start the discussion.')
-    expect(screen.getByRole('region', { name: 'Working now' })).toHaveTextContent('Analyst is working on Structured pruning')
+    expect(screen.getByRole('region', { name: 'Working now' })).toHaveTextContent('Structured pruning')
     const stops = screen.getAllByRole('button', { name: /^Stop/ })
     expect(stops).toHaveLength(1)
     expect(stops[0]).toHaveAccessibleName('Stop Structured pruning')

@@ -1,12 +1,10 @@
 import { CaretDown } from '@phosphor-icons/react'
-import { useContext, useEffect, useRef, useState } from 'react'
+import { useContext, useEffect, useRef, useState, type CSSProperties } from 'react'
 
 import { Shimmer } from '@/components/ai-elements'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { ICON_SIZES } from '@/kubecode/icons'
-import { MemberIdentity } from '@/components/workspace/MemberIdentity'
-import { StopButton } from '@/components/workspace/SendButton'
 import type { Translator } from '@/lib/i18n'
 
 import { ApiError, type AgentEvent, type AttentionItem, type AttentionTaskRef, type ExecutionFailure, type ExecutionView, type KubecodeApi } from '../api'
@@ -17,6 +15,7 @@ import { elicitationContent, initialElicitationAnswers } from '../session/sessio
 import { askerName } from './attentionTargets'
 import { useAttention, type ExecutionScope } from './attentionContext'
 import { ElicitationPrompt } from './ElicitationPrompt'
+import { ExecutionRow } from './ExecutionRow'
 import { PermissionPrompt } from './PermissionPrompt'
 
 const STOP_FALLBACK_MS = 15_000
@@ -94,16 +93,6 @@ function InputRow({ api, item, t }: { api: KubecodeApi; item: Kinded<'input'>; t
   )
 }
 
-function stateText(run: ExecutionView, t: Translator): string {
-  const name = nameOf(run, t)
-  if (run.waiting_keys.length > 0) return t('kubecode.execution.waitingPermission', { name })
-  // Waiting with nothing the researcher can answer: a Team leader reviews it first.
-  if (run.status === 'waiting_permission') return t('kubecode.execution.waitingLeader', { name })
-  return run.tasks[0]
-    ? t('kubecode.execution.workingOn', { name, task: run.tasks.map((task) => task.title).join(', ') })
-    : t('kubecode.execution.working', { name })
-}
-
 /** One Stop per Task: every turn on it, or one reply that belongs to no Task. */
 type Entry = { key: string; runs: ExecutionView[]; task: AttentionTaskRef | null }
 
@@ -117,52 +106,6 @@ function entriesOf(runs: ExecutionView[]): Entry[] {
     else entries.set(key, { key, runs: [run], task })
   }
   return [...entries.values()]
-}
-
-function RunState({ run, t }: { run: ExecutionView; t: Translator }) {
-  const name = nameOf(run, t)
-  return (
-    <span className="kubecode-execution-who">
-      {run.member
-        ? <MemberIdentity handle={run.member.handle} name={run.member.name} role={run.member.role === 'general' ? 'manager' : 'specialist'} size="sm" />
-        : <strong>{name}</strong>}
-      <span className="kubecode-execution-state">
-        {/* Work still under way shimmers; a wait on the researcher is said plainly. */}
-        {run.waiting_keys.length > 0 || run.status === 'waiting_permission'
-          ? stateText(run, t)
-          : <Shimmer>{stateText(run, t)}</Shimmer>}
-        {run.queued > 0 && <> · {t('kubecode.execution.queued', { count: run.queued, plural: run.queued === 1 ? '' : 's' })}</>}
-      </span>
-    </span>
-  )
-}
-
-function EntryRow({ entry, onStop, stopping, t }: {
-  entry: Entry
-  onStop: () => void
-  stopping: boolean
-  t: Translator
-}) {
-  const name = nameOf(entry.runs[0], t)
-  return (
-    <li className="kubecode-execution-row" data-entry={entry.key}>
-      <span className="kubecode-execution-runs">
-        {entry.runs.map((run) => <RunState key={run.run_id} run={run} t={t} />)}
-        {stopping && <span className="kubecode-execution-state">{t('kubecode.execution.stopping')}</span>}
-      </span>
-      <StopButton
-        busy={stopping}
-        description={entry.task
-          ? t('kubecode.execution.stopTaskHint', { task: entry.task.title })
-          : t('kubecode.execution.stopReplyHint', { name })}
-        label={entry.task
-          ? t('kubecode.execution.stopTask', { task: entry.task.title })
-          : t('kubecode.execution.stopReply', { name })}
-        shortLabel={t('kubecode.execution.stopShort')}
-        onStop={onStop}
-      />
-    </li>
-  )
 }
 
 function FailureRow({ failure, onDismiss, t }: { failure: ExecutionFailure; onDismiss: () => void; t: Translator }) {
@@ -220,6 +163,16 @@ export function ExecutionStrip({ api, prompts = true, scope, t }: ExecutionStrip
       : t('kubecode.execution.stopped', { name: nameOf(entry.runs[0], t) }))
   }
   const timers = useRef(new Set<number>())
+  const section = useRef<HTMLElement>(null)
+  // The running list opens as wide as the strip, and so the card, it belongs to (ADR 0240).
+  const [listWidth, setListWidth] = useState<number | null>(null)
+  // Opened by a pointer, the list takes focus without a ring; from the keyboard it shows one.
+  const [openedBy, setOpenedBy] = useState<'pointer' | 'keyboard'>('keyboard')
+  const measure = (open: boolean) => {
+    if (!open) return
+    const width = section.current?.getBoundingClientRect().width ?? 0
+    setListWidth(width > 0 ? width : null)
+  }
   useEffect(() => {
     const pending = timers.current
     return () => pending.forEach((timer) => window.clearTimeout(timer))
@@ -268,11 +221,19 @@ export function ExecutionStrip({ api, prompts = true, scope, t }: ExecutionStrip
 
   if (entries.length === 0 && items.length === 0 && failures.length === 0 && !announcement) return null
   const row = (entry: Entry) => (
-    <EntryRow entry={entry} key={entry.key} stopping={stopping.has(entry.key)} t={t} onStop={() => void stop(entry)} />
+    <ExecutionRow
+      entryKey={entry.key}
+      key={entry.key}
+      runs={entry.runs}
+      stopping={stopping.has(entry.key)}
+      t={t}
+      task={entry.task}
+      onStop={() => void stop(entry)}
+    />
   )
   const busy = stopping.size > 0
   return (
-    <section aria-label={t('kubecode.execution.workingNow')} className="kubecode-execution-strip">
+    <section aria-label={t('kubecode.execution.workingNow')} className="kubecode-execution-strip" ref={section}>
       {/* Decisions are never folded away; on a phone their body is capped and scrolls. */}
       {items.length > 0 && (
         <div aria-label={t('kubecode.execution.waitingForYou')} className="kubecode-execution-body" role="group">
@@ -283,15 +244,25 @@ export function ExecutionStrip({ api, prompts = true, scope, t }: ExecutionStrip
       )}
       {entries.length === 1 && <ul className="kubecode-execution-rows">{entries.map(row)}</ul>}
       {entries.length > 1 && (
-        <Popover>
+        <Popover onOpenChange={measure}>
           <PopoverTrigger asChild>
-            <Button aria-busy={busy || undefined} className="kubecode-execution-pill" size="sm" type="button" variant="outline">
+            <Button
+              aria-busy={busy || undefined}
+              className="kubecode-execution-pill"
+              size="sm"
+              type="button"
+              variant="outline"
+              onKeyDown={() => setOpenedBy('keyboard')}
+              onPointerDown={() => setOpenedBy('pointer')}
+            >
               <Shimmer>{t('kubecode.execution.runningCount', { count: entries.length })}</Shimmer>
               <CaretDown aria-hidden size={ICON_SIZES.status} />
             </Button>
           </PopoverTrigger>
           <PopoverContent align="start" aria-label={t('kubecode.execution.workingNow')} className="kubecode-execution-popover"
+            data-opened-by={openedBy}
             side="top"
+            style={listWidth ? { '--kubecode-execution-popover-width': `${listWidth}px` } as CSSProperties : undefined}
             tabIndex={-1}
             // Focus lands on the list, not its first Stop: no tooltip opens and Escape closes it.
             onOpenAutoFocus={(event) => {

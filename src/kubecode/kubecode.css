@@ -4046,13 +4046,14 @@
 .kubecode-message-recipients {
   align-items: center;
   color: var(--text-secondary);
-  display: flex;
+  display: inline-flex;
   flex-wrap: wrap;
   font: var(--ws-font-meta);
-  gap: var(--ws-space-2);
+  gap: var(--ws-space-1);
   margin: 0;
   min-width: 0;
 }
+.kubecode-message-recipients-arrow { color: var(--text-tertiary, var(--text-secondary)); }
 
 .kubecode-message-references,
 .kubecode-composer-about ul {
@@ -4524,10 +4525,13 @@
 .kubecode-task-results h4,
 .kubecode-task-activity h4 { font-size: var(--kubecode-ui-font-small); margin: 0 0 var(--ws-space-1); }
 
-.kubecode-task-brief { display: flex; flex-direction: column; gap: var(--ws-space-1); margin: 0; }
-.kubecode-task-brief dt { color: var(--text-secondary); font: var(--ws-font-meta); }
+.kubecode-task-brief { display: flex; flex-direction: column; gap: var(--ws-space-3); margin: 0; }
+.kubecode-task-brief > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.kubecode-task-overview h4,
+.kubecode-task-brief dt { color: var(--text-secondary); font: 600 var(--kubecode-ui-font-small)/1.4 var(--kubecode-ui-font, system-ui, sans-serif); margin: 0; }
 .kubecode-task-brief dd { margin: 0; overflow-wrap: anywhere; }
-.kubecode-task-brief ul { margin: 0; padding-left: var(--ws-space-4); }
+.kubecode-task-brief ul { list-style: disc outside; margin: 0; padding-inline-start: 1.25em; }
+.kubecode-task-brief li + li { margin-top: 2px; }
 .kubecode-task-provenance { margin: 0; }
 .kubecode-task-provenance q { display: block; margin: 2px 0; overflow-wrap: anywhere; }
 .kubecode-task-people ul { display: flex; flex-direction: column; gap: var(--ws-space-1); list-style: none; margin: 0; padding: 0; }
@@ -5322,11 +5326,44 @@ button.kubecode-reference-chip-open:focus-visible,
   border: 0.5px solid var(--ws-hairline-strong);
   border-radius: var(--ws-radius-md);
   box-shadow: var(--ws-elevation-soft);
-  max-height: min(50dvh, 24rem);
+  max-height: 40vh;
   overflow-y: auto;
-  padding: var(--ws-space-1) var(--ws-space-2);
-  width: min(28rem, calc(100vw - 32px));
+  padding: var(--ws-space-1);
+  /* As wide as the dock it opens from (set from the dock when it opens). */
+  width: var(--kubecode-execution-popover-width, min(28rem, calc(100vw - 32px)));
   z-index: 50;
+}
+/* Opened by a mouse, the list shows no ring; from the keyboard it does. */
+.kubecode-execution-popover:focus { outline: none; box-shadow: var(--ws-elevation-soft); }
+.kubecode-execution-popover[data-opened-by='keyboard']:focus-visible { box-shadow: var(--ws-focus-ring), var(--ws-elevation-soft); }
+.kubecode-execution-popover[data-opened-by='pointer']:focus-visible { outline: none; }
+/* One running item (ADR 0240): who, a queued count and Stop; the Task below. */
+.kubecode-execution-row:has(> .kubecode-execution-line) {
+  align-items: stretch;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 0;
+  padding-block: var(--ws-space-1);
+}
+.kubecode-execution-line { align-items: center; display: flex; gap: var(--ws-space-2); min-width: 0; }
+.kubecode-execution-line > .kubecode-execution-who { flex: 1 1 auto; flex-wrap: nowrap; min-height: 0; overflow: hidden; }
+.kubecode-execution-queued {
+  background: var(--ws-surface-quiet);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  flex: 0 0 auto;
+  font: var(--ws-font-meta);
+  padding: 0 var(--ws-space-2);
+  white-space: nowrap;
+}
+.kubecode-execution-line .kubecode-stop-button { flex: 0 0 auto; gap: var(--ws-space-1); height: 28px; padding-inline: var(--ws-space-2); }
+.kubecode-execution-line .kubecode-stop-button-text { display: inline; white-space: nowrap; }
+.kubecode-execution-row > .kubecode-execution-state {
+  flex: 0 0 auto;
+  overflow: hidden;
+  padding-inline-start: calc(var(--ws-avatar-sm) + var(--ws-space-2));
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .kubecode-execution-strip .kubecode-permission-dock,
 .kubecode-execution-strip .kubecode-elicitation-dock { margin: 0; }
@@ -5398,10 +5435,10 @@ button.kubecode-reference-chip-open:focus-visible,
   --ws-accent-soft: color-mix(in srgb, var(--primary) 12%, transparent);
   --ws-conversation-width: 760px;
   --ws-composer-width: calc(var(--ws-conversation-width) + 32px);
-  /* ADR 0239: the thread takes the middle three quarters of the pane; the
-     composer card at most half of it, never narrower than 480px. */
+  /* ADR 0239: the thread takes the middle three quarters of the pane. ADR 0240:
+     the dock is half of it, never narrower than 480px nor wider than 960px. */
   --ws-thread-width: 75%;
-  --ws-composer-max: 50%;
+  --ws-composer-max: clamp(480px, 50%, 960px);
   --ws-panel-nav: 248px;
   --ws-panel-inspector: 360px;
   --ws-flow-gap: 6px;
@@ -6071,7 +6108,7 @@ button.kubecode-reference-chip-open:focus-visible,
 }
 .kubecode-channel-messages .kubecode-ai-message[data-from='self'] > .kubecode-ai-message-author { justify-content: flex-end; }
 .kubecode-channel-messages .kubecode-ai-message[data-from='self'] .kubecode-message-toolbar { margin-left: 0; margin-right: auto; order: -1; }
-.kubecode-channel-messages .kubecode-ai-message[data-from='self'] .kubecode-message-self-meta { color: var(--text-secondary); font: var(--ws-font-meta); }
+.kubecode-channel-messages .kubecode-ai-message[data-from='self'] .kubecode-message-self-meta { align-items: center; color: var(--text-secondary); display: inline-flex; flex-wrap: wrap; font: var(--ws-font-meta); gap: var(--ws-space-2); justify-content: flex-end; }
 .kubecode-channel-messages .kubecode-ai-message[data-from='self'] .kubecode-ai-message-content,
 .kubecode-channel-messages .kubecode-ai-message[data-from='self'] .kubecode-message-content {
   margin-inline-start: 0;
@@ -6080,14 +6117,25 @@ button.kubecode-reference-chip-open:focus-visible,
 .kubecode-channel-messages .kubecode-ai-message[data-from='self'] .kubecode-message-delivery { align-self: flex-end; }
 .kubecode-conversation-dock {
   max-width: none;
-  width: min(100%, max(var(--ws-composer-max), 480px));
+  width: min(100%, var(--ws-composer-max));
 }
+/* ADR 0240: the running work, its list and the card share the dock's one width. */
+.kubecode-conversation-dock .kubecode-ai-prompt-input { max-width: none; }
+/* The last message ends above the dock, never under it. */
+.kubecode-channel-messages { padding-block-end: var(--ws-space-4); scroll-padding-block-end: var(--ws-space-4); }
+/* A comfortable measure on a wide pane: a member's message about 90 characters, the researcher's 70. */
+.kubecode-channel-messages .kubecode-ai-message:not([data-from='self']) .kubecode-message-body { max-width: 90ch; }
+.kubecode-channel-messages .kubecode-ai-message[data-from='self'] { max-width: min(80%, 70ch); }
 .kubecode-composer-notice { margin: 0; }
-/* Empty, the card is two lines; it grows with the text up to a limit, then scrolls. */
+/* Empty, the card is one line over its tools (ADR 0240); it grows with the text up to a limit, then scrolls. */
+.kubecode-conversation-dock .kubecode-composer { gap: 2px; }
+.kubecode-conversation-dock .kubecode-composer-footer:empty,
+.kubecode-conversation-dock .kubecode-ai-prompt-input-header:empty { display: none; }
+.kubecode-conversation-dock .kubecode-ai-prompt-input { gap: var(--ws-space-1); padding: var(--ws-space-1) var(--ws-space-2); }
 .kubecode-conversation-dock .kubecode-ai-prompt-input .kubecode-composer textarea {
   field-sizing: content;
   max-height: min(40dvh, 18rem);
-  min-height: calc(2lh + 2 * var(--ws-space-1));
+  min-height: calc(1lh + 2 * var(--ws-space-1));
   overflow-y: auto;
 }
 
