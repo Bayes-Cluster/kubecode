@@ -15,7 +15,6 @@ import { ApiError } from '../api'
 import { errorMessage } from '../app/errors'
 import { placeKey, usePlaceState } from '../app/location/placeMemory'
 import { WorkspaceNavigationContext } from '../app/location/WorkspaceNavigation'
-import { useAttention } from '../attention/attentionContext'
 import { ExecutionStrip } from '../attention/ExecutionStrip'
 import type { PlainDraft } from '../channel/generalDraft'
 import { useOutbox, type OutboxItem } from '../channel/outbox'
@@ -72,8 +71,6 @@ export function DmPane({
   )
   // What waits behind the member's running reply, read from the server (ADR 0232).
   const queue = useDmPending(api, projectId, member.id, member.dm_conversation_id, events, connectionState)
-  const attention = useAttention()
-  const replying = attention?.executions({ binding: 'dm', memberId: member.id }) ?? []
   // The unsent private draft and its last attempt outlive the pane for the life of the page, never on disk.
   const [draft, setDraft] = usePlaceState<PlainDraft>(`${placeKey.dm(projectId, member.id)}#draft`, EMPTY_DRAFT)
   // Sends the server has not acknowledged, each its own row (ADR 0232 §5).
@@ -225,13 +222,6 @@ export function DmPane({
                 label={t('kubecode.dm.placeholder', { name: member.name })}
                 placeholder={t('kubecode.dm.placeholder', { name: member.name })}
                 sendLabel={t('kubecode.channel.send')}
-                stop={replying.length === 1 ? {
-                  label: t('kubecode.execution.stopReply', { name: member.name }),
-                  shortLabel: t('kubecode.execution.stopShort'),
-                  onStop: () => {
-                    void api.cancelRun(replying[0].run_id).then(() => attention?.reload(), () => undefined)
-                  },
-                } : undefined}
                 value={draft.body}
                 onChange={(body) => setDraft((current) => ({ ...current, body }))}
                 onSend={send}

@@ -17,8 +17,6 @@ import type {
   WorkspaceEvent,
 } from '../api'
 import { placeKey, usePlaceState, type Landing, type ReadingPosition } from '../app/location/placeMemory'
-import { useAttention } from '../attention/attentionContext'
-import { askerName } from '../attention/attentionTargets'
 import { DeliveryActionsContext, type DeliveryActions } from '../attention/deliveryContext'
 import { ExecutionStrip } from '../attention/ExecutionStrip'
 import { foldRoutingNotes, useMessageDeliveries } from '../attention/useMessageDeliveries'
@@ -120,9 +118,6 @@ export function ChannelWorkspace({
   const { channel, retry, status } = useDefaultChannel(api, projectId)
   const directory = useMemberDirectory()
   // With exactly one member at work, the composer also offers its Stop; with more it would be ambiguous.
-  const attention = useAttention()
-  const publicRuns = attention?.executions({ binding: 'public' }) ?? []
-  const onlyRun = publicRuns.length === 1 ? publicRuns[0] : null
   const navigation = useContext(WorkspaceNavigationContext)
   // Showing only what is about one Task is a view of the same conversation.
   const [localFilter, setLocalFilter] = useState<string | null>(null)
@@ -405,13 +400,6 @@ export function ChannelWorkspace({
               projectId={projectId}
               t={t}
               textareaRef={textarea}
-              stop={onlyRun ? {
-                label: t('kubecode.execution.stopTurn', { name: askerName(onlyRun, t) }),
-                shortLabel: t('kubecode.execution.stopShort'),
-                onStop: () => {
-                  void api.cancelRun(onlyRun.run_id).then(() => attention?.reload(), () => undefined)
-                },
-              } : undefined}
               outboxKey={`${placeKey.general(projectId, taskFilter)}#outbox`}
               onDraftChange={setDraft}
               onSend={send}

@@ -564,30 +564,33 @@ describe('ChannelWorkspace while members work (ADR 0232)', () => {
     reload: vi.fn(),
   })
 
-  it('shows who is working above the composer, with one Stop beside Send when only one member works', async () => {
+  it('shows who is working above the composer, with the Task\'s one Stop in the strip and none beside Send', async () => {
     const s = server()
     const cancelRun = vi.fn().mockResolvedValue(undefined)
-    Object.assign(s.calls, { cancelRun })
+    const taskDetail = vi.fn().mockResolvedValue({ id: 'r1', execution: null })
+    Object.assign(s.calls, { cancelRun, taskDetail })
     render(shell(<AttentionContext.Provider value={attention([execution()])}>{workspace(s)}</AttentionContext.Provider>))
     await screen.findByText('No messages yet. Start the discussion.')
     expect(screen.getByRole('region', { name: 'Working now' })).toHaveTextContent('Analyst is working on Structured pruning')
-    const stops = screen.getAllByRole('button', { name: "Stop Analyst's current turn" })
-    expect(stops).toHaveLength(2)
+    const stops = screen.getAllByRole('button', { name: /^Stop/ })
+    expect(stops).toHaveLength(1)
+    expect(stops[0]).toHaveAccessibleName('Stop Structured pruning')
     // Sending stays possible while the member works.
     fireEvent.change(box(), { target: { value: 'Meanwhile, a note' } })
     send()
     await waitFor(() => expect(s.posted).toHaveLength(1))
-    fireEvent.click(stops[1])
+    fireEvent.click(stops[0])
     await waitFor(() => expect(cancelRun).toHaveBeenCalledWith('run1'))
   })
 
-  it('leaves Stop to the strip when two members work, so it is never ambiguous', async () => {
+  it('gives a Task one Stop in the strip when two members work on it', async () => {
     const s = server()
     const runs = [execution(), execution({ run_id: 'run2', conversation_id: 's2', member: { id: 'm9', name: 'Writer', handle: 'writer', role: 'specialist' } })]
     render(shell(<AttentionContext.Provider value={attention(runs)}>{workspace(s)}</AttentionContext.Provider>))
     await screen.findByText('No messages yet. Start the discussion.')
-    expect(screen.getAllByRole('button', { name: /^Stop / })).toHaveLength(2)
-    expect(within(screen.getByRole('region', { name: 'Working now' })).getAllByRole('button', { name: /^Stop / })).toHaveLength(2)
+    // Both work on one Task: it has one Stop, in the strip.
+    expect(screen.getAllByRole('button', { name: /^Stop / })).toHaveLength(1)
+    expect(within(screen.getByRole('region', { name: 'Working now' })).getAllByRole('button', { name: /^Stop / })).toHaveLength(1)
   })
 })
 
