@@ -48,7 +48,9 @@ describe('UsageMeter', () => {
     const popover = screen.getByTestId('usage-meter-popover')
     expect(popover).toBeInTheDocument()
     expect(popover).toHaveTextContent('1,234 of 8,000 tokens (15%)')
-    expect(screen.getByTestId('usage-meter-bar')).toHaveStyle({ width: '15%' })
+    expect(screen.getByTestId('usage-meter-bar')).toHaveAttribute('aria-valuenow', '15')
+    fireEvent.click(screen.getByTestId('usage-meter-trigger'))
+    expect(screen.queryByTestId('usage-meter-popover')).not.toBeInTheDocument()
   })
 
   it('falls back to counts-only when the window size is unknown', async () => {

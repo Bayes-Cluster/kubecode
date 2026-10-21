@@ -1,15 +1,24 @@
 import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
+  ArrowDown,
   Link,
   Plus,
   Sparkle,
   X,
 } from 'lucide-react'
-import { Virtuoso } from 'react-virtuoso'
+import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
+import {
+  PromptInputBody,
+  PromptInputSubmit,
+  PromptInputTools,
+} from '@/components/ai-elements/prompt-input'
+import { InputGroup } from '@/components/ui/input-group'
 import { AiMessage } from './AiMessage'
 import { Button } from '@/components/ui/button'
 import { ActionTooltip } from '@/components/ui/action-tooltip'
-import { SendButton, StopButton } from '@/components/workspace/SendButton'
+import { StopButton } from '@/components/workspace/SendButton'
+import { ICON_SIZES } from '@/kubecode/icons'
+import { WORKSPACE_COMMAND_ICONS } from '@/kubecode/icons/workspaceIcons'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { WikilinkChatInput } from './WikilinkChatInput'
 import { extractInlineWikilinkReferences } from './inlineWikilinkText'
@@ -151,6 +160,8 @@ function ComposerInput({
   )
 }
 
+const SendIcon = WORKSPACE_COMMAND_ICONS.send.Icon
+
 function ComposerSendButton({
   canSend,
   entries,
@@ -164,14 +175,22 @@ function ComposerSendButton({
   label: string
   onSend: (text: string, references: NoteReference[]) => void
 }) {
-  // The shared arrow button: the same control as every other composer (ADR 0222).
+  // The official Prompt Input submit, with the shared arrow glyph and a
+  // localized name (ADR 0245); it sends through the composer's own handler.
   return (
-    <SendButton
-      canSend={canSend}
-      label={label}
-      testId="agent-send"
-      onSend={() => onSend(input, extractInlineWikilinkReferences(input, entries))}
-    />
+    <PromptInputSubmit
+      aria-label={label}
+      className="kubecode-send-button"
+      data-can-send={canSend}
+      data-testid="agent-send"
+      disabled={!canSend}
+      title={label}
+      type="button"
+      variant="ghost"
+      onClick={() => onSend(input, extractInlineWikilinkReferences(input, entries))}
+    >
+      <SendIcon aria-hidden size={ICON_SIZES.default} />
+    </PromptInputSubmit>
   )
 }
 
@@ -464,16 +483,52 @@ export const AiPanelMessageHistory = memo(function AiPanelMessageHistory({
   hasContext,
 }: AiPanelMessageHistoryProps) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const virtuosoRef = useRef<VirtuosoHandle>(null)
   const autoFollowRef = useRef(true)
+  // Mirrors autoFollowRef for rendering: the jump button shows only while
+  // the reader has scrolled away from the latest message.
+  const [awayFromLatest, setAwayFromLatest] = useState(false)
+  const virtualized = messages.length > 100
 
   const updateScrollState = useCallback(() => {
     const element = containerRef.current
     if (element) {
       const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight
       autoFollowRef.current = distanceFromBottom <= 48
+      setAwayFromLatest(!autoFollowRef.current)
     }
     onScrollStateChange?.((element?.scrollTop ?? 0) > 1)
   }, [onScrollStateChange])
+
+  const jumpToLatest = useCallback(() => {
+    autoFollowRef.current = true
+    setAwayFromLatest(false)
+    if (virtualized) {
+      virtuosoRef.current?.scrollToIndex({ align: 'end', behavior: 'smooth', index: 'LAST' })
+      return
+    }
+    const element = containerRef.current
+    if (element) element.scrollTo({ behavior: 'smooth', top: element.scrollHeight })
+  }, [virtualized])
+
+  const jumpLabel = createTranslator(locale)('kubecode.session.jumpToLatest')
+  // ConversationScrollButton's affordance for a virtualised history: the
+  // official button needs use-stick-to-bottom's context, which the virtual
+  // list replaces, so the same control is wired to autoFollowRef (ADR 0245).
+  const jumpButton = awayFromLatest && messages.length > 0 ? (
+    <Button
+      aria-label={jumpLabel}
+      className="kubecode-session-jump rounded-full"
+      data-testid="ai-jump-to-latest"
+      size="icon"
+      title={jumpLabel}
+      type="button"
+      variant="outline"
+      onClick={jumpToLatest}
+    >
+      <ArrowDown aria-hidden size={16} />
+    </Button>
+  ) : null
 
   useEffect(() => {
     if (messages.length > 100) return
@@ -490,9 +545,11 @@ export const AiPanelMessageHistory = memo(function AiPanelMessageHistory({
     return () => window.cancelAnimationFrame(frame)
   }, [messages, isActive, updateScrollState])
 
-  if (messages.length > 100) {
+  if (virtualized) {
     return (
+      <>
       <Virtuoso
+        ref={virtuosoRef}
         className="kubecode-virtual-message-history"
         components={{
           Header: () => <>{leadingContent}</>,
@@ -519,13 +576,17 @@ export const AiPanelMessageHistory = memo(function AiPanelMessageHistory({
         )}
         atBottomStateChange={(atBottom) => {
           autoFollowRef.current = atBottom
+          setAwayFromLatest(!atBottom)
           onScrollStateChange?.(!atBottom)
         }}
       />
+      {jumpButton}
+      </>
     )
   }
 
   return (
+    <>
     <div
       ref={containerRef}
       className="kubecode-message-history min-h-0 flex-1 overflow-y-auto overscroll-contain"
@@ -556,6 +617,8 @@ export const AiPanelMessageHistory = memo(function AiPanelMessageHistory({
         />
       ))}
     </div>
+    {jumpButton}
+    </>
   )
 })
 
@@ -653,43 +716,49 @@ export function AiPanelComposer({
           {statusMessage}
         </span>
       )}
-      <div
+      <InputGroup
         className={cn(
+          'kubecode-session-prompt-input h-auto',
           hasControls
-            ? 'flex min-h-[50px] max-h-[202px] items-end gap-1 overflow-visible rounded-[20px] border border-border bg-background px-2.5 py-2 shadow-xs'
-            : 'flex items-end gap-2',
+            ? 'min-h-[50px] max-h-[202px] items-end gap-1 overflow-visible rounded-[20px] border border-border bg-background px-2.5 py-2 shadow-xs'
+            : 'items-end gap-2 border-0 shadow-none',
         )}
         data-layout={hasControls ? 'single-row' : undefined}
         data-testid="agent-composer-surface"
+        data-ws-components="official"
       >
-        {hasControls && leadingControl && <div className="shrink-0">{leadingControl}</div>}
-        <div className="min-w-0 flex-1 overflow-visible">
-          {inputContent ?? <ComposerInput
-            disabled={inputDisabled}
-            entries={entries}
-            hasControls={hasControls}
-            input={input}
-            inputRef={inputRef}
-            onChange={onChange}
-            onSend={(text, references) => {
-              if (inputDisabled) return
-              if (isActive) {
-                // A side question keeps its dedicated send; plain drafts queue
-                // for the next turn (#97). Slash drafts stay untouched while a
-                // run is active — the command menu owns them.
-                if (onActiveSend) onActiveSend(text, references)
-                else if (!text.startsWith('/')) onSend(text, references)
-              } else {
-                onSend(text, references)
-              }
-            }}
-            onUnsupportedAiPaste={onUnsupportedAiPaste}
-            placeholder={placeholder}
-          />}
-        </div>
-        {hasControls && <div className="min-w-0 shrink overflow-hidden">{controls}</div>}
+        {hasControls && leadingControl && (
+          <PromptInputTools className="shrink-0">{leadingControl}</PromptInputTools>
+        )}
+        <PromptInputBody className="overflow-visible">
+          <div className="min-w-0 flex-1 overflow-visible">
+            {inputContent ?? <ComposerInput
+              disabled={inputDisabled}
+              entries={entries}
+              hasControls={hasControls}
+              input={input}
+              inputRef={inputRef}
+              onChange={onChange}
+              onSend={(text, references) => {
+                if (inputDisabled) return
+                if (isActive) {
+                  // A side question keeps its dedicated send; plain drafts queue
+                  // for the next turn (#97). Slash drafts stay untouched while a
+                  // run is active — the command menu owns them.
+                  if (onActiveSend) onActiveSend(text, references)
+                  else if (!text.startsWith('/')) onSend(text, references)
+                } else {
+                  onSend(text, references)
+                }
+              }}
+              onUnsupportedAiPaste={onUnsupportedAiPaste}
+              placeholder={placeholder}
+            />}
+          </div>
+        </PromptInputBody>
+        {hasControls && <PromptInputTools className="min-w-0 shrink overflow-hidden">{controls}</PromptInputTools>}
         {sendButton}
-      </div>
+      </InputGroup>
     </div>
   )
 }

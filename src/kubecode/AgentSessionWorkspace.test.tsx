@@ -6,7 +6,7 @@ import type { AiAgentMessage } from '@/lib/aiAgentConversation'
 import { createTranslator } from '@/lib/i18n'
 import { trackEvent } from '@/lib/telemetry'
 
-import { AgentSessionWorkspace } from './AgentSessionWorkspace'
+import { AgentSessionWorkspace } from './session/SessionWorkspace'
 import {
   ApiError,
   type AgentRun,
@@ -2246,7 +2246,7 @@ describe('AgentSessionWorkspace', () => {
     />)
 
     const summary = await screen.findByRole('button', { name: /Show Agent plan/ })
-    expect(summary).toHaveTextContent('1 / 3')
+    expect(screen.getByTestId('session-plan-summary')).toHaveTextContent('Agent plan1 of 3 done')
     await waitFor(() => expect(onPlanChange).toHaveBeenLastCalledWith([
       { content: 'Inspect the workspace', priority: 'medium', status: 'completed' },
       { content: 'Implement the fix', priority: 'high', status: 'in_progress' },

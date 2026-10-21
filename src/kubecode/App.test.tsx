@@ -150,7 +150,7 @@ describe('Kubecode workspace', () => {
 
     expect(await screen.findByRole('button', { name: 'Demo' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'New session' })).toBeInTheDocument()
-    expect(screen.getByTestId('agent-session-workspace')).toBeInTheDocument()
+    expect(await screen.findByTestId('agent-session-workspace', {}, { timeout: 10_000 })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Toggle navigation' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('button', { name: 'Toggle terminal' })).toHaveAttribute('aria-pressed', 'false')
     expect(screen.getByRole('button', { name: 'Toggle context panel' })).toHaveAttribute('aria-pressed', 'true')
@@ -1235,7 +1235,7 @@ describe('Kubecode workspace', () => {
     const { container } = render(<KubecodeApp api={api} />)
 
     expect(await screen.findByRole('button', { name: 'Demo' })).toBeInTheDocument()
-    expect(screen.getByTestId('agent-session-workspace')).toBeInTheDocument()
+    expect(await screen.findByTestId('agent-session-workspace')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'New session' }))
     expect(screen.getByRole('button', { name: 'Start new' })).toHaveAttribute('aria-pressed', 'true')
     fireEvent.click(screen.getByRole('button', { name: 'Team' }))
@@ -1284,7 +1284,7 @@ describe('Kubecode workspace', () => {
     fireEvent.mouseUp(document)
     expect(terminalPane.style.height).toBe('300px')
 
-    expect(screen.getByTestId('agent-session-workspace')).toBeVisible()
+    expect(await screen.findByTestId('agent-session-workspace')).toBeVisible()
   })
 
   it('keeps narrow overlay side panels mutually exclusive and dismissible by the backdrop', async () => {

@@ -1,18 +1,36 @@
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback } from 'react'
 import {
   Brain,
   ChevronDown,
-  ChevronRight,
   Copy,
   GitBranch,
   Pencil,
   RefreshCw,
   Terminal,
 } from 'lucide-react'
+import {
+  Message,
+  MessageAction,
+  MessageActions,
+  MessageContent,
+} from '@/components/ai-elements/message'
+import {
+  Reasoning,
+  ReasoningContent,
+  ReasoningTrigger,
+} from '@/components/ai-elements/reasoning'
+import { Shimmer } from '@/components/ai-elements/shimmer'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible'
+import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
+import { SessionMarkdown } from '@/kubecode/session/SessionMarkdown'
 import { AiActionCard, type AiActionStatus } from './AiActionCard'
-import { MarkdownContent } from './MarkdownContent'
 import { translate, type AppLocale } from '../lib/i18n'
 import type { NoteReference } from '../utils/ai-context'
 import type { AiResponseBlock } from '../lib/aiAgentConversation'
@@ -110,7 +128,7 @@ function UserBubble({ content, locale, messageId, onEdit, references, onOpenNote
 
   if (editing) {
     return (
-      <div className="group/ai-user flex flex-col items-end" style={{ marginBottom: 8 }}>
+      <div className="kubecode-session-prompt-editor flex flex-col items-end">
         <form
           className="flex w-full max-w-[85%] flex-col gap-2 rounded-xl bg-state-hover p-2"
           onSubmit={(event) => {
@@ -141,130 +159,73 @@ function UserBubble({ content, locale, messageId, onEdit, references, onOpenNote
     )
   }
 
+  const copyLabel = translate(locale, 'ai.message.copyMessage')
+  const editLabel = translate(locale, 'ai.message.edit')
   return (
-    <div className="group/ai-user flex flex-col items-end" style={{ marginBottom: 8 }}>
-      <div
-        className="min-w-0 max-w-[80%] overflow-hidden"
-        style={{
-          background: 'var(--state-hover)',
-          color: 'var(--foreground)',
-          borderRadius: '12px 12px 2px 12px',
-          padding: '8px 12px',
-          fontSize: 'var(--kubecode-ui-font-size, 14px)',
-          lineHeight: 1.5,
-          overflowWrap: 'anywhere',
-        }}
-        >
+    <Message className="kubecode-session-prompt" from="user">
+      <MessageContent className="kubecode-session-prompt-content">
         {references && references.length > 0 && (
-          <div className="flex flex-wrap gap-1" style={{ marginBottom: 4 }}>
+          <div className="flex flex-wrap gap-1">
             {references.map(ref => (
               <ReferencePill key={ref.path} reference={ref} onClick={onOpenNote} />
             ))}
           </div>
         )}
         {content}
-      </div>
-      <div
-        className="mt-1 flex items-center gap-1 opacity-0 transition-opacity group-hover/ai-user:opacity-100 group-focus-within/ai-user:opacity-100"
-        data-testid="ai-user-message-actions"
-      >
-        <Button
-          aria-label={translate(locale, 'ai.message.copyMessage')}
-          className="h-7 w-7 rounded-md p-0 text-muted-foreground hover:text-foreground"
+      </MessageContent>
+      <MessageActions className="kubecode-session-message-actions" data-testid="ai-user-message-actions">
+        <MessageAction
+          aria-label={copyLabel}
+          label={copyLabel}
           size="icon-xs"
-          title={translate(locale, 'ai.message.copyMessage')}
-          type="button"
-          variant="ghost"
+          title={copyLabel}
           onClick={() => {
             void writeClipboardText(content).catch((error) => {
               console.warn('[ai] Failed to copy user message:', error)
             })
           }}
         >
-          <Copy size={15} />
-        </Button>
-        <Button
-          aria-label={translate(locale, 'ai.message.edit')}
-          className="h-7 w-7 rounded-md p-0 text-muted-foreground hover:text-foreground"
+          <Copy aria-hidden size={15} />
+        </MessageAction>
+        <MessageAction
+          aria-label={editLabel}
           disabled={!messageId || !onEdit}
+          label={editLabel}
           size="icon-xs"
-          title={translate(locale, 'ai.message.edit')}
-          type="button"
-          variant="ghost"
+          title={editLabel}
           onClick={() => {
             setDraft(content)
             setEditing(true)
           }}
         >
-          <Pencil size={15} />
-        </Button>
-      </div>
-    </div>
+          <Pencil aria-hidden size={15} />
+        </MessageAction>
+      </MessageActions>
+    </Message>
   )
 }
 
-function ReasoningBlock({ locale, text, expanded, onToggle }: {
-  locale: AppLocale; text: string; expanded: boolean; onToggle: () => void
+function ReasoningBlock({ locale, text, done, open, onOpenChange }: {
+  locale: AppLocale; text: string; done: boolean; open: boolean; onOpenChange: (open: boolean) => void
 }) {
-  const contentRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    void text
-    if (expanded && contentRef.current) {
-      contentRef.current.scrollTop = contentRef.current.scrollHeight
-    }
-  }, [expanded, text])
-
+  const label = translate(locale, 'ai.message.reasoning')
   return (
-    <div style={{ marginBottom: 8 }}>
-      <Button type="button"
-        variant="ghost"
-        className="flex h-auto items-center justify-start gap-1.5 w-full border-none bg-transparent cursor-pointer p-0 text-muted-foreground hover:text-foreground transition-colors"
-        style={{ fontSize: 12, padding: '4px 0' }}
-        onClick={onToggle}
-        data-testid="reasoning-toggle"
-      >
-        <Brain size={14} />
-        <span>{translate(locale, 'ai.message.reasoning')}</span>
-        {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-      </Button>
-      {expanded && (
-        <div
-          ref={contentRef}
-          className="ai-reasoning-markdown text-muted-foreground"
-          style={{ fontSize: 12, lineHeight: 1.5, padding: '4px 0 4px 20px', maxHeight: 200, overflowY: 'auto' }}
-          data-testid="reasoning-content"
-        >
-          <MarkdownContent content={text} />
-        </div>
-      )}
-    </div>
-  )
-}
-
-function ActionCardsList({ actions, onOpenNote, expandedIds, onToggleExpand }: {
-  actions: AiAction[]
-  onOpenNote?: (path: string) => void
-  expandedIds: Set<string>
-  onToggleExpand: (toolId: string) => void
-}) {
-  return (
-    <div className="flex flex-col gap-1" style={{ marginBottom: 8 }}>
-      {actions.map((action) => (
-        <AiActionCard
-          key={action.toolId}
-          tool={action.tool}
-          label={action.label}
-          path={action.path}
-          status={action.status}
-          input={action.input}
-          output={action.output}
-          expanded={expandedIds.has(action.toolId)}
-          onToggle={() => onToggleExpand(action.toolId)}
-          onOpenNote={onOpenNote}
-        />
-      ))}
-    </div>
+    <Reasoning
+      className="kubecode-session-reasoning"
+      // Open and closed are Kubecode's (open while it streams, closed once
+      // done, the reader's toggle wins); the element's own timers stay off.
+      open={open}
+      onOpenChange={onOpenChange}
+    >
+      <ReasoningTrigger data-testid="reasoning-toggle">
+        <Brain aria-hidden size={14} />
+        {done ? <span>{label}</span> : <Shimmer as="span" duration={1}>{label}</Shimmer>}
+        <ChevronDown aria-hidden className="kubecode-session-reasoning-caret" size={12} />
+      </ReasoningTrigger>
+      <ReasoningContent className="ai-reasoning-markdown" data-testid="reasoning-content">
+        {text}
+      </ReasoningContent>
+    </Reasoning>
   )
 }
 
@@ -288,45 +249,47 @@ function ToolUseBlock({
   const pending = actions.some((action) => action.status === 'pending')
 
   return (
-    <div style={{ marginBottom: 8 }}>
-      <Button
-        type="button"
-        variant="ghost"
-        className="flex h-auto w-full cursor-pointer items-center justify-start gap-1.5 border-none bg-transparent p-0 text-muted-foreground transition-colors hover:text-foreground"
-        style={{ fontSize: 12, padding: '4px 0' }}
-        aria-expanded={expanded}
-        onClick={onToggle}
-        data-testid="tool-use-toggle"
-      >
-        <Terminal size={14} />
-        <span>{translate(locale, 'ai.message.toolUse')}</span>
-        <span
-          className={`inline-flex h-4 min-w-4 items-center justify-center rounded-full ${pending ? 'animate-pulse' : ''}`}
-          style={{
-            background: 'var(--state-hover)',
-            color: 'var(--muted-foreground)',
-            fontSize: 10,
-            fontWeight: 600,
-            padding: '0 5px',
-          }}
-          data-pending={pending || undefined}
-          data-testid="tool-use-count"
+    <Collapsible className="kubecode-session-tool-use" open={expanded} onOpenChange={onToggle}>
+      <CollapsibleTrigger asChild>
+        <Button
+          className="kubecode-session-tool-use-toggle"
+          data-testid="tool-use-toggle"
+          size="sm"
+          type="button"
+          variant="ghost"
         >
-          {actions.length}
-        </span>
-        {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-      </Button>
-      {expanded && (
-        <div data-testid="tool-use-content" style={{ marginTop: 4 }}>
-          <ActionCardsList
-            actions={actions}
+          <Terminal aria-hidden size={14} />
+          <span>{translate(locale, 'ai.message.toolUse')}</span>
+          <Badge
+            className="kubecode-session-tool-count"
+            data-pending={pending || undefined}
+            data-testid="tool-use-count"
+            variant="secondary"
+          >
+            {pending && <Spinner aria-hidden />}
+            {actions.length}
+          </Badge>
+          <ChevronDown aria-hidden className="kubecode-session-tool-use-caret" size={12} />
+        </Button>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="flex flex-col gap-1" data-testid="tool-use-content">
+        {actions.map((action) => (
+          <AiActionCard
+            expanded={expandedActionIds.has(action.toolId)}
+            input={action.input}
+            key={action.toolId}
+            label={action.label}
+            locale={locale}
+            output={action.output}
+            path={action.path}
+            status={action.status}
+            tool={action.tool}
             onOpenNote={onOpenNote}
-            expandedIds={expandedActionIds}
-            onToggleExpand={onToggleAction}
+            onToggle={() => onToggleAction(action.toolId)}
           />
-        </div>
-      )}
-    </div>
+        ))}
+      </CollapsibleContent>
+    </Collapsible>
   )
 }
 
@@ -350,51 +313,44 @@ function ResponseActions({
   const forkTitle = forkDisabled && forkUnavailableLabel
     ? forkUnavailableLabel
     : translate(locale, 'ai.message.fork')
+  const regenerate = translate(locale, 'ai.message.regenerate')
+  const copy = translate(locale, 'ai.message.copy')
 
   return (
-    <div
-      className="mt-1.5 flex items-center gap-1 opacity-0 transition-opacity group-hover/ai-response:opacity-100 group-focus-within/ai-response:opacity-100"
-      data-testid="ai-message-actions"
-    >
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-xs"
-        className="h-6 w-6 rounded-md p-0 text-muted-foreground hover:text-foreground"
-        disabled={regenerateDisabled}
-        aria-label={translate(locale, 'ai.message.regenerate')}
-        title={translate(locale, 'ai.message.regenerate')}
-        onClick={() => messageId && onRegenerate?.(messageId)}
+    <MessageActions className="kubecode-session-message-actions" data-testid="ai-message-actions">
+      <MessageAction
+        aria-label={regenerate}
         data-testid="ai-message-regenerate"
-      >
-        <RefreshCw size={14} />
-      </Button>
-      <Button
-        type="button"
-        variant="ghost"
+        disabled={regenerateDisabled}
+        label={regenerate}
         size="icon-xs"
-        className="h-6 w-6 rounded-md p-0 text-muted-foreground hover:text-foreground"
-        aria-label={translate(locale, 'ai.message.copy')}
-        title={translate(locale, 'ai.message.copy')}
-        onClick={onCopy}
+        title={regenerate}
+        onClick={() => messageId && onRegenerate?.(messageId)}
+      >
+        <RefreshCw aria-hidden size={14} />
+      </MessageAction>
+      <MessageAction
+        aria-label={copy}
         data-testid="ai-message-copy"
-      >
-        <Copy size={14} />
-      </Button>
-      <Button
-        type="button"
-        variant="ghost"
+        label={copy}
         size="icon-xs"
-        className="h-6 w-6 rounded-md p-0 text-muted-foreground hover:text-foreground"
-        disabled={forkDisabled}
+        title={copy}
+        onClick={onCopy}
+      >
+        <Copy aria-hidden size={14} />
+      </MessageAction>
+      <MessageAction
         aria-label={forkTitle}
+        data-testid="ai-message-fork"
+        disabled={forkDisabled}
+        label={forkTitle}
+        size="icon-xs"
         title={forkTitle}
         onClick={() => messageId && onFork?.(messageId)}
-        data-testid="ai-message-fork"
       >
-        <GitBranch size={14} />
-      </Button>
-    </div>
+        <GitBranch aria-hidden size={14} />
+      </MessageAction>
+    </MessageActions>
   )
 }
 
@@ -406,6 +362,7 @@ function ResponseBlock({
   onRegenerate,
   forkUnavailableLabel,
   blocks,
+  isStreaming,
 }: {
   locale: AppLocale
   messageId?: string
@@ -414,6 +371,7 @@ function ResponseBlock({
   onNavigateWikilink?: (target: string) => void
   onRegenerate?: (messageId: string) => void
   blocks: AiResponseBlock[]
+  isStreaming: boolean
 }) {
   const text = blocks.map((block) => block.text).join('\n\n')
   const handleCopy = useCallback(() => {
@@ -423,18 +381,18 @@ function ResponseBlock({
   }, [text])
 
   return (
-    <div
-      className="group/ai-response min-w-0 max-w-full overflow-hidden"
-      style={{ marginBottom: 4 }}
-      data-testid="ai-response-block"
-    >
-      <div className="flex flex-col gap-4">
-        {blocks.map((block) => (
-          <div data-testid="ai-response-segment" key={block.id}>
-            <MarkdownContent content={block.text} onWikilinkClick={onNavigateWikilink} />
+    <Message className="kubecode-session-response" data-testid="ai-response-block" from="assistant">
+      <MessageContent className="kubecode-session-response-content">
+        {blocks.map((block, index) => (
+          <div className="ai-markdown" data-testid="ai-response-segment" key={block.id}>
+            <SessionMarkdown
+              content={block.text}
+              isAnimating={isStreaming && index === blocks.length - 1}
+              onWikilinkClick={onNavigateWikilink}
+            />
           </div>
         ))}
-      </div>
+      </MessageContent>
       <ResponseActions
         locale={locale}
         messageId={messageId}
@@ -443,18 +401,14 @@ function ResponseBlock({
         forkUnavailableLabel={forkUnavailableLabel}
         onRegenerate={onRegenerate}
       />
-    </div>
+    </Message>
   )
 }
 
-function StreamingIndicator() {
+function StreamingIndicator({ locale }: { locale: AppLocale }) {
   return (
-    <div className="flex items-center gap-2 text-muted-foreground" style={{ fontSize: 12, marginTop: 8, padding: 0 }}>
-      <div className="flex gap-1">
-        <span className="typing-dot" />
-        <span className="typing-dot" style={{ animationDelay: '0.2s' }} />
-        <span className="typing-dot" style={{ animationDelay: '0.4s' }} />
-      </div>
+    <div className="kubecode-session-working" data-testid="ai-streaming-indicator" role="status">
+      <Shimmer as="span" duration={1.5}>{translate(locale, 'kubecode.session.working')}</Shimmer>
     </div>
   )
 }
@@ -468,15 +422,13 @@ export function AiMessage(props: AiMessageProps) {
 }
 
 function ConversationMessage({ userMessage, references, locale = 'en', messageId, reasoning, reasoningDone, actions, response, responseBlocks, isStreaming, internal = false, onEdit, onFork, forkUnavailableLabel, onOpenNote, onNavigateWikilink, onRegenerate }: AiMessageProps) {
-  // Manual override: null = follow auto behavior, true/false = user forced
-  const [userOverride, setUserOverride] = useState(false)
+  // Manual override: null follows the stream (open while reasoning streams,
+  // closed once done); a toggle by the reader wins from then on.
+  const [reasoningOverride, setReasoningOverride] = useState<boolean | null>(null)
   const [expandedActions, setExpandedActions] = useState<Set<string>>(new Set())
   const [toolUseExpanded, setToolUseExpanded] = useState(false)
 
-  // Auto: expanded while reasoning streams, collapsed once done
-  // User can manually toggle to override the auto state
-  const autoExpanded = !reasoningDone
-  const reasoningExpanded = userOverride ? !autoExpanded : autoExpanded
+  const reasoningExpanded = reasoningOverride ?? !reasoningDone
   const renderedResponseBlocks = responseBlocks?.length
     ? responseBlocks
     : response ? [{ id: `${messageId ?? 'response'}-legacy`, text: response }] : []
@@ -491,16 +443,17 @@ function ConversationMessage({ userMessage, references, locale = 'en', messageId
   }, [])
 
   return (
-    <div className="min-w-0 max-w-full" data-testid="ai-message" style={{ marginBottom: 16 }}>
+    <div className="kubecode-session-turn min-w-0 max-w-full" data-testid="ai-message" data-ws-components="official">
       {!internal && (
         <UserBubble content={userMessage} locale={locale} messageId={messageId} onEdit={onEdit} references={references} onOpenNote={onOpenNote} />
       )}
       {reasoning && (
         <ReasoningBlock
+          done={Boolean(reasoningDone)}
           locale={locale}
+          open={reasoningExpanded}
           text={reasoning}
-          expanded={reasoningExpanded}
-          onToggle={() => setUserOverride(prev => !prev)}
+          onOpenChange={setReasoningOverride}
         />
       )}
       {actions.length > 0 && (
@@ -523,9 +476,10 @@ function ConversationMessage({ userMessage, references, locale = 'en', messageId
           forkUnavailableLabel={internal ? undefined : forkUnavailableLabel}
           onNavigateWikilink={onNavigateWikilink}
           onRegenerate={internal ? undefined : onRegenerate}
+          isStreaming={Boolean(isStreaming)}
         />
       )}
-      {isStreaming && renderedResponseBlocks.length === 0 && <StreamingIndicator />}
+      {isStreaming && renderedResponseBlocks.length === 0 && <StreamingIndicator locale={locale} />}
     </div>
   )
 }

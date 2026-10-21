@@ -1,18 +1,14 @@
-import { type ReactNode, useCallback } from 'react'
+import { useCallback } from 'react'
+
+import { CodeBlock } from '@/components/ai-elements/code-block'
 import {
-  ChevronDown,
-  ChevronRight,
-  CircleCheck,
-  CircleX,
-  File,
-  FolderOpen,
-  Loader,
-  NotebookPen,
-  Pencil,
-  Search,
-  Terminal,
-} from 'lucide-react'
-import { Button } from '@/components/ui/button'
+  Tool,
+  ToolContent,
+  ToolHeader,
+  ToolInput,
+  ToolOutput,
+} from '@/components/ai-elements/tool'
+import { translate, type AppLocale } from '@/lib/i18n'
 
 export type AiActionStatus = 'pending' | 'done' | 'error'
 
@@ -26,209 +22,104 @@ export interface AiActionCardProps {
   expanded: boolean
   onToggle: () => void
   onOpenNote?: (path: string) => void
+  locale?: AppLocale
 }
 
 const MAX_DETAIL_LENGTH = 800
 
-type IconRenderer = (size: number) => ReactNode
+/** The official Tool states for Kubecode's three action states. */
+const TOOL_STATE = {
+  pending: 'input-available',
+  done: 'output-available',
+  error: 'output-error',
+} as const
 
-const TOOL_ICON_MAP: Record<string, IconRenderer> = {
-  // Native Claude Code tools
-  Bash: (s) => <Terminal size={s} />,
-  Write: (s) => <Pencil size={s} />,
-  Edit: (s) => <NotebookPen size={s} />,
-  Read: (s) => <File size={s} />,
-  Glob: (s) => <FolderOpen size={s} />,
-  Grep: (s) => <Search size={s} />,
-}
-const TOOL_ICON_BY_NAME = new Map(Object.entries(TOOL_ICON_MAP))
+const STATUS_LABEL_KEY = {
+  pending: 'kubecode.session.toolStatusRunning',
+  done: 'kubecode.session.toolStatusDone',
+  error: 'kubecode.session.toolStatusFailed',
+} as const
 
-const DEFAULT_ICON: IconRenderer = (s) => <Pencil size={s} />
-
-function StatusIndicator({ status }: { status: AiActionStatus }) {
-  if (status === 'pending') {
-    return <Loader size={14} className="ai-spin text-muted-foreground" data-testid="status-pending" />
-  }
-  if (status === 'done') {
-    return <CircleCheck size={14} fill="currentColor" style={{ color: 'var(--accent-green)' }} data-testid="status-done" />
-  }
-  return <CircleX size={14} fill="currentColor" style={{ color: 'var(--destructive)' }} data-testid="status-error" />
+function truncateText(text: string): string {
+  return text.length <= MAX_DETAIL_LENGTH ? text : `${text.slice(0, MAX_DETAIL_LENGTH)}…`
 }
 
-function truncateText(text: string): { text: string; truncated: boolean } {
-  if (text.length <= MAX_DETAIL_LENGTH) return { text, truncated: false }
-  return { text: text.slice(0, MAX_DETAIL_LENGTH), truncated: true }
-}
-
-function formatInputForDisplay(raw: string): string {
+function parseInput(raw: string): unknown {
   try {
-    return JSON.stringify(JSON.parse(raw), null, 2)
+    return JSON.parse(raw)
   } catch {
     return raw
   }
 }
 
-function hasActionDetails(input?: string, output?: string): boolean {
-  return Boolean(input || output)
-}
-
-function resolveDirectOpenPath({
-  hasDetails,
-  onOpenNote,
-  path,
-}: Pick<AiActionCardProps, 'onOpenNote' | 'path'> & {
-  hasDetails: boolean
-}): string | null {
-  if (hasDetails || !path || !onOpenNote) return null
-  return path
-}
-
-function ActionCardHeader({
-  expanded,
-  hasDetails,
-  label,
-  onClick,
-  renderIcon,
-  status,
-}: {
-  expanded: boolean
-  hasDetails: boolean
-  label: string
-  onClick: () => void
-  renderIcon: IconRenderer
-  status: AiActionStatus
-}) {
-  return (
-    <Button
-      type="button"
-      className="ai-action-card-header"
-      aria-expanded={hasDetails ? expanded : undefined}
-      size="sm"
-      variant="ghost"
-      onClick={onClick}
-      onKeyDown={(event) => {
-        if (event.key === 'Escape' && expanded) {
-          event.preventDefault()
-          onClick()
-        }
-      }}
-      data-testid="action-card-header"
-    >
-      <span className="ai-action-card-icon" aria-hidden="true">
-        {renderIcon(14)}
-      </span>
-      <span className="ai-action-card-label">{label}</span>
-      <StatusIndicator status={status} />
-      {hasDetails && (
-        <span className="ai-action-card-caret" aria-hidden="true">
-          {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-        </span>
-      )}
-    </Button>
-  )
-}
-
-function DetailBlock({ label, content, isError }: {
-  label: string; content: string; isError?: boolean
-}) {
-  const { text, truncated } = truncateText(content)
-  return (
-    <div style={{ marginTop: 6 }}>
-      <div
-        className="text-muted-foreground"
-        style={{ fontSize: 10, fontWeight: 600, marginBottom: 2 }}
-      >
-        {label}
-      </div>
-      <pre
-        data-testid={`detail-${label.toLowerCase()}`}
-        style={{
-          fontSize: 11,
-          lineHeight: 1.4,
-          margin: 0,
-          padding: '4px 6px',
-          borderRadius: 4,
-          background: 'var(--muted)',
-          color: isError ? 'var(--destructive)' : 'var(--foreground)',
-          whiteSpace: 'pre-wrap',
-          wordBreak: 'break-word',
-          maxHeight: 200,
-          overflow: 'auto',
-        }}
-      >
-        {text}{truncated && <span className="text-muted-foreground">{'…'}</span>}
-      </pre>
-    </div>
-  )
-}
-
-function ActionCardDetails({
-  expanded,
-  hasDetails,
-  input,
-  output,
-  status,
-}: {
-  expanded: boolean
-  hasDetails: boolean
-  input?: string
-  output?: string
-  status: AiActionStatus
-}) {
-  if (!expanded || !hasDetails) return null
-
-  const formattedInput = input ? formatInputForDisplay(input) : undefined
-  return (
-    <div
-      data-testid="action-card-details"
-      style={{ padding: '0 10px 8px 10px' }}
-    >
-      {formattedInput && <DetailBlock label="Input" content={formattedInput} />}
-      {output && (
-        <DetailBlock label="Output" content={output} isError={status === 'error'} />
-      )}
-    </div>
-  )
-}
-
+/**
+ * One tool call on the official AI Elements Tool (ADR 0245): the header
+ * names the call and its state in words, Input shows the parameters, and
+ * Output shows what came back in a Code Block — shell output included, as
+ * the Terminal element is not published. A failed call keeps its output in
+ * the same Code Block under an Error heading (Stack Trace is not published).
+ * A call without details that names a file opens it instead of expanding.
+ */
 export function AiActionCard({
-  tool, label, path, status, input, output, expanded, onToggle, onOpenNote,
+  tool, label, path, status, input, output, expanded, onToggle, onOpenNote, locale = 'en',
 }: AiActionCardProps) {
-  const renderIcon = TOOL_ICON_BY_NAME.get(tool) ?? DEFAULT_ICON
-  const hasDetails = hasActionDetails(input, output)
-  const directOpenPath = resolveDirectOpenPath({ path, onOpenNote, hasDetails })
+  const hasDetails = Boolean(input || output)
+  const directOpenPath = !hasDetails && path && onOpenNote ? path : null
+  const open = hasDetails && expanded
 
-  const handleClick = useCallback(() => {
+  const handleOpenChange = useCallback(() => {
     if (directOpenPath && onOpenNote) {
       onOpenNote(directOpenPath)
       return
     }
-
-    onToggle()
-  }, [directOpenPath, onOpenNote, onToggle])
+    if (hasDetails) onToggle()
+  }, [directOpenPath, hasDetails, onOpenNote, onToggle])
 
   return (
-    <div
-      data-testid="ai-action-card"
+    <Tool
       className="ai-action-card"
       data-density="compact"
       data-status={status}
+      data-testid="ai-action-card"
+      open={open}
+      onOpenChange={handleOpenChange}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape' && open) {
+          event.preventDefault()
+          event.stopPropagation()
+          onToggle()
+        }
+      }}
     >
-      <ActionCardHeader
-        expanded={expanded}
-        hasDetails={hasDetails}
-        label={label}
-        onClick={handleClick}
-        renderIcon={renderIcon}
-        status={status}
+      <ToolHeader
+        className="ai-action-card-header"
+        state={TOOL_STATE[status]}
+        statusLabel={translate(locale, STATUS_LABEL_KEY[status])}
+        title={label}
+        toolName={tool}
+        type="dynamic-tool"
       />
-      <ActionCardDetails
-        expanded={expanded}
-        hasDetails={hasDetails}
-        input={input}
-        output={output}
-        status={status}
-      />
-    </div>
+      {open && (
+        <ToolContent className="ai-action-card-details" data-testid="action-card-details">
+          {input && (
+            <ToolInput
+              data-testid="detail-input"
+              input={parseInput(input)}
+              label={translate(locale, 'kubecode.session.toolInput')}
+            />
+          )}
+          {output && (
+            <ToolOutput
+              data-testid="detail-output"
+              errorText={undefined}
+              output={<CodeBlock code={truncateText(output)} language="log" />}
+              resultLabel={status === 'error'
+                ? translate(locale, 'kubecode.session.toolError')
+                : translate(locale, 'kubecode.session.toolOutput')}
+            />
+          )}
+        </ToolContent>
+      )}
+    </Tool>
   )
 }

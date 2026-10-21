@@ -88,11 +88,16 @@ describe('AiMessage', () => {
     expect(row).toHaveAttribute('data-density', 'compact')
     expect(screen.queryByTestId('action-card-details')).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByTestId('action-card-header'))
+    const header = screen.getByRole('button', { name: /Run test suite/ })
+    expect(header).toHaveTextContent('Done')
+    fireEvent.click(header)
+    expect(header).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByTestId('detail-input')).toHaveTextContent('Input')
     expect(screen.getByTestId('detail-input')).toHaveTextContent('pnpm test')
+    expect(screen.getByTestId('detail-output')).toHaveTextContent('Output')
     expect(screen.getByTestId('detail-output')).toHaveTextContent('129 tests passed')
 
-    fireEvent.keyDown(screen.getByTestId('action-card-header'), { key: 'Escape' })
+    fireEvent.keyDown(header, { key: 'Escape' })
     expect(screen.queryByTestId('action-card-details')).not.toBeInTheDocument()
   })
 
@@ -119,5 +124,90 @@ describe('AiMessage', () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(
       'First provider message.\n\nSecond provider message.',
     ))
+  })
+
+  it('labels tool work in the reader\'s language and shows a failed call under Error', () => {
+    render(
+      <AiMessage
+        actions={[{
+          tool: 'Bash',
+          toolId: 'tool-1',
+          label: 'pnpm build',
+          status: 'error',
+          input: '{"command":"pnpm build"}',
+          output: 'error TS2304',
+        }]}
+        locale="de-DE"
+        messageId="run-1"
+        userMessage="Build"
+      />,
+    )
+
+    fireEvent.click(screen.getByTestId('tool-use-toggle'))
+    const header = screen.getByRole('button', { name: /pnpm build/ })
+    expect(header).toHaveTextContent('Fehlgeschlagen')
+    fireEvent.click(header)
+    expect(screen.getByTestId('detail-input')).toHaveTextContent('Eingabe')
+    expect(screen.getByTestId('detail-output')).toHaveTextContent('Fehler')
+    expect(screen.getByTestId('detail-output')).toHaveTextContent('error TS2304')
+    for (const english of ['Parameters', 'Result', 'Completed', 'Running']) {
+      expect(screen.getByTestId('ai-message')).not.toHaveTextContent(english)
+    }
+  })
+
+  it('opens a file directly from a tool call without details', () => {
+    const onOpenNote = vi.fn()
+    render(
+      <AiMessage
+        actions={[{ tool: 'Read', toolId: 'tool-1', label: 'Read README.md', path: 'README.md', status: 'done' }]}
+        messageId="run-1"
+        onOpenNote={onOpenNote}
+        userMessage="Read it"
+      />,
+    )
+
+    fireEvent.click(screen.getByTestId('tool-use-toggle'))
+    fireEvent.click(screen.getByRole('button', { name: /Read README.md/ }))
+    expect(onOpenNote).toHaveBeenCalledWith('README.md')
+    expect(screen.queryByTestId('action-card-details')).not.toBeInTheDocument()
+  })
+
+  it('renders hardened markdown with wikilinks that navigate', async () => {
+    const onNavigateWikilink = vi.fn()
+    render(
+      <AiMessage
+        actions={[]}
+        messageId="run-1"
+        onNavigateWikilink={onNavigateWikilink}
+        response={'See [[Design Notes|the notes]] and <b>raw</b> [bad](javascript:alert(1)).'}
+        userMessage="Where?"
+      />,
+    )
+
+    const link = await screen.findByRole('link', { name: 'the notes' })
+    fireEvent.click(link)
+    expect(onNavigateWikilink).toHaveBeenCalledWith('Design Notes')
+    expect(screen.getByTestId('ai-response-block').querySelector('b')).toBeNull()
+    expect(screen.queryByRole('link', { name: 'bad' })).toBeNull()
+  })
+
+  it('shows reasoning open while it streams and lets the reader close it', () => {
+    const { rerender } = render(
+      <AiMessage actions={[]} messageId="run-1" reasoning="Weighing options" reasoningDone={false} userMessage="Think" />,
+    )
+    const toggle = screen.getByTestId('reasoning-toggle')
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByTestId('reasoning-content')).toHaveTextContent('Weighing options')
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    rerender(
+      <AiMessage actions={[]} messageId="run-1" reasoning="Weighing options" reasoningDone userMessage="Think" />,
+    )
+    expect(screen.getByTestId('reasoning-toggle')).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('shows a localized working indicator before the first response text', () => {
+    render(<AiMessage actions={[]} isStreaming locale="de-DE" messageId="run-1" userMessage="Go" />)
+    expect(screen.getByTestId('ai-streaming-indicator')).toHaveTextContent('Arbeitet…')
   })
 })
