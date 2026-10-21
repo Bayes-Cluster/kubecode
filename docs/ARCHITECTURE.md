@@ -835,6 +835,13 @@ tokens that are independent of the workbench theme. Icon renderers emit the
 icon as the root `<svg>` element because workbench CSS sizes icons through
 descendant `svg` selectors.
 
+Workspace views compose adapted shadcn AI Elements from
+`src/components/ai-elements/` (copied source, no new dependency) over the ADR
+0227 primitives and the shared `--ws-*` tokens in `kubecode.css`. Two
+development routes render outside the Workspace shell on fixture data:
+`#/controls` (the control matrix) and `#/prototypes` (connected screen
+prototypes); see ADR 0233.
+
 ## Agent sessions
 
 The server currently discovers Claude Code, Codex, and OpenCode.

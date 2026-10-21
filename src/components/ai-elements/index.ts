@@ -1,0 +1,15 @@
+// Workspace adaptations of shadcn AI Elements (ADR 0233). Each file records
+// its source, version, and what was changed.
+export * from './chain-of-thought'
+export * from './confirmation'
+export * from './conversation'
+export * from './inline-citation'
+export * from './loader'
+export * from './message'
+export * from './prompt-input'
+export * from './queue'
+export * from './shimmer'
+export * from './sources'
+export * from './suggestion'
+export * from './task'
+export * from './tool'

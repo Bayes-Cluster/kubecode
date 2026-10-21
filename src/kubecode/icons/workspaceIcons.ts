@@ -1,4 +1,5 @@
 import {
+  ArrowDownToLine,
   ArrowLeft,
   ArrowUp,
   AtSign,
@@ -96,6 +97,7 @@ export const WORKSPACE_COMMAND_ICONS = {
   collapse: { Icon: ChevronUp, labelKey: 'kubecode.vocab.command.collapse' },
   settings: { Icon: Settings, labelKey: 'kubecode.vocab.command.settings' },
   add: { Icon: Plus, labelKey: 'kubecode.vocab.command.add' },
+  latest: { Icon: ArrowDownToLine, labelKey: 'kubecode.vocab.command.latest' },
 } as const satisfies Record<string, WorkspaceIconEntry>
 
 /** What a reference or a row is about. */
