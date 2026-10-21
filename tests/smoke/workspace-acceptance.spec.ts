@@ -23,7 +23,7 @@ test.describe('in German', () => {
     try {
       await page.goto(`${workspaceUrl}/#/p/${projectId}/general`)
       await expect(page.locator('html')).toHaveAttribute('lang', 'de-DE')
-      await expect(page.locator('.kubecode-ai-conversation-empty')).toBeVisible()
+      await expect(page.locator('.kubecode-conversation-empty')).toBeVisible()
 
       let aborted = false
       await page.route('**/channels/*/messages', async (route) => {

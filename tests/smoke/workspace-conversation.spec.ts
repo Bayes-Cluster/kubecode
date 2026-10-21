@@ -95,7 +95,7 @@ test.describe('on a desktop', () => {
       await expect(row(page, 'Should we prune the attention heads?').locator('.kubecode-message-recipients')).toContainText(manager.name)
       // One input surface (#232): the text and its controls in the Prompt Input card, whom it reaches in its footer;
       // the researcher's own message reads as theirs.
-      const promptCard = page.locator('.kubecode-ai-prompt-input')
+      const promptCard = page.locator('.kubecode-prompt-input')
       await expect(promptCard.getByRole('combobox', { name: 'Message the Workspace' })).toBeVisible()
       await expect(promptCard.getByRole('button', { name: 'Add context' })).toBeVisible()
       await expect(promptCard.locator('.kubecode-composer-to')).toHaveCount(0)
@@ -153,7 +153,7 @@ test.describe('on a desktop', () => {
         await page.setViewportSize({ width: 2560, height: 1440 })
         const widePane = (await page.locator('.kubecode-channel-main').boundingBox())!
         const wideDock = (await page.locator('.kubecode-conversation-dock').boundingBox())!
-        const card = (await page.locator('.kubecode-conversation-dock .kubecode-ai-prompt-input').boundingBox())!
+        const card = (await page.locator('.kubecode-conversation-dock .kubecode-prompt-input').boundingBox())!
         expect(card.width).toBeLessThanOrEqual(960)
         expect(Math.abs((card.x - widePane.x) - (widePane.x + widePane.width - card.x - card.width))).toBeLessThanOrEqual(2)
         expect(Math.abs((wideDock.x - widePane.x) - (widePane.x + widePane.width - wideDock.x - wideDock.width))).toBeLessThanOrEqual(2)
@@ -332,7 +332,7 @@ test.describe('on a phone', () => {
       await items.first().click()
       await expect(page.getByText(/Replying to You:/)).toBeVisible()
       // The reply heads the same card the text is in, on a phone too.
-      await expect(page.locator('.kubecode-ai-prompt-input-header')).toContainText('Replying to You:')
+      await expect(page.locator('.kubecode-composer-context')).toContainText('Replying to You:')
       await expectContained(page)
     } finally {
       await request.delete(`${api}/projects/${projectId}`)
