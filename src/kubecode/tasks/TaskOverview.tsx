@@ -1,8 +1,9 @@
 import { useState } from 'react'
 
+import { Plan, PlanContent } from '@/components/ai-elements/plan'
+import { Task, TaskContent, TaskItem } from '@/components/ai-elements/task'
 import { Button } from '@/components/ui/button'
 import { MemberIdentity } from '@/components/workspace/MemberIdentity'
-import { StatusBadge } from '@/components/workspace/StatusBadge'
 import type { Translator } from '@/lib/i18n'
 
 import type { ResearchBrief, TaskDetail } from '../api'
@@ -13,6 +14,7 @@ import { conditionLabel } from './taskLabels'
 import { hasOpenReview, progressOf } from './taskLifecycle'
 import { useGeneralFromTask } from './taskNavigation'
 import { TaskQuestions } from './TaskQuestions'
+import { ToneBadge } from './ToneBadge'
 
 export type TaskOverviewProps = {
   /** An admitted Task; null for a proposal, which shows only its goal. */
@@ -55,7 +57,7 @@ export function TaskOverview({
   const approval = detail !== null && detail.revision > detail.approved_revision
   const suggestions = detail?.pending?.some((item) => item.kind === 'suggestion') ?? false
   return (
-    <div className="kubecode-task-overview">
+    <div className="kubecode-task-overview" data-ws-components="official">
       {detail && (review || questions || approval || suggestions) && (
         <section aria-label={t('kubecode.task.waitingOnYou')} className="kubecode-task-waiting">
           <h4>{t('kubecode.task.waitingOnYou')}</h4>
@@ -132,20 +134,25 @@ function BriefSummary({ brief, t }: { brief: ResearchBrief; t: Translator }) {
     [t('kubecode.task.criteria'), brief.evaluation_criteria],
     [t('kubecode.task.constraints'), brief.constraints],
   ]
+  // The brief is the Task's plan (ADR 0243): always open, its labels kept as one description list.
   return (
-    <dl className="kubecode-task-brief">
-      {/* Every section is one group, so labels and lists line up (#229). */}
-      <div>
-        <dt>{t('kubecode.task.question')}</dt>
-        <dd>{brief.question}</dd>
-      </div>
-      {lists.filter(([, items]) => items.length > 0).map(([label, items]) => (
-        <div key={label}>
-          <dt>{label}</dt>
-          <dd><ul>{items.map((item) => <li key={item}>{item}</li>)}</ul></dd>
-        </div>
-      ))}
-    </dl>
+    <Plan className="kubecode-task-plan" open>
+      <PlanContent>
+        <dl className="kubecode-task-brief">
+          {/* Every section is one group, so labels and lists line up (#229). */}
+          <div>
+            <dt>{t('kubecode.task.question')}</dt>
+            <dd>{brief.question}</dd>
+          </div>
+          {lists.filter(([, items]) => items.length > 0).map(([label, items]) => (
+            <div key={label}>
+              <dt>{label}</dt>
+              <dd><ul>{items.map((item) => <li key={item}>{item}</li>)}</ul></dd>
+            </div>
+          ))}
+        </dl>
+      </PlanContent>
+    </Plan>
   )
 }
 
@@ -213,22 +220,24 @@ function Progress({ detail, t }: { detail: TaskDetail; t: Translator }) {
         {progress ? t('kubecode.task.card.progress', progress) : t('kubecode.task.card.noWork')}
       </p>
       {detail.internal_work.length > 0 && (
-        <ul className="kubecode-task-work">
-          {detail.internal_work.map((work) => {
-            const condition = conditionLabel(t, work.condition)
-            return (
-              <li key={work.id}>
-                <strong>{work.title}</strong>
-                <StatusBadge tone="muted">{t(`kubecode.work.stage.${work.stage}`)}</StatusBadge>
-                {condition && <StatusBadge tone="warn">{condition}</StatusBadge>}
-                {work.assignee && <small>@{work.assignee.handle}</small>}
-                <small className="kubecode-research-muted">
-                  {t('kubecode.task.workCounts', { attempts: work.attempts, experiments: work.experiments })}
-                </small>
-              </li>
-            )
-          })}
-        </ul>
+        <Task className="kubecode-task-work" open>
+          <TaskContent role="list">
+            {detail.internal_work.map((work) => {
+              const condition = conditionLabel(t, work.condition)
+              return (
+                <TaskItem className="kubecode-task-work-item" key={work.id} role="listitem">
+                  <strong>{work.title}</strong>
+                  <ToneBadge>{t(`kubecode.work.stage.${work.stage}`)}</ToneBadge>
+                  {condition && <ToneBadge tone="warn">{condition}</ToneBadge>}
+                  {work.assignee && <small>@{work.assignee.handle}</small>}
+                  <small className="kubecode-research-muted">
+                    {t('kubecode.task.workCounts', { attempts: work.attempts, experiments: work.experiments })}
+                  </small>
+                </TaskItem>
+              )
+            })}
+          </TaskContent>
+        </Task>
       )}
     </section>
   )

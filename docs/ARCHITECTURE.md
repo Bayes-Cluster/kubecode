@@ -869,6 +869,12 @@ S1–S4 of #229), it keeps the ADR 0233 adaptations, now in
 Workspace shell on fixture data and are built on the official parts:
 `#/controls` (the control matrix, with an official-components section) and
 `#/prototypes` (connected screen prototypes); see ADR 0233 and ADR 0241.
+The Task inspector, the Kanban board, the evidence panel and Needs you are on
+the official parts (ADR 0243): the brief is a Plan, internal work a Task list,
+the review's decision a Confirmation and its evidence Sources of Item rows,
+the board a Card per Task with Tabs for the narrow stage picker and
+Collapsibles for proposals and archived Tasks, and Needs you named Item
+groups with Empty.
 
 ## Agent sessions
 
