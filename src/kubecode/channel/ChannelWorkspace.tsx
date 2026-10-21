@@ -386,37 +386,40 @@ export function ChannelWorkspace({
           </p>
         )}
         <span className="sr-only" role="status">{announcement}</span>
-        <ExecutionStrip api={api} scope={{ binding: 'public' }} t={t} />
-        {channel && (
-          <MessageComposer
-            api={api}
-            directory={directory}
-            draft={draft}
-            events={events}
-            filter={taskFilter}
-            focusKey="composer:general"
-            // Each view of General has its own composer: a send in flight stays with the view it was sent from.
-            key={placeKey.general(projectId, taskFilter)}
-            labels={labels}
-            locale={locale}
-            placeholder={t('kubecode.channel.composerPlaceholder')}
-            projectId={projectId}
-            t={t}
-            textareaRef={textarea}
-            stop={onlyRun ? {
-              label: t('kubecode.execution.stopTurn', { name: askerName(onlyRun, t) }),
-              shortLabel: t('kubecode.execution.stopShort'),
-              onStop: () => {
-                void api.cancelRun(onlyRun.run_id).then(() => attention?.reload(), () => undefined)
-              },
-            } : undefined}
-            outboxKey={`${placeKey.general(projectId, taskFilter)}#outbox`}
-            onDraftChange={setDraft}
-            onSend={send}
-            onSent={sent}
-            workspaceName={workspaceName}
-          />
-        )}
+        {/* Who is at work, what did not go, and the input card, together at the foot (#232). */}
+        <div className="kubecode-conversation-dock">
+          <ExecutionStrip api={api} scope={{ binding: 'public' }} t={t} />
+          {channel && (
+            <MessageComposer
+              api={api}
+              directory={directory}
+              draft={draft}
+              events={events}
+              filter={taskFilter}
+              focusKey="composer:general"
+              // Each view of General has its own composer: a send in flight stays with the view it was sent from.
+              key={placeKey.general(projectId, taskFilter)}
+              labels={labels}
+              locale={locale}
+              placeholder={t('kubecode.channel.composerPlaceholder')}
+              projectId={projectId}
+              t={t}
+              textareaRef={textarea}
+              stop={onlyRun ? {
+                label: t('kubecode.execution.stopTurn', { name: askerName(onlyRun, t) }),
+                shortLabel: t('kubecode.execution.stopShort'),
+                onStop: () => {
+                  void api.cancelRun(onlyRun.run_id).then(() => attention?.reload(), () => undefined)
+                },
+              } : undefined}
+              outboxKey={`${placeKey.general(projectId, taskFilter)}#outbox`}
+              onDraftChange={setDraft}
+              onSend={send}
+              onSent={sent}
+              workspaceName={workspaceName}
+            />
+          )}
+        </div>
       </div>
       {detail}
       {channel && thread && !detail && (

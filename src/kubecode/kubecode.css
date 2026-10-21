@@ -4200,9 +4200,7 @@
   gap: var(--ws-space-1);
 }
 
-.kubecode-dm-turn { display: flex; flex-direction: column; gap: var(--ws-space-2); max-width: var(--ws-reading-width); padding: var(--ws-space-2); }
-.kubecode-dm-side { display: flex; flex-direction: column; gap: var(--ws-space-1); min-width: 0; }
-.kubecode-dm-side .kubecode-message-body { padding-left: calc(var(--ws-avatar-sm) + var(--ws-space-2)); }
+.kubecode-dm-turn { display: flex; flex-direction: column; max-width: var(--ws-reading-width); }
 
 @media (pointer: coarse) {
   .kubecode-message-toolbar { opacity: 1; }
@@ -5356,7 +5354,6 @@ button.kubecode-reference-chip-open:focus-visible,
   .kubecode-task-work .kubecode-execution-summary { display: none; }
   .kubecode-task-work .kubecode-execution-body { max-height: none; overflow: visible; }
 }
-.kubecode-dm-turn[data-state='queued'] { opacity: 0.8; }
 @media (pointer: coarse) {
   .kubecode-delivery-failure .kubecode-decision-button,
   .kubecode-delivery-failure button,
@@ -5851,4 +5848,75 @@ button.kubecode-reference-chip-open:focus-visible,
   .kubecode-resources > .kubecode-destination-header,
   .kubecode-members-view > .kubecode-destination-header { margin: 0 -16px var(--ws-space-2); }
   .kubecode-destination-body { padding: var(--ws-space-2) var(--ws-space-3); }
+}
+
+/*
+ * General and DMs as one conversation (#232, ADR 0233): each message is an
+ * AI Elements Message (the researcher's own tinted, a failed one marked at
+ * its edge), and the foot of the view docks who is at work, the unsent rows,
+ * and the Prompt Input card around the shared Composer.
+ */
+.kubecode-message.kubecode-ai-message { gap: var(--ws-space-1); padding: var(--ws-space-2); }
+.kubecode-message.kubecode-ai-message[data-continued='true'] { padding-top: 0; }
+.kubecode-message > .kubecode-ai-message-author,
+.kubecode-dm-turn .kubecode-ai-message-author {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ws-space-2);
+  min-width: 0;
+}
+.kubecode-dm-turn .kubecode-ai-message-content,
+.kubecode-channel-messages > .kubecode-ai-message .kubecode-ai-message-content { padding-inline-start: calc(var(--ws-avatar-sm) + var(--ws-space-2)); }
+.kubecode-dm-turn .kubecode-ai-message[data-from='self'] .kubecode-ai-message-content,
+.kubecode-channel-messages > .kubecode-ai-message[data-from='self'] .kubecode-ai-message-content {
+  margin-inline-start: calc(var(--ws-avatar-sm) + var(--ws-space-2));
+  padding-inline-start: var(--ws-space-3);
+}
+.kubecode-channel-messages > .kubecode-ai-message { max-width: var(--ws-reading-width); padding-inline: var(--ws-space-2); }
+.kubecode-dm-waiting { align-items: center; color: var(--text-secondary); display: flex; font: var(--ws-font-meta); gap: var(--ws-space-2); margin: 0; }
+.kubecode-ai-response.kubecode-message-body .ai-markdown > :first-child { margin-top: 0; }
+.kubecode-ai-response.kubecode-message-body .ai-markdown > :last-child { margin-bottom: 0; }
+
+.kubecode-conversation-dock {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: var(--ws-space-2);
+  /* Aligned with the messages it follows, which read from the start edge. */
+  max-width: var(--ws-composer-width);
+  position: relative;
+  width: 100%;
+  z-index: 1;
+}
+.kubecode-conversation-dock .kubecode-ai-prompt-input { margin: 0; }
+.kubecode-ai-response.kubecode-message-body table { display: block; max-width: 100%; overflow-wrap: normal; overflow-x: auto; }
+.kubecode-ai-response.kubecode-message-body ul { list-style: disc; }
+.kubecode-ai-response.kubecode-message-body ol { list-style: decimal; }
+.kubecode-conversation-dock .kubecode-execution-strip {
+  background: color-mix(in srgb, var(--text-primary) 4%, var(--surface-app));
+  border: 0.5px solid var(--ws-hairline-strong);
+  border-radius: var(--ws-radius-md);
+}
+.kubecode-conversation-dock .kubecode-outbox { padding: 0; }
+.kubecode-conversation-dock .kubecode-outbox-row {
+  background: var(--ws-surface-self);
+  border-radius: var(--ws-radius-md);
+  padding: var(--ws-space-2) var(--ws-space-3);
+}
+.kubecode-conversation-dock .kubecode-outbox-row[data-state='failed'] { box-shadow: inset 2px 0 0 var(--feedback-error-text); }
+.kubecode-conversation-dock .kubecode-channel-composer { gap: var(--ws-space-2); }
+.kubecode-ai-prompt-input .kubecode-composer-context { align-items: flex-start; flex-direction: column; }
+.kubecode-ai-prompt-input .kubecode-channel-replying { margin: 0; }
+.kubecode-composer-footer { display: flex; flex-direction: column; gap: var(--ws-space-1); }
+
+@media (max-width: 760px) {
+  .kubecode-dm-turn .kubecode-ai-message-content,
+  .kubecode-channel-messages > .kubecode-ai-message .kubecode-ai-message-content,
+  .kubecode-message.kubecode-ai-message .kubecode-ai-message-content { padding-inline-start: 0; }
+  .kubecode-dm-turn .kubecode-ai-message[data-from='self'] .kubecode-ai-message-content,
+  .kubecode-channel-messages > .kubecode-ai-message[data-from='self'] .kubecode-ai-message-content,
+  .kubecode-message.kubecode-ai-message[data-from='self'] .kubecode-ai-message-content { margin-inline-start: 0; padding-inline-start: var(--ws-space-3); }
+  /* The conversation keeps room to read: the strip's body scrolls sooner beside the card. */
+  .kubecode-conversation-dock .kubecode-execution-body { max-height: min(28dvh, 16rem); }
 }

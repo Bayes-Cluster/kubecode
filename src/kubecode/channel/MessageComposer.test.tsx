@@ -277,6 +277,22 @@ describe('MessageComposer', () => {
     expect(onSend.mock.calls[0][0].references).toEqual([{ kind: 'artifact', id: 'a2', revision: '3' }])
   })
 
+  it('is one input surface: the reply and references head the card, the text and its controls fill it, and the recipients close it', () => {
+    const initial = { ...emptyGeneralDraft('r1'), reply: { messageId: 'm4', authorName: 'Analyst', excerpt: 'Ran it' } }
+    render(<Harness initial={initial} />)
+    const card = document.querySelector('.kubecode-ai-prompt-input') as HTMLElement
+    expect(card).not.toBeNull()
+    const header = card.querySelector('.kubecode-ai-prompt-input-header') as HTMLElement
+    expect(header).toHaveTextContent('Replying to Analyst: Ran it')
+    expect(within(header).getByText('Pruning')).toBeInTheDocument()
+    expect(card.querySelector('.kubecode-ai-prompt-input-body')).toContainElement(box())
+    expect(within(card).getByRole('button', { name: 'Add context' })).toBeInTheDocument()
+    expect(within(card).getByRole('button', { name: 'Send' })).toBeInTheDocument()
+    const footer = card.querySelector('.kubecode-ai-prompt-input-footer') as HTMLElement
+    expect(footer).toContainElement(toRow())
+    expect(footer).toHaveTextContent(/never start work/)
+  })
+
   it('puts "@" at the caret for a mention', () => {
     render(<Harness />)
     type('hi')
