@@ -1,6 +1,8 @@
-import { MessageCircle, Plus, RotateCw, Trash2 } from 'lucide-react'
-import { IconButton } from '@/components/workspace/IconButton'
+import { Lock, MessageCircle, Plus, RotateCw, Trash2, UserRound } from 'lucide-react'
 import { useState } from 'react'
+
+import { IconButton } from '@/components/workspace/IconButton'
+import { StatusBadge } from '@/components/workspace/StatusBadge'
 
 import { AiAgentIcon } from '@/components/AiAgentIcon'
 import { Button } from '@/components/ui/button'
@@ -10,6 +12,7 @@ import type { Translator } from '@/lib/i18n'
 import type {
   AgentDescriptor,
   AgentId,
+  Conversation,
   KubecodeApi,
   Member,
   MemberDefaults,
@@ -19,7 +22,9 @@ import type {
 import { agentName, newClientMessageId } from '../session/sessionModel'
 import type { WorkspaceConnectionState } from '../useWorkspaceEventStream'
 import {
+  ACTIVITY_LABELS,
   isMemberStale,
+  memberActivity,
   memberErrorMessage,
   SPECIALIST_TEMPLATES,
   TEMPLATE_LABELS,
@@ -39,8 +44,12 @@ export type MemberRosterProps = {
   /** Opens the researcher's private conversation with a member. */
   onOpenDm?: (member: Member) => void
   projectId: string
+  /** The Workspace's Sessions, to show what a member is executing apart from its membership. */
+  sessions?: readonly Conversation[]
   t: Translator
 }
+
+const NO_SESSIONS: readonly Conversation[] = []
 
 type Draft = {
   id: string | null
@@ -63,7 +72,7 @@ type Draft = {
  * member keeps its history and is refused while it holds open work.
  */
 export function MemberRoster({
-  agents, api, connectionState, defaults, events, onOpenDm, onOpenMember, projectId, t,
+  agents, api, connectionState, defaults, events, onOpenDm, onOpenMember, projectId, sessions = NO_SESSIONS, t,
 }: MemberRosterProps) {
   const { roster, status, refreshFailed, reload } = useMembers(api, projectId, events, connectionState)
   const [confirming, setConfirming] = useState<string | null>(null)
@@ -148,10 +157,142 @@ export function MemberRoster({
     )
   }
 
+  const draftForm = draft && (
+        <form
+          aria-label={draft.id === null ? t('kubecode.members.add') : t('kubecode.members.edit')}
+          className="kubecode-member-form"
+          onSubmit={(event) => {
+            event.preventDefault()
+            if (!busy) save()
+          }}
+        >
+          <label>
+            <span>{t('kubecode.members.name')}</span>
+            <input
+              className="kubecode-channel-select"
+              maxLength={60}
+              required
+              value={draft.name}
+              onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+            />
+          </label>
+          {draft.id !== null && roster.members.find((m) => m.id === draft.id)?.role === 'general' && (
+            <p className="kubecode-member-locked" role="note">
+              <Lock aria-hidden size={12} />
+              <span>{t('kubecode.members.managerLocked')}</span>
+            </p>
+          )}
+          {(draft.id === null || roster.members.find((m) => m.id === draft.id)?.role === 'specialist') && (
+            <label>
+              <span>{t('kubecode.members.role')}</span>
+              <select
+                className="kubecode-channel-select"
+                value={draft.template}
+                onChange={(event) => {
+                  const template = event.target.value as MemberTemplate
+                  // New instructions follow the template unless they were edited.
+                  const follows = draft.id === null && draft.instructions === draft.filledFrom
+                  const filled = defaults?.templates[template] ?? ''
+                  setDraft({
+                    ...draft,
+                    template,
+                    filledFrom: follows ? filled : draft.filledFrom,
+                    instructions: follows ? filled : draft.instructions,
+                  })
+                }}
+              >
+                {SPECIALIST_TEMPLATES.map((template) => (
+                  <option key={template} value={template}>{t(TEMPLATE_LABELS[template])}</option>
+                ))}
+              </select>
+            </label>
+          )}
+          <label>
+            <span>{t('kubecode.members.provider')}</span>
+            <select
+              className="kubecode-channel-select"
+              aria-describedby={draft.providerLocked ? 'kubecode-member-provider-locked' : undefined}
+              disabled={draft.providerLocked}
+              value={draft.agentId}
+              onChange={(event) => setDraft({ ...draft, agentId: event.target.value as AgentId })}
+            >
+              {agents.map((agent) => (
+                <option disabled={!agent.available} key={agent.id} value={agent.id}>
+                  {agentName(agent.id)}{agent.available ? '' : ` — ${t('kubecode.unavailable')}`}
+                </option>
+              ))}
+            </select>
+          </label>
+          {draft.providerLocked && (
+            <small className="kubecode-research-muted" id="kubecode-member-provider-locked">
+              {t('kubecode.members.providerLocked')}
+            </small>
+          )}
+          <label>
+            <span>{t('kubecode.members.instructions')}</span>
+            <Textarea
+              rows={5}
+              value={draft.instructions}
+              onChange={(event) => setDraft({ ...draft, instructions: event.target.value })}
+            />
+          </label>
+          <div className="kubecode-work-command-row">
+            <Button disabled={busy || draft.name.trim() === ''} size="sm" type="submit">
+              {t('kubecode.members.save')}
+            </Button>
+            <Button size="sm" type="button" variant="ghost" onClick={() => setDraft(null)}>
+              {t('kubecode.members.cancel')}
+            </Button>
+          </div>
+        </form>
+  )
+
+  const replacingForm = replacing && (
+        <form
+          aria-label={t('kubecode.members.replaceSession')}
+          className="kubecode-member-form"
+          onSubmit={(event) => {
+            event.preventDefault()
+            if (busy) return
+            const member = roster.members.find((candidate) => candidate.id === replacing.id)
+            void run(() => api.replaceMemberSession(
+              projectId,
+              replacing.id,
+              member ? { ...member.spec, agent_id: replacing.agentId } : undefined,
+            ))
+          }}
+        >
+          <p className="kubecode-research-muted">{t('kubecode.members.replaceHelp')}</p>
+          <label>
+            <span>{t('kubecode.members.provider')}</span>
+            <select
+              className="kubecode-channel-select"
+              value={replacing.agentId}
+              onChange={(event) => setReplacing({ ...replacing, agentId: event.target.value as AgentId })}
+            >
+              {agents.map((agent) => (
+                <option disabled={!agent.available} key={agent.id} value={agent.id}>
+                  {agentName(agent.id)}{agent.available ? '' : ` — ${t('kubecode.unavailable')}`}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="kubecode-work-command-row">
+            <Button disabled={busy} size="sm" type="submit">{t('kubecode.members.replaceConfirm')}</Button>
+            <Button size="sm" type="button" variant="ghost" onClick={() => setReplacing(null)}>
+              {t('kubecode.members.cancel')}
+            </Button>
+          </div>
+        </form>
+  )
+
   return (
     <section aria-label={t('kubecode.members.title')} className="kubecode-members">
       <header className="kubecode-members-header">
-        <h3>{t('kubecode.members.title')}</h3>
+        <div>
+          <h3>{t('kubecode.members.current.title')}</h3>
+          <p className="kubecode-research-muted">{t('kubecode.members.current.description')}</p>
+        </div>
         <Button disabled={busy} size="sm" variant="outline" onClick={startAdd}>
           <Plus aria-hidden size={14} />
           {t('kubecode.members.add')}
@@ -161,16 +302,25 @@ export function MemberRoster({
       {refreshFailed && (
         <p className="kubecode-research-muted" role="status">{t('kubecode.members.refreshFailed')}</p>
       )}
+      {draft?.id === null && draftForm}
       <ul className="kubecode-member-list">
-        {roster.members.map((member) => (
+        {roster.members.map((member) => {
+          const activity = memberActivity(member, sessions)
+          const manager = member.role === 'general'
+          return (
           <li
+            className="kubecode-member-row"
             data-focus-key={`member:${member.id}`}
+            data-role={member.role}
             data-scroll-anchor={`member:${member.id}`}
             data-state={member.state}
             key={member.id}
           >
             <div className="kubecode-member-main">
               <Identity
+                activity={activity ? (
+                  <StatusBadge tone={activity === 'running' ? 'info' : 'warn'}>{t(ACTIVITY_LABELS[activity])}</StatusBadge>
+                ) : undefined}
                 meta={(
                   <span className="kubecode-member-provider">
                     <AiAgentIcon agent={member.spec.agent_id} size={14} />
@@ -180,8 +330,11 @@ export function MemberRoster({
                 view={memberView(member, t)}
                 onOpen={onOpenMember ? () => onOpenMember(member) : undefined}
               />
-              {member.role === 'general' && (
-                <small className="kubecode-research-muted">{t('kubecode.members.managerNote')}</small>
+              {manager && (
+                <p className="kubecode-member-locked">
+                  <Lock aria-hidden size={12} />
+                  <span>{t('kubecode.members.managerNote')}</span>
+                </p>
               )}
               {member.setup_code === 'provider_unavailable' && (
                 <small className="kubecode-research-error">
@@ -195,6 +348,7 @@ export function MemberRoster({
                 </small>
               )}
             </div>
+            <div className="kubecode-member-actions">
             {member.state === 'setup_required' && (
               <Button
                 aria-label={`${t('kubecode.members.retrySetup')}: ${member.name}`}
@@ -207,6 +361,13 @@ export function MemberRoster({
                 <RotateCw aria-hidden size={14} />
                 {t('kubecode.members.retrySetup')}
               </Button>
+            )}
+            {onOpenMember && (
+              <IconButton
+                icon={<UserRound aria-hidden size={14} />}
+                label={t('kubecode.members.openProfile', { name: member.name })}
+                onClick={() => onOpenMember(member)}
+              />
             )}
             <Button
               aria-label={`${t('kubecode.members.edit')}: ${member.name}`}
@@ -264,125 +425,14 @@ export function MemberRoster({
                 onClick={() => setConfirming(member.id)}
               />
             ))}
+            </div>
+            {draft?.id === member.id && draftForm}
+            {replacing?.id === member.id && replacingForm}
           </li>
-        ))}
+          )
+        })}
       </ul>
 
-      {draft && (
-        <form
-          aria-label={draft.id === null ? t('kubecode.members.add') : t('kubecode.members.edit')}
-          className="kubecode-member-form"
-          onSubmit={(event) => {
-            event.preventDefault()
-            if (!busy) save()
-          }}
-        >
-          <label>
-            <span>{t('kubecode.members.name')}</span>
-            <input
-              className="kubecode-channel-select"
-              maxLength={60}
-              required
-              value={draft.name}
-              onChange={(event) => setDraft({ ...draft, name: event.target.value })}
-            />
-          </label>
-          {(draft.id === null || roster.members.find((m) => m.id === draft.id)?.role === 'specialist') && (
-            <label>
-              <span>{t('kubecode.members.role')}</span>
-              <select
-                className="kubecode-channel-select"
-                value={draft.template}
-                onChange={(event) => {
-                  const template = event.target.value as MemberTemplate
-                  // New instructions follow the template unless they were edited.
-                  const follows = draft.id === null && draft.instructions === draft.filledFrom
-                  const filled = defaults?.templates[template] ?? ''
-                  setDraft({
-                    ...draft,
-                    template,
-                    filledFrom: follows ? filled : draft.filledFrom,
-                    instructions: follows ? filled : draft.instructions,
-                  })
-                }}
-              >
-                {SPECIALIST_TEMPLATES.map((template) => (
-                  <option key={template} value={template}>{t(TEMPLATE_LABELS[template])}</option>
-                ))}
-              </select>
-            </label>
-          )}
-          <label>
-            <span>{t('kubecode.members.provider')}</span>
-            <select
-              className="kubecode-channel-select"
-              disabled={draft.providerLocked}
-              value={draft.agentId}
-              onChange={(event) => setDraft({ ...draft, agentId: event.target.value as AgentId })}
-            >
-              {agents.map((agent) => (
-                <option disabled={!agent.available} key={agent.id} value={agent.id}>
-                  {agentName(agent.id)}{agent.available ? '' : ` — ${t('kubecode.unavailable')}`}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span>{t('kubecode.members.instructions')}</span>
-            <Textarea
-              rows={5}
-              value={draft.instructions}
-              onChange={(event) => setDraft({ ...draft, instructions: event.target.value })}
-            />
-          </label>
-          <div className="kubecode-work-command-row">
-            <Button disabled={busy || draft.name.trim() === ''} size="sm" type="submit">
-              {t('kubecode.members.save')}
-            </Button>
-            <Button size="sm" type="button" variant="ghost" onClick={() => setDraft(null)}>
-              {t('kubecode.members.cancel')}
-            </Button>
-          </div>
-        </form>
-      )}
-      {replacing && (
-        <form
-          aria-label={t('kubecode.members.replaceSession')}
-          className="kubecode-member-form"
-          onSubmit={(event) => {
-            event.preventDefault()
-            if (busy) return
-            const member = roster.members.find((candidate) => candidate.id === replacing.id)
-            void run(() => api.replaceMemberSession(
-              projectId,
-              replacing.id,
-              member ? { ...member.spec, agent_id: replacing.agentId } : undefined,
-            ))
-          }}
-        >
-          <p className="kubecode-research-muted">{t('kubecode.members.replaceHelp')}</p>
-          <label>
-            <span>{t('kubecode.members.provider')}</span>
-            <select
-              className="kubecode-channel-select"
-              value={replacing.agentId}
-              onChange={(event) => setReplacing({ ...replacing, agentId: event.target.value as AgentId })}
-            >
-              {agents.map((agent) => (
-                <option disabled={!agent.available} key={agent.id} value={agent.id}>
-                  {agentName(agent.id)}{agent.available ? '' : ` — ${t('kubecode.unavailable')}`}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="kubecode-work-command-row">
-            <Button disabled={busy} size="sm" type="submit">{t('kubecode.members.replaceConfirm')}</Button>
-            <Button size="sm" type="button" variant="ghost" onClick={() => setReplacing(null)}>
-              {t('kubecode.members.cancel')}
-            </Button>
-          </div>
-        </form>
-      )}
     </section>
   )
 }

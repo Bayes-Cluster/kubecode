@@ -1,6 +1,8 @@
-import { Plus, X } from 'lucide-react'
-import { IconButton } from '@/components/workspace/IconButton'
+import { Lock, Plus, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
+
+import { IconButton } from '@/components/workspace/IconButton'
+import { StatusBadge } from '@/components/workspace/StatusBadge'
 
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -8,7 +10,15 @@ import type { Translator } from '@/lib/i18n'
 
 import type { AgentDescriptor, AgentId, KubecodeApi, MemberDefaults, MemberTemplate } from '../api'
 import { agentName } from '../session/sessionModel'
-import { configFromRows, configRows, isMemberStale, memberErrorMessage, SPECIALIST_TEMPLATES, TEMPLATE_LABELS } from './memberModel'
+import {
+  configFromRows,
+  configRows,
+  isMemberStale,
+  lockedManagerOption,
+  memberErrorMessage,
+  SPECIALIST_TEMPLATES,
+  TEMPLATE_LABELS,
+} from './memberModel'
 
 export type MemberDefaultsPanelProps = {
   agents: AgentDescriptor[]
@@ -76,7 +86,14 @@ export function MemberDefaultsPanel({ agents, api, onLoaded, t }: MemberDefaults
     )
   }
 
+  const dirty = agentId !== saved.general.agent_id
+    || JSON.stringify(configFromRows(rows)) !== JSON.stringify(saved.general.config)
+    || instructions !== saved.general.instructions
+    || SPECIALIST_TEMPLATES.some((template) => (templates[template] ?? '') !== (saved.templates[template] ?? ''))
+  const lockedKey = lockedManagerOption(rows)
+
   const save = async () => {
+    if (lockedKey !== null) return
     setBusy(true)
     setMessage(null)
     try {
@@ -100,74 +117,107 @@ export function MemberDefaultsPanel({ agents, api, onLoaded, t }: MemberDefaults
 
   return (
     <section aria-label={t('kubecode.members.defaults.title')} className="kubecode-member-defaults">
-      <h3>{t('kubecode.members.defaults.title')}</h3>
-      <p className="kubecode-research-muted">{t('kubecode.members.defaults.description')}</p>
-      <label>
-        <span>{t('kubecode.members.provider')}</span>
-        <select
-          className="kubecode-channel-select"
-          value={agentId}
-          onChange={(event) => setAgentId(event.target.value as AgentId)}
-        >
-          {agents.map((agent) => (
-            <option disabled={!agent.available && agent.id !== agentId} key={agent.id} value={agent.id}>
-              {agentName(agent.id)}{agent.available ? '' : ` — ${t('kubecode.unavailable')}`}
-            </option>
-          ))}
-        </select>
-      </label>
-      <fieldset>
-        <legend>{t('kubecode.members.defaults.config')}</legend>
-        <small className="kubecode-research-muted">{t('kubecode.members.defaults.configHint')}</small>
-        {rows.map((row, index) => (
-          <div className="kubecode-work-command-row" key={index}>
-            <input
-              aria-label={`${t('kubecode.members.defaults.configKey')} ${index + 1}`}
-              className="kubecode-channel-select"
-              value={row.key}
-              onChange={(event) => setRows(rows.map((r, i) => i === index ? { ...r, key: event.target.value } : r))}
-            />
-            <input
-              aria-label={`${t('kubecode.members.defaults.configValue')} ${index + 1}`}
-              className="kubecode-channel-select"
-              value={row.value}
-              onChange={(event) => setRows(rows.map((r, i) => i === index ? { ...r, value: event.target.value } : r))}
-            />
-            <IconButton
-              icon={<X aria-hidden size={14} />}
-              label={`${t('kubecode.members.defaults.removeConfig')} ${index + 1}`}
-              onClick={() => setRows(rows.filter((_, i) => i !== index))}
-            />
-          </div>
-        ))}
-        <Button size="xs" variant="outline" onClick={() => setRows([...rows, { key: '', value: '' }])}>
-          <Plus aria-hidden size={14} />
-          {t('kubecode.members.defaults.addConfig')}
-        </Button>
-      </fieldset>
-      <label>
-        <span>{t('kubecode.members.defaults.generalInstructions')}</span>
-        <Textarea rows={6} value={instructions} onChange={(event) => setInstructions(event.target.value)} />
-      </label>
-      {SPECIALIST_TEMPLATES.filter((template) => template !== 'custom').map((template) => (
-        <label key={template}>
-          <span>{t('kubecode.members.defaults.templateInstructions', { role: t(TEMPLATE_LABELS[template]) })}</span>
-          <Textarea
-            rows={3}
-            value={templates[template] ?? ''}
-            onChange={(event) => setTemplates({ ...templates, [template]: event.target.value })}
-          />
+      <header className="kubecode-members-header">
+        <div>
+          <h3>{t('kubecode.members.defaults.title')}</h3>
+          <p className="kubecode-research-muted">{t('kubecode.members.defaults.description')}</p>
+        </div>
+        {dirty && <StatusBadge tone="warn">{t('kubecode.members.defaults.unsaved')}</StatusBadge>}
+      </header>
+      <form
+        className="kubecode-member-form"
+        onSubmit={(event) => {
+          event.preventDefault()
+          if (!busy) void save()
+        }}
+      >
+        <label>
+          <span>{t('kubecode.members.provider')}</span>
+          <select
+            className="kubecode-channel-select"
+            value={agentId}
+            onChange={(event) => setAgentId(event.target.value as AgentId)}
+          >
+            {agents.map((agent) => (
+              <option disabled={!agent.available && agent.id !== agentId} key={agent.id} value={agent.id}>
+                {agentName(agent.id)}{agent.available ? '' : ` — ${t('kubecode.unavailable')}`}
+              </option>
+            ))}
+          </select>
         </label>
-      ))}
-      <p className="kubecode-research-muted">{t('kubecode.members.defaults.boundary')}</p>
-      {message && (
-        <p className={message.tone === 'error' ? 'kubecode-research-error' : 'kubecode-research-muted'} role={message.tone === 'error' ? 'alert' : 'status'}>
-          {message.text}
+        <fieldset>
+          <legend>{t('kubecode.members.defaults.config')}</legend>
+          <small className="kubecode-research-muted">{t('kubecode.members.defaults.configHint')}</small>
+          {rows.map((row, index) => (
+            <div className="kubecode-member-config-row" key={index}>
+              <input
+                aria-invalid={row.key === lockedKey || undefined}
+                aria-label={`${t('kubecode.members.defaults.configKey')} ${index + 1}`}
+                className="kubecode-channel-select"
+                value={row.key}
+                onChange={(event) => setRows(rows.map((r, i) => i === index ? { ...r, key: event.target.value } : r))}
+              />
+              <input
+                aria-label={`${t('kubecode.members.defaults.configValue')} ${index + 1}`}
+                className="kubecode-channel-select"
+                value={row.value}
+                onChange={(event) => setRows(rows.map((r, i) => i === index ? { ...r, value: event.target.value } : r))}
+              />
+              <IconButton
+                icon={<X aria-hidden size={14} />}
+                label={`${t('kubecode.members.defaults.removeConfig')} ${index + 1}`}
+                onClick={() => setRows(rows.filter((_, i) => i !== index))}
+              />
+            </div>
+          ))}
+          {lockedKey !== null && (
+            <p className="kubecode-research-error" role="alert">
+              {t('kubecode.members.defaults.modeLocked', { key: lockedKey.trim() })}
+            </p>
+          )}
+          <Button size="xs" type="button" variant="outline" onClick={() => setRows([...rows, { key: '', value: '' }])}>
+            <Plus aria-hidden size={14} />
+            {t('kubecode.members.defaults.addConfig')}
+          </Button>
+        </fieldset>
+        <label>
+          <span>{t('kubecode.members.defaults.generalInstructions')}</span>
+          <Textarea rows={6} value={instructions} onChange={(event) => setInstructions(event.target.value)} />
+        </label>
+        <p className="kubecode-member-locked" role="note">
+          <Lock aria-hidden size={12} />
+          <span>{t('kubecode.members.defaults.boundary')}</span>
         </p>
-      )}
-      <Button disabled={busy} size="sm" onClick={() => void save()}>
-        {t('kubecode.members.save')}
-      </Button>
+        <fieldset>
+          <legend>{t('kubecode.members.defaults.templates')}</legend>
+          <small className="kubecode-research-muted">{t('kubecode.members.defaults.templatesHint')}</small>
+          {SPECIALIST_TEMPLATES.filter((template) => template !== 'custom').map((template) => (
+            <label key={template}>
+              <span>{t('kubecode.members.defaults.templateInstructions', { role: t(TEMPLATE_LABELS[template]) })}</span>
+              <Textarea
+                rows={3}
+                value={templates[template] ?? ''}
+                onChange={(event) => setTemplates({ ...templates, [template]: event.target.value })}
+              />
+            </label>
+          ))}
+        </fieldset>
+        {message && (
+          <p className={message.tone === 'error' ? 'kubecode-research-error' : 'kubecode-research-muted'} role={message.tone === 'error' ? 'alert' : 'status'}>
+            {message.text}
+          </p>
+        )}
+        <div className="kubecode-work-command-row">
+          <Button disabled={busy || !dirty || lockedKey !== null} size="sm" type="submit">
+            {t('kubecode.members.save')}
+          </Button>
+          {dirty && (
+            <Button size="sm" type="button" variant="ghost" onClick={() => adopt(saved)}>
+              {t('kubecode.members.cancel')}
+            </Button>
+          )}
+        </div>
+      </form>
     </section>
   )
 }
