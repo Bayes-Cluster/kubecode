@@ -10,6 +10,8 @@ export default defineConfig([
     'dist',
     'coverage',
     'tools/',
+    // Locally installed agent skills (e.g. the shadcn skill), not product code.
+    '.agents/',
   ]),
   {
     files: ['**/*.{ts,tsx}'],
