@@ -1,5 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+/* ADR 0241: streamdown renders official AI Elements markdown. */
+@source "../node_modules/streamdown/dist/*.js";
 
 /* ============================================================
    Theme Variables — app-owned light/dark contract

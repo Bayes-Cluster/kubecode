@@ -1,129 +1,169 @@
-/**
- * Adapted from AI Elements `conversation`
- * (https://ui.shadcn.com/docs/ai-elements/components/conversation,
- * registry https://registry.ai-sdk.dev/conversation.json, ai-elements 1.9.1).
- *
- * Adaptations (ADR 0233): `use-stick-to-bottom` is replaced by a plain
- * scroller that follows new content only while the reader is at the end, so
- * no dependency is added and a reader of long research is never pulled away;
- * the log is named by the caller; strings are the caller's (localized); the
- * scroll button is the Workspace `IconButton`.
- */
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ComponentProps,
-  type ReactNode,
-} from 'react'
+"use client";
 
-import { IconButton } from '@/components/workspace/IconButton'
-import { Icon } from '@/kubecode/icons'
-import { WORKSPACE_COMMAND_ICONS } from '@/kubecode/icons/workspaceIcons'
-import { cn } from '@/lib/utils'
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import type { UIMessage } from "ai";
+import { ArrowDownIcon, DownloadIcon } from "lucide-react";
+import type { ComponentProps } from "react";
+import { useCallback } from "react";
+import { StickToBottom, useStickToBottomContext } from "use-stick-to-bottom";
 
-type ConversationContextValue = { atEnd: boolean; scrollToEnd: () => void }
+export type ConversationProps = ComponentProps<typeof StickToBottom>;
 
-const ConversationContext = createContext<ConversationContextValue | null>(null)
+export const Conversation = ({ className, ...props }: ConversationProps) => (
+  <StickToBottom
+    className={cn("relative flex-1 overflow-y-hidden", className)}
+    initial="smooth"
+    resize="smooth"
+    role="log"
+    {...props}
+  />
+);
 
-/** Within this many pixels of the end, the reader counts as following along. */
-const END_SLACK = 48
+export type ConversationContentProps = ComponentProps<
+  typeof StickToBottom.Content
+>;
 
-export type ConversationProps = ComponentProps<'div'> & {
-  /** Names the log, for example "General". */
-  label: string
-  /** Start at the latest message (chat) rather than the top (a document). */
-  initial?: 'end' | 'start'
-}
+export const ConversationContent = ({
+  className,
+  ...props
+}: ConversationContentProps) => (
+  <StickToBottom.Content
+    className={cn("flex flex-col gap-8 p-4", className)}
+    {...props}
+  />
+);
 
-export function Conversation({ children, className, initial = 'end', label, ...props }: ConversationProps) {
-  const scroller = useRef<HTMLDivElement>(null)
-  const [atEnd, setAtEnd] = useState(initial === 'end')
-  const following = useRef(initial === 'end')
+export type ConversationEmptyStateProps = ComponentProps<"div"> & {
+  title?: string;
+  description?: string;
+  icon?: React.ReactNode;
+};
 
-  const scrollToEnd = useCallback(() => {
-    const node = scroller.current
-    if (!node) return
-    node.scrollTop = node.scrollHeight
-    following.current = true
-    setAtEnd(true)
-  }, [])
-
-  useLayoutEffect(() => {
-    const node = scroller.current
-    if (initial === 'end' && node) node.scrollTop = node.scrollHeight
-  }, [initial])
-
-  // Keep the end in view as content grows, only while the reader is there.
-  useEffect(() => {
-    const node = scroller.current
-    if (!node || typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(() => {
-      if (following.current) node.scrollTop = node.scrollHeight
-    })
-    for (const child of Array.from(node.children)) observer.observe(child)
-    return () => observer.disconnect()
-  }, [])
-
-  const onScroll = () => {
-    const node = scroller.current
-    if (!node) return
-    const end = node.scrollHeight - node.scrollTop - node.clientHeight <= END_SLACK
-    following.current = end
-    setAtEnd(end)
-  }
-
-  const value = useMemo(() => ({ atEnd, scrollToEnd }), [atEnd, scrollToEnd])
-  return (
-    <ConversationContext.Provider value={value}>
-      <div className={cn('kubecode-ai-conversation', className)} {...props}>
-        <div aria-label={label} className="kubecode-ai-conversation-scroll" ref={scroller} role="log" tabIndex={0} onScroll={onScroll}>
-          {children}
+export const ConversationEmptyState = ({
+  className,
+  title = "No messages yet",
+  description = "Start a conversation to see messages here",
+  icon,
+  children,
+  ...props
+}: ConversationEmptyStateProps) => (
+  <div
+    className={cn(
+      "flex size-full flex-col items-center justify-center gap-3 p-8 text-center",
+      className
+    )}
+    {...props}
+  >
+    {children ?? (
+      <>
+        {icon && <div className="text-muted-foreground">{icon}</div>}
+        <div className="space-y-1">
+          <h3 className="font-medium text-sm">{title}</h3>
+          {description && (
+            <p className="text-muted-foreground text-sm">{description}</p>
+          )}
         </div>
-      </div>
-    </ConversationContext.Provider>
-  )
-}
+      </>
+    )}
+  </div>
+);
 
-export function ConversationContent({ className, ...props }: ComponentProps<'div'>) {
-  return <div className={cn('kubecode-ai-conversation-content', className)} {...props} />
-}
+export type ConversationScrollButtonProps = ComponentProps<typeof Button>;
 
-export type ConversationEmptyStateProps = Omit<ComponentProps<'div'>, 'title'> & {
-  title: string
-  description?: string
-  icon?: ReactNode
-}
+export const ConversationScrollButton = ({
+  className,
+  ...props
+}: ConversationScrollButtonProps) => {
+  const { isAtBottom, scrollToBottom } = useStickToBottomContext();
 
-export function ConversationEmptyState({ children, className, description, icon, title, ...props }: ConversationEmptyStateProps) {
+  const handleScrollToBottom = useCallback(() => {
+    scrollToBottom();
+  }, [scrollToBottom]);
+
   return (
-    <div className={cn('kubecode-ai-conversation-empty', className)} {...props}>
-      {children ?? (
-        <>
-          {icon && <div aria-hidden="true" className="kubecode-ai-conversation-empty-icon">{icon}</div>}
-          <p className="kubecode-ai-conversation-empty-title">{title}</p>
-          {description && <p className="kubecode-ai-conversation-empty-description">{description}</p>}
-        </>
+    !isAtBottom && (
+      <Button
+        className={cn(
+          "absolute bottom-4 left-[50%] translate-x-[-50%] rounded-full dark:bg-background dark:hover:bg-muted",
+          className
+        )}
+        onClick={handleScrollToBottom}
+        size="icon"
+        type="button"
+        variant="outline"
+        {...props}
+      >
+        <ArrowDownIcon className="size-4" />
+      </Button>
+    )
+  );
+};
+
+const getMessageText = (message: UIMessage): string =>
+  message.parts
+    .filter((part) => part.type === "text")
+    .map((part) => part.text)
+    .join("");
+
+export type ConversationDownloadProps = Omit<
+  ComponentProps<typeof Button>,
+  "onClick"
+> & {
+  messages: UIMessage[];
+  filename?: string;
+  formatMessage?: (message: UIMessage, index: number) => string;
+};
+
+const defaultFormatMessage = (message: UIMessage): string => {
+  const roleLabel =
+    message.role.charAt(0).toUpperCase() + message.role.slice(1);
+  return `**${roleLabel}:** ${getMessageText(message)}`;
+};
+
+// eslint-disable-next-line react-refresh/only-export-components -- shadcn/ui pattern
+export const messagesToMarkdown = (
+  messages: UIMessage[],
+  formatMessage: (
+    message: UIMessage,
+    index: number
+  ) => string = defaultFormatMessage
+): string => messages.map((msg, i) => formatMessage(msg, i)).join("\n\n");
+
+export const ConversationDownload = ({
+  messages,
+  filename = "conversation.md",
+  formatMessage = defaultFormatMessage,
+  className,
+  children,
+  ...props
+}: ConversationDownloadProps) => {
+  const handleDownload = useCallback(() => {
+    const markdown = messagesToMarkdown(messages, formatMessage);
+    const blob = new Blob([markdown], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }, [messages, filename, formatMessage]);
+
+  return (
+    <Button
+      className={cn(
+        "absolute top-4 right-4 rounded-full dark:bg-background dark:hover:bg-muted",
+        className
       )}
-    </div>
-  )
-}
-
-/** Returns to the latest message; shown only while the reader is elsewhere. */
-export function ConversationScrollButton({ className, label }: { className?: string; label: string }) {
-  const context = useContext(ConversationContext)
-  if (!context || context.atEnd) return null
-  return (
-    <IconButton
-      className={cn('kubecode-ai-conversation-latest', className)}
-      icon={<Icon role="command" source={WORKSPACE_COMMAND_ICONS.latest.Icon} />}
-      label={label}
-      onClick={context.scrollToEnd}
-    />
-  )
-}
+      onClick={handleDownload}
+      size="icon"
+      type="button"
+      variant="outline"
+      {...props}
+    >
+      {children ?? <DownloadIcon className="size-4" />}
+    </Button>
+  );
+};

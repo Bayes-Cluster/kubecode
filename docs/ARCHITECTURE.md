@@ -855,12 +855,20 @@ tokens that are independent of the workbench theme. Icon renderers emit the
 icon as the root `<svg>` element because workbench CSS sizes icons through
 descendant `svg` selectors.
 
-Workspace views compose adapted shadcn AI Elements from
-`src/components/ai-elements/` (copied source, no new dependency) over the ADR
-0227 primitives and the shared `--ws-*` tokens in `kubecode.css`. Two
-development routes render outside the Workspace shell on fixture data:
-`#/controls` (the control matrix) and `#/prototypes` (connected screen
-prototypes); see ADR 0233.
+The component layer is the official shadcn/ui components in
+`src/components/ui/` and the official AI Elements in
+`src/components/ai-elements/`, installed and upgraded with the shadcn CLI
+(ADR 0241). Markdown in AI Elements renders through streamdown with Kubecode's
+hardening (`streamdown-hardening.ts`: no raw HTML, http/https/mailto links
+only, KaTeX math). A surface that has moved onto the official parts sets
+`data-ws-components="official"`, which maps the shadcn variables onto the
+`--ws-*` tokens in `kubecode.css`. Until each product surface moves (slices
+S1–S4 of #229), it keeps the ADR 0233 adaptations, now in
+`src/components/ai-elements/workspace/` and re-exported unchanged from the
+`@/components/ai-elements` barrel. Two development routes render outside the
+Workspace shell on fixture data and are built on the official parts:
+`#/controls` (the control matrix, with an official-components section) and
+`#/prototypes` (connected screen prototypes); see ADR 0233 and ADR 0241.
 
 ## Agent sessions
 

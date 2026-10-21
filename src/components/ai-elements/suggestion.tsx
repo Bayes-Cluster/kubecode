@@ -1,29 +1,57 @@
-/**
- * Adapted from AI Elements `suggestion`
- * (https://ui.shadcn.com/docs/ai-elements/components/suggestion,
- * registry https://registry.ai-sdk.dev/suggestion.json, ai-elements 1.9.1).
- *
- * Adaptations (ADR 0233): suggestions wrap instead of scrolling sideways
- * (no `scroll-area`), form a labelled group, and only fill the draft — a
- * suggestion never sends or authorizes anything.
- */
-import type { ComponentProps } from 'react'
+"use client";
 
-import { cn } from '@/lib/utils'
+import { Button } from "@/components/ui/button";
+import {
+  ScrollArea,
+  ScrollBar,
+} from "@/components/ui/scroll-area";
+import { cn } from "@/lib/utils";
+import type { ComponentProps } from "react";
+import { useCallback } from "react";
 
-export function Suggestions({ className, label, ...props }: ComponentProps<'div'> & { label: string }) {
-  return <div aria-label={label} className={cn('kubecode-ai-suggestions', className)} role="group" {...props} />
-}
+export type SuggestionsProps = ComponentProps<typeof ScrollArea>;
 
-export type SuggestionProps = Omit<ComponentProps<'button'>, 'onClick'> & {
-  suggestion: string
-  onClick?: (suggestion: string) => void
-}
+export const Suggestions = ({
+  className,
+  children,
+  ...props
+}: SuggestionsProps) => (
+  <ScrollArea className="w-full overflow-x-auto whitespace-nowrap" {...props}>
+    <div className={cn("flex w-max flex-nowrap items-center gap-2", className)}>
+      {children}
+    </div>
+    <ScrollBar className="hidden" orientation="horizontal" />
+  </ScrollArea>
+);
 
-export function Suggestion({ children, className, onClick, suggestion, ...props }: SuggestionProps) {
+export type SuggestionProps = Omit<ComponentProps<typeof Button>, "onClick"> & {
+  suggestion: string;
+  onClick?: (suggestion: string) => void;
+};
+
+export const Suggestion = ({
+  suggestion,
+  onClick,
+  className,
+  variant = "outline",
+  size = "sm",
+  children,
+  ...props
+}: SuggestionProps) => {
+  const handleClick = useCallback(() => {
+    onClick?.(suggestion);
+  }, [onClick, suggestion]);
+
   return (
-    <button className={cn('kubecode-ai-suggestion', className)} type="button" onClick={() => onClick?.(suggestion)} {...props}>
-      {children ?? suggestion}
-    </button>
-  )
-}
+    <Button
+      className={cn("cursor-pointer rounded-full px-4", className)}
+      onClick={handleClick}
+      size={size}
+      type="button"
+      variant={variant}
+      {...props}
+    >
+      {children || suggestion}
+    </Button>
+  );
+};

@@ -1483,7 +1483,9 @@ version-aware reference chips, and evidence is named and versioned like any
 reference (ADR 0236). They present server projections and never decide
 anything themselves: a confirmation's actions are decisions, a suggestion only
 fills a draft. Fixture prototypes of the main screens open at `#/prototypes`.
-See ADR 0233.
+See ADR 0233. The official AI Elements and shadcn/ui components replace the
+adapted copies surface by surface; the prototypes and the control matrix
+already use them (ADR 0241).
 
 ## Members and the General Agent
 

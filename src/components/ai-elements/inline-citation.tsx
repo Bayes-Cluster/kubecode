@@ -1,59 +1,294 @@
-/**
- * Adapted from AI Elements `inline-citation`
- * (https://ui.shadcn.com/docs/ai-elements/components/inline-citation,
- * registry https://registry.ai-sdk.dev/inline-citation.json, ai-elements 1.9.1).
- *
- * Adaptations (ADR 0233): the hover card becomes a Radix popover opened by a
- * real button, so keyboard and touch readers reach it; the trigger shows the
- * citation number, not a URL hostname, because a Workspace citation points at
- * a Workspace object (a file, evidence, a finding) shown as a
- * `ReferenceChip`; the carousel is replaced by a list (no `embla` dependency).
- */
-import type { ComponentProps } from 'react'
+"use client";
 
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { cn } from '@/lib/utils'
+import { Badge } from "@/components/ui/badge";
+import type { CarouselApi } from "@/components/ui/carousel";
+import {
+  Carousel,
+  CarouselContent,
+  CarouselItem,
+} from "@/components/ui/carousel";
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from "@/components/ui/hover-card";
+import { cn } from "@/lib/utils";
+import { ArrowLeftIcon, ArrowRightIcon } from "lucide-react";
+import type { ComponentProps } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useState,
+  useSyncExternalStore,
+} from "react";
 
-export function InlineCitation({ className, ...props }: ComponentProps<'span'>) {
-  return <span className={cn('kubecode-ai-citation', className)} {...props} />
-}
+export type InlineCitationProps = ComponentProps<"span">;
 
-export function InlineCitationText({ className, ...props }: ComponentProps<'span'>) {
-  return <span className={cn('kubecode-ai-citation-text', className)} {...props} />
-}
+export const InlineCitation = ({
+  className,
+  ...props
+}: InlineCitationProps) => (
+  <span
+    className={cn("group inline items-center gap-1", className)}
+    {...props}
+  />
+);
 
-export const InlineCitationCard = Popover
+export type InlineCitationTextProps = ComponentProps<"span">;
 
-export type InlineCitationCardTriggerProps = Omit<ComponentProps<'button'>, 'children'> & {
-  /** What is shown, for example "1" or "1–2". */
-  index: string
-  /** The accessible name, for example "Source 1: Related work notes". */
-  label: string
-}
+export const InlineCitationText = ({
+  className,
+  ...props
+}: InlineCitationTextProps) => (
+  <span
+    className={cn("transition-colors group-hover:bg-accent", className)}
+    {...props}
+  />
+);
 
-export function InlineCitationCardTrigger({ className, index, label, ...props }: InlineCitationCardTriggerProps) {
+export type InlineCitationCardProps = ComponentProps<typeof HoverCard>;
+
+export const InlineCitationCard = (props: InlineCitationCardProps) => (
+  <HoverCard closeDelay={0} openDelay={0} {...props} />
+);
+
+export type InlineCitationCardTriggerProps = ComponentProps<typeof Badge> & {
+  sources: string[];
+};
+
+export const InlineCitationCardTrigger = ({
+  sources,
+  className,
+  children,
+  ...props
+}: InlineCitationCardTriggerProps) => (
+  <HoverCardTrigger asChild>
+    <Badge
+      className={cn("ml-1 rounded-full", className)}
+      variant="secondary"
+      {...props}
+    >
+      {/* Kubecode (ADR 0241): a caller label (for example the citation
+          number) replaces the URL host and the English fallback. */}
+      {children ?? (sources[0] ? (
+        <>
+          {new URL(sources[0]).hostname}{" "}
+          {sources.length > 1 && `+${sources.length - 1}`}
+        </>
+      ) : (
+        "unknown"
+      ))}
+    </Badge>
+  </HoverCardTrigger>
+);
+
+export type InlineCitationCardBodyProps = ComponentProps<"div">;
+
+export const InlineCitationCardBody = ({
+  className,
+  ...props
+}: InlineCitationCardBodyProps) => (
+  <HoverCardContent className={cn("relative w-80 p-0", className)} {...props} />
+);
+
+const CarouselApiContext = createContext<CarouselApi | undefined>(undefined);
+
+const useCarouselApi = () => {
+  const context = useContext(CarouselApiContext);
+  return context;
+};
+
+export type InlineCitationCarouselProps = ComponentProps<typeof Carousel>;
+
+export const InlineCitationCarousel = ({
+  className,
+  children,
+  ...props
+}: InlineCitationCarouselProps) => {
+  const [api, setApi] = useState<CarouselApi>();
+
   return (
-    <PopoverTrigger asChild>
-      <button aria-label={label} className={cn('kubecode-ai-citation-trigger', className)} type="button" {...props}>
-        <span aria-hidden="true">{index}</span>
-      </button>
-    </PopoverTrigger>
-  )
-}
+    <CarouselApiContext.Provider value={api}>
+      <Carousel className={cn("w-full", className)} setApi={setApi} {...props}>
+        {children}
+      </Carousel>
+    </CarouselApiContext.Provider>
+  );
+};
 
-export function InlineCitationCardBody({ className, ...props }: ComponentProps<typeof PopoverContent>) {
-  return <PopoverContent className={cn('kubecode-ai-citation-card', className)} {...props} />
-}
+export type InlineCitationCarouselContentProps = ComponentProps<"div">;
 
-export function InlineCitationSource({ children, className, description, ...props }: ComponentProps<'div'> & { description?: string }) {
+export const InlineCitationCarouselContent = (
+  props: InlineCitationCarouselContentProps
+) => <CarouselContent {...props} />;
+
+export type InlineCitationCarouselItemProps = ComponentProps<"div">;
+
+export const InlineCitationCarouselItem = ({
+  className,
+  ...props
+}: InlineCitationCarouselItemProps) => (
+  <CarouselItem
+    className={cn("w-full space-y-2 p-4 pl-8", className)}
+    {...props}
+  />
+);
+
+export type InlineCitationCarouselHeaderProps = ComponentProps<"div">;
+
+export const InlineCitationCarouselHeader = ({
+  className,
+  ...props
+}: InlineCitationCarouselHeaderProps) => (
+  <div
+    className={cn(
+      "flex items-center justify-between gap-2 rounded-t-md bg-secondary p-2",
+      className
+    )}
+    {...props}
+  />
+);
+
+export type InlineCitationCarouselIndexProps = ComponentProps<"div">;
+
+export const InlineCitationCarouselIndex = ({
+  children,
+  className,
+  ...props
+}: InlineCitationCarouselIndexProps) => {
+  const api = useCarouselApi();
+  // Read from the carousel as an external store (ADR 0241) instead of
+  // copying it into state from an effect.
+  const subscribe = useCallback(
+    (onChange: () => void) => {
+      api?.on("select", onChange);
+      api?.on("reInit", onChange);
+      return () => {
+        api?.off("select", onChange);
+        api?.off("reInit", onChange);
+      };
+    },
+    [api]
+  );
+  const current = useSyncExternalStore(subscribe, () =>
+    api ? api.selectedScrollSnap() + 1 : 0
+  );
+  const count = useSyncExternalStore(subscribe, () =>
+    api ? api.scrollSnapList().length : 0
+  );
+
   return (
-    <div className={cn('kubecode-ai-citation-source', className)} {...props}>
-      {children}
-      {description && <p className="kubecode-ai-citation-description">{description}</p>}
+    <div
+      className={cn(
+        "flex flex-1 items-center justify-end px-3 py-1 text-muted-foreground text-xs",
+        className
+      )}
+      {...props}
+    >
+      {children ?? `${current}/${count}`}
     </div>
-  )
-}
+  );
+};
 
-export function InlineCitationQuote({ className, ...props }: ComponentProps<'blockquote'>) {
-  return <blockquote className={cn('kubecode-ai-citation-quote', className)} {...props} />
-}
+export type InlineCitationCarouselPrevProps = ComponentProps<"button">;
+
+export const InlineCitationCarouselPrev = ({
+  className,
+  ...props
+}: InlineCitationCarouselPrevProps) => {
+  const api = useCarouselApi();
+
+  const handleClick = useCallback(() => {
+    if (api) {
+      api.scrollPrev();
+    }
+  }, [api]);
+
+  return (
+    <button
+      aria-label="Previous"
+      className={cn("shrink-0", className)}
+      onClick={handleClick}
+      type="button"
+      {...props}
+    >
+      <ArrowLeftIcon className="size-4 text-muted-foreground" />
+    </button>
+  );
+};
+
+export type InlineCitationCarouselNextProps = ComponentProps<"button">;
+
+export const InlineCitationCarouselNext = ({
+  className,
+  ...props
+}: InlineCitationCarouselNextProps) => {
+  const api = useCarouselApi();
+
+  const handleClick = useCallback(() => {
+    if (api) {
+      api.scrollNext();
+    }
+  }, [api]);
+
+  return (
+    <button
+      aria-label="Next"
+      className={cn("shrink-0", className)}
+      onClick={handleClick}
+      type="button"
+      {...props}
+    >
+      <ArrowRightIcon className="size-4 text-muted-foreground" />
+    </button>
+  );
+};
+
+export type InlineCitationSourceProps = ComponentProps<"div"> & {
+  title?: string;
+  url?: string;
+  description?: string;
+};
+
+export const InlineCitationSource = ({
+  title,
+  url,
+  description,
+  className,
+  children,
+  ...props
+}: InlineCitationSourceProps) => (
+  <div className={cn("space-y-1", className)} {...props}>
+    {title && (
+      <h4 className="truncate font-medium text-sm leading-tight">{title}</h4>
+    )}
+    {url && (
+      <p className="truncate break-all text-muted-foreground text-xs">{url}</p>
+    )}
+    {description && (
+      <p className="line-clamp-3 text-muted-foreground text-sm leading-relaxed">
+        {description}
+      </p>
+    )}
+    {children}
+  </div>
+);
+
+export type InlineCitationQuoteProps = ComponentProps<"blockquote">;
+
+export const InlineCitationQuote = ({
+  children,
+  className,
+  ...props
+}: InlineCitationQuoteProps) => (
+  <blockquote
+    className={cn(
+      "border-muted border-l-2 pl-3 text-muted-foreground text-sm italic",
+      className
+    )}
+    {...props}
+  >
+    {children}
+  </blockquote>
+);

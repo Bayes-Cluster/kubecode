@@ -5449,6 +5449,28 @@ button.kubecode-reference-chip-open:focus-visible,
   --ws-surface-composer: color-mix(in srgb, var(--text-primary) 5%, var(--surface-panel));
   --ws-surface-self: color-mix(in srgb, var(--primary) 10%, var(--surface-app));
 }
+/* ADR 0241: official shadcn/ui and AI Elements read the shadcn variables.
+   Inside a surface that has moved onto them, those variables resolve to the
+   Workspace tokens above, so both modes and every theme follow without a new
+   palette. Product surfaces opt in one slice at a time; until then they keep
+   the global aliases in index.css. */
+[data-ws-components='official'] {
+  --radius: var(--ws-radius-sm);
+  --background: var(--surface-app);
+  --card: var(--ws-surface-raised);
+  --card-foreground: var(--text-primary);
+  --popover: var(--surface-popover);
+  --popover-foreground: var(--text-primary);
+  --secondary: var(--ws-surface-quiet);
+  --secondary-foreground: var(--text-primary);
+  --muted: var(--ws-surface-quiet);
+  --muted-foreground: var(--text-secondary);
+  --accent: var(--ws-accent-soft);
+  --accent-foreground: var(--text-primary);
+  --border: var(--ws-hairline-strong);
+  --input: var(--ws-hairline-strong);
+  --ring: var(--state-focus-ring);
+}
 .kubecode-app {
   --ws-font-reading: 400 var(--kubecode-ui-font-size, 14px) / 1.715 var(--kubecode-ui-font, system-ui, sans-serif);
 }
