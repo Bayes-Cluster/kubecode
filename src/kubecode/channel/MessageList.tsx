@@ -57,6 +57,8 @@ type MessageListProps = {
   onJumpMissing?: (messageId: string) => void
   /** A message to scroll to and focus once it is loaded (a link, or coming back from a Task). */
   focusId?: string | null
+  /** The linked `focusId` cannot be found: the reader is put at the latest instead. */
+  focusMissing?: boolean
   /**
    * Where the reader is (ADR 0228 §4): the message across the middle of the
    * log, and whether they are at the newest one. Reported as they scroll.
@@ -107,6 +109,7 @@ export function MessageList({
   feed,
   filter = null,
   focusId = null,
+  focusMissing = false,
   focusOnLand = true,
   label,
   labels,
@@ -217,6 +220,16 @@ export function MessageList({
     // Only the first page of messages decides where the reader starts.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasMessages])
+
+  // A link to a message that is gone leaves nothing to land on: start at the latest and follow it,
+  // as arriving without a link does. Scrolling down to it is what makes the Conversation follow.
+  useLayoutEffect(() => {
+    if (!focusMissing || !hasMessages) return
+    const element = scrollerOf()
+    if (!element) return
+    element.scrollTop = element.scrollHeight
+    stuck.current = true
+  }, [focusMissing, hasMessages])
 
   const focusOnLandRef = useRef(focusOnLand)
   useEffect(() => { focusOnLandRef.current = focusOnLand })

@@ -164,13 +164,15 @@ export function ChannelWorkspace({
   // A different scope (another filter) is a new feed: resolve the link again.
   useEffect(() => { resolved.current = null }, [taskFilter, channel?.id])
   const { loadAround, messages: loaded, status: feedStatus } = feed
+  const [unreachable, setUnreachable] = useState<string | null>(null)
   useEffect(() => {
     if (!focusMessageId || !channel || feedStatus !== 'ready' || resolved.current === focusMessageId) return
     resolved.current = focusMessageId
     if (loaded.some((message) => message.id === focusMessageId)) return
     api.getChannelMessage(projectId, channel.id, focusMessageId)
       .then((message) => loadAround(message.seq))
-      .catch(() => undefined)
+      // A linked message that is gone has nothing to land on: the reader starts at the latest.
+      .catch(() => setUnreachable(focusMessageId))
   }, [api, channel, feedStatus, focusMessageId, loadAround, loaded, projectId])
   // A citation of a message that is not loaded: load around it, then land there.
   const [jumpTarget, setJumpTarget] = useState<string | null>(null)
@@ -365,6 +367,7 @@ export function ChannelWorkspace({
           filter={taskFilter}
           // While a detail is open the reader is in it; coming back lands on the message again.
           focusId={detail ? null : jumpTarget ?? focusMessageId}
+          focusMissing={unreachable !== null && unreachable === focusMessageId}
           focusOnLand={jumpTarget !== null || landing === 'focus'}
           // Another Workspace's General is another conversation: its scroller and its landing start
           // afresh, so following one never scrolls (or reports a reading position for) the other.

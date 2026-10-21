@@ -21,6 +21,14 @@ describe('ConversationResponse', () => {
     expect(screen.queryByRole('button', { name: /download|herunterladen/i })).not.toBeInTheDocument()
   })
 
+  it('relabels copy controls already on screen when the app language changes', async () => {
+    const body = '```python\nprint(1)\n```'
+    const { rerender } = render(<ConversationResponse t={createTranslator('en')}>{body}</ConversationResponse>)
+    expect(await screen.findByRole('button', { name: 'Copy code' })).toBeInTheDocument()
+    rerender(<ConversationResponse t={de}>{body}</ConversationResponse>)
+    expect(await screen.findByRole('button', { name: 'Code kopieren' })).toBeInTheDocument()
+  })
+
   it('never fetches an image an agent points at: it shows its description', () => {
     const { container } = render(<ConversationResponse t={de}>{'![loss curve](https://example.com/track.png)'}</ConversationResponse>)
     expect(container.querySelector('img')).toBeNull()

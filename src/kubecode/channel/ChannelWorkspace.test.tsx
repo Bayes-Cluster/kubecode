@@ -778,6 +778,25 @@ describe('ChannelWorkspace keeps its place (ADR 0228 §4, ADR 0229 §6)', () => 
     expect(screen.getByText('message 60')).toBeInTheDocument()
   })
 
+  it('starts at the latest when a linked message never arrives', async () => {
+    const s = server([server().message(1, 'a topic'), server().message(2, 'a reply')])
+    s.calls.getChannelMessage.mockRejectedValue(new ApiError('not_found', 'gone', 404))
+    const tops = new WeakMap<Element, number>()
+    const top = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollTop')!
+    const height = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollHeight')!
+    Object.defineProperty(Element.prototype, 'scrollTop', { configurable: true, get() { return tops.get(this) ?? 0 }, set(value: number) { tops.set(this, value) } })
+    Object.defineProperty(Element.prototype, 'scrollHeight', { configurable: true, get: () => 500 })
+    try {
+      view(s, { props: { focusMessageId: 'm-deleted' } })
+      await screen.findByText('a reply')
+      const log = screen.getByRole('log').querySelector('.kubecode-channel-messages') as HTMLElement
+      await waitFor(() => expect(log.scrollTop).toBe(500))
+    } finally {
+      Object.defineProperty(Element.prototype, 'scrollTop', top)
+      Object.defineProperty(Element.prototype, 'scrollHeight', height)
+    }
+  })
+
   it('lands on a message quietly, or in the composer, when asked to', async () => {
     const scroll = vi.fn()
     Element.prototype.scrollIntoView = scroll
