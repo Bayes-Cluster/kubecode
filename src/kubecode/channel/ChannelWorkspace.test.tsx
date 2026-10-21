@@ -194,7 +194,9 @@ describe('ChannelWorkspace', () => {
   it('is General with its description, posts a message, and keeps one client id across a failed send', async () => {
     const s = server()
     view(s)
-    expect(await screen.findByText('No messages yet. Start the discussion.')).toBeInTheDocument()
+    const empty = await screen.findByText('No messages yet. Start the discussion.')
+    // An empty General is the AI Elements empty state of the #230 prototypes, not a stray line.
+    expect(empty.closest('.kubecode-ai-conversation-empty')).not.toBeNull()
     expect(screen.getByRole('heading', { name: 'General' })).toBeInTheDocument()
     expect(screen.getByText(/Messages go to the project manager unless you @mention someone/)).toBeInTheDocument()
     fireEvent.change(box(), { target: { value: '  Should we prune?  ' } })
