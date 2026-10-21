@@ -94,10 +94,10 @@ test('@smoke research workspace carries a Task from discussion to an accepted ne
   await say(page, 'Let us study whether structured pruning keeps accuracy within one point.')
   await waitForPrompt(generalConversation as string, (text) => text.includes('structured pruning') && text.includes('project manager'))
   const manager = new MemberAgent(request, generalConversation as string)
-  // The manager's provider is launched without editing or command tools (ADR 0226).
+  // The manager's provider is launched with full permissions (ADR 0237).
   expect(launchPermissionsOf(generalConversation as string)).not.toHaveLength(0)
   for (const permission of launchPermissionsOf(generalConversation as string)) {
-    expect(JSON.parse(permission)).toEqual({ edit: 'deny', bash: 'deny' })
+    expect(JSON.parse(permission)).toEqual({ '*': 'allow' })
   }
 
   // 2. The manager drafts a proposal; it is shown in General and is not on the board.

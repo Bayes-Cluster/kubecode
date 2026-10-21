@@ -887,6 +887,41 @@ impl Orchestrator {
         Ok(())
     }
 
+    /// Asks the project manager to review a specialist's permission request
+    /// (ADR 0237), once per request. The body names the tool by its title
+    /// only; the manager reads the input through `permission_reviews`.
+    pub fn route_permission_review(
+        &self,
+        project_id: &str,
+        manager_session: &str,
+        request_id: &str,
+        specialist: &str,
+        tool: &str,
+    ) -> Result<(), OrchestratorError> {
+        let body = format!(
+            "{specialist}, a specialist in this Workspace, asks permission to use a tool: \
+             {}. Request ID: {request_id}.\n\nIt waits until you decide. Call \
+             permission_reviews to see what it would do, then permission_review to approve \
+             or deny it with your reason, or to escalate it to the researcher if you are \
+             unsure. Every decision is shown to the researcher.",
+            quoted("tool", &clip(tool, 300)),
+        );
+        self.create_route(NewRoute {
+            project_id,
+            kind: RouteKind::PermissionReview,
+            source_kind: SourceKind::Permission,
+            source_id: request_id,
+            target: Target::Session {
+                session_id: manager_session.to_owned(),
+            },
+            channel_id: None,
+            thread_id: None,
+            work_id: None,
+            body: &body,
+        })?;
+        Ok(())
+    }
+
     /// `Ok(true)` routed, `Ok(false)` answered without routing.
     fn route_message(&self, message: &Message) -> Result<bool, OrchestratorError> {
         match message.intent {

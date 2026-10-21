@@ -303,9 +303,8 @@ attributed but without authority. Defaults are server state
 (or a non-member legacy Session) coordination in `assume_coordinator` /
 `handoff_coordinator` / round start; `WorkAgent` refuses every Session the
 manager has ever had the executor commands (`launch_experiment`, `decide`,
-`report`, `create_executor`), failing closed if the roster cannot be read; the
-runtime refuses the manager's native edit, delete, move, and execute tools
-outright (`denied_for_manager`); and assignment goes to a specialist member's
+`report`, `create_executor`), failing closed if the roster cannot be read;
+and assignment goes to a specialist member's
 current public Session (`work_members`, `work_assign` with a `member`).
 Replacing a member's Session (`POST .../members/{id}/session`, optionally with
 a new provider) is one transaction that refuses a member with open work and
@@ -318,8 +317,8 @@ defaults for new members on separate tabs; Settings > Agent defaults holds only
 the defaults and links to the selected Workspace's Members. A saved default never
 rewrites an existing member. A member row and profile show role, setup state and
 actions, with execution (from the member Session's latest run) apart from
-membership; the project manager's fixed responsibility, read-only tools and
-locked mode (ADR 0226) are shown locked, and a `mode` option is refused in its
+membership; the project manager's fixed responsibility and its locked
+full-access mode (ADR 0237) are shown locked, and a `mode` option is refused in its
 defaults before saving. When the manager is missing or needs setup, General
 shows `ManagerSetupNotice` (retry in place, or open the manager in Members).
 
@@ -1154,15 +1153,33 @@ prior mode, allowing completion or fallback to restore permissions after a
 server restart. Model, effort, fast mode, and other Agent settings are not part
 of the Team permission policy.
 
-The General Agent's Sessions use the Manager permission profile (ADR 0226):
-Claude Code sessions are created, loaded, and resumed with
-`_meta.claudeCode.options.disallowedTools` withdrawing its edit and shell tools,
-Codex runs in `read-only` mode, and OpenCode starts with
-`OPENCODE_PERMISSION='{"edit":"deny","bash":"deny"}'`. `AgentRuntime` refuses
-mode changes on manager Sessions (`RuntimeError::ManagerModeLocked`; the session
-API reports `general_manager`), the member store refuses a `mode` setting for
-the General Agent, and the permission handler refuses a manager's edit or
-command request and never answers its other requests from always-allow memory.
+The General Agent's Sessions use the Manager permission profile (ADR 0237,
+superseding the restricted launch of ADR 0226): Claude Code runs in
+`bypassPermissions` with no tools withdrawn, Codex in `agent-full-access`, and
+OpenCode with the permissive `OPENCODE_PERMISSION` of a Maximum profile.
+`AgentRuntime` keeps the mode locked (`RuntimeError::ManagerModeLocked`; the
+session API reports `general_manager`), the member store refuses a `mode`
+setting for the General Agent, and the permission handler grants any request a
+manager's provider still makes with its allow-once option without surfacing it.
+
+A current specialist's permission request from its public Session (a DM
+Session's goes to the researcher) that always-allow memory does not answer
+waits with `reviewer: "manager"`: it is left out of the attention
+snapshot and the Session's prompt, and `Orchestrator::route_permission_review`
+writes a durable `permission_review` route (source kind `permission`) to the
+General Agent's public Session. Undecided after `MANAGER_REVIEW_TIMEOUT`
+(120 s), or at once if the route cannot be written, `system_escalate` hands it
+to the researcher and records it as `escalated` by `system` with a reason code
+(`timeout`, `route_failed`). The manager
+answers with the `kubecode-work` tools `permission_reviews` and
+`permission_review` (approve with an agent-offered allow option, never an
+always option; deny with reject-once or a cancel; or escalate, which sets
+`reviewer: "user"` and publishes `permission_requested`). Only the General
+Agent's current Session may call them. `AgentRuntime::manager_review_permission`
+records each decision in the agent store's `manager_permission_reviews` table
+and publishes `permission_reviewed` with only the request id, Session, and
+decision; the attention snapshot lists the Workspace's latest decisions as
+`manager_decisions`, which Needs you shows as information.
 
 Each member's internal runs are stored only in that member's durable Chat.
 Kubecode hides the synthetic wake prompt but keeps the Agent's reasoning, tool

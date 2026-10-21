@@ -1686,6 +1686,19 @@ export type ExecutionFailure = {
   status: AgentRun['status']
   ended_at: string
 }
+/** A decision the project manager made on a specialist's permission request (ADR 0237): information, not a prompt. */
+export type ManagerDecision = {
+  id: string
+  request_id: string
+  conversation_id: string
+  member: AttentionMemberRef | null
+  tool: string
+  decision: 'approved' | 'denied' | 'escalated'
+  /** `system` when the server escalated it by itself; `reason` is then a code (`timeout`, `route_failed`). */
+  decided_by: 'manager' | 'system'
+  reason: string
+  created_at: string
+}
 export type AttentionSource = 'runtime' | 'work' | 'tasks' | 'proposals' | 'members' | 'runs' | 'routes'
 export type AttentionSnapshot = {
   project_id: string
@@ -1699,6 +1712,8 @@ export type AttentionSnapshot = {
   /** Sources that could not be read: never "nothing waits". */
   incomplete: AttentionSource[]
   truncated: boolean
+  /** The project manager's latest permission decisions, newest first. */
+  manager_decisions: ManagerDecision[]
 }
 export type AttentionWorkspaceCounts = {
   project_id: string

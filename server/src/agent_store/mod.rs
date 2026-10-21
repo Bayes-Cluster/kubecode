@@ -24,6 +24,7 @@ pub use models::{
     PromptQueueStatus, RunCheckpoint, RunStatus, SessionEvent, StartPromptOutcome, StoreError,
     TerminalCause, TurnBoundary,
 };
+pub use permissions::ManagerPermissionReview;
 pub use turns::TurnText;
 
 use std::path::Path;
@@ -123,6 +124,21 @@ impl AgentStore {
                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                UNIQUE(project_id, agent_id, matcher)
              );
+             CREATE TABLE IF NOT EXISTS manager_permission_reviews (
+               id TEXT PRIMARY KEY,
+               project_id TEXT NOT NULL,
+               request_id TEXT NOT NULL,
+               run_id TEXT NOT NULL,
+               conversation_id TEXT NOT NULL,
+               tool TEXT NOT NULL,
+               decision TEXT NOT NULL,
+               decided_by TEXT NOT NULL,
+               option_id TEXT,
+               reason TEXT NOT NULL,
+               created_at TEXT NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS manager_permission_reviews_project
+               ON manager_permission_reviews(project_id, created_at);
              CREATE TABLE IF NOT EXISTS conversation_prompt_queue (
                id TEXT PRIMARY KEY,
                conversation_id TEXT NOT NULL,

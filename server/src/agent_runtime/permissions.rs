@@ -97,6 +97,64 @@ pub(super) fn remembered_permission_outcome(
     ))
 }
 
+/// Why the project manager's review of a permission request was refused.
+#[derive(Debug, thiserror::Error)]
+pub enum ManagerReviewError {
+    #[error("only the project manager's current Session reviews specialists' permission requests")]
+    NotManager,
+    #[error("this permission request is no longer waiting on the project manager")]
+    NotWaiting,
+    #[error("{0}")]
+    Invalid(&'static str),
+    #[error(transparent)]
+    Store(#[from] crate::agents::StoreError),
+    #[error("the roster could not be read: {0}")]
+    Members(String),
+}
+
+/// What the manager decided on a specialist's request.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ManagerVerdict {
+    /// Answer with this agent-offered allow-once option (the first one when `None`).
+    Approve(Option<String>),
+    Deny,
+    Escalate,
+}
+
+/// A specialist's permission request as the manager reviews it: unlike the
+/// researcher's view it carries the tool's input, clipped, which the manager
+/// needs to judge it. It is returned to the manager's Session only.
+#[derive(Clone, Debug, Serialize)]
+pub struct ManagerReviewRequest {
+    pub request_id: String,
+    pub conversation_id: String,
+    pub member: Option<crate::attention::MemberRef>,
+    pub tool: String,
+    pub input: String,
+    pub options: Vec<PendingOptionView>,
+    pub requested_at: String,
+}
+
+/// How long a specialist's request waits for the manager before it is
+/// escalated to the researcher by itself (ADR 0237).
+pub const MANAGER_REVIEW_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+
+/// One decision on a waiting request, before it is recorded.
+struct ReviewOutcome {
+    tool: String,
+    decision: &'static str,
+    decided_by: &'static str,
+    option_id: Option<String>,
+    reason: String,
+}
+
+/// Longest tool input the manager is shown.
+const REVIEW_INPUT_CHARS: usize = 4_000;
+/// Longest reason the manager may record.
+const REVIEW_REASON_CHARS: usize = 1_000;
+/// Manager decisions the attention snapshot lists.
+pub const MANAGER_DECISIONS_SHOWN: usize = 20;
+
 pub(super) struct PendingElicitation {
     pub(super) run_id: String,
     pub(super) sender: oneshot::Sender<ElicitationAction>,
@@ -151,12 +209,19 @@ fn text_field(payload: &Value, key: &str, max: usize) -> Option<String> {
 
 impl PendingPermission {
     fn view(&self, request_id: &str) -> PendingRequestView {
-        let payload = &self.request_payload;
+        PendingRequestView {
+            run_id: self.run_id.clone(),
+            requested_at: self.requested_at.clone(),
+            ..Self::view_payload(request_id, &self.request_payload)
+        }
+    }
+
+    fn view_payload(request_id: &str, payload: &Value) -> PendingRequestView {
         PendingRequestView {
             kind: PendingKind::Permission,
             request_id: request_id.to_owned(),
-            run_id: self.run_id.clone(),
-            requested_at: self.requested_at.clone(),
+            run_id: String::new(),
+            requested_at: String::new(),
             deadline_ms: None,
             reviewer: text_field(payload, "reviewer", 20).unwrap_or_else(|| "user".to_owned()),
             tool: text_field(payload, "tool", 200),
@@ -244,15 +309,6 @@ pub struct SideQuestionAccepted {
     pub status: &'static str,
 }
 
-/// Native tools the General Agent may not use: it manages, so editing,
-/// deleting, moving, and executing are refused outright (ADR 0220 §4).
-pub(super) fn denied_for_manager(kind: Option<ToolKind>) -> bool {
-    matches!(
-        kind,
-        Some(ToolKind::Edit | ToolKind::Delete | ToolKind::Move | ToolKind::Execute)
-    )
-}
-
 pub(super) fn default_native_permission_mode(agent_id: AgentId) -> Option<&'static str> {
     // Delegates to the per-agent adapter seam (#104); the fn name is kept
     // for call-site stability.
@@ -296,6 +352,388 @@ impl AgentRuntime {
                     .allow_always(&context.project_id, context.agent_id, &context.matcher);
         }
         sent
+    }
+
+    /// The project manager's public Session when `conversation_id` is a
+    /// current specialist's: its permission requests are the manager's to
+    /// review first (ADR 0237). `None` means the researcher reviews them.
+    pub(super) fn manager_reviewer_session(&self, conversation_id: &str) -> Option<String> {
+        let services = self.work_services()?;
+        let conversation = self.store.get_conversation(conversation_id).ok()?;
+        let resolved = services
+            .members
+            .by_conversation(&conversation.project_id, conversation_id)
+            .ok()??;
+        // A direct message is the researcher's own conversation: its
+        // requests go straight to them.
+        if !resolved.current
+            || resolved.member.role != crate::member_store::MemberRole::Specialist
+            || resolved.binding != crate::member_store::Binding::Public
+        {
+            return None;
+        }
+        services
+            .members
+            .general(&conversation.project_id)
+            .ok()??
+            .public_conversation_id
+    }
+
+    /// Asks the manager to review a waiting request by a durable route to its
+    /// Session. If that cannot be written, the researcher is asked instead.
+    pub(super) fn route_permission_review(
+        &self,
+        request_id: &str,
+        run_id: &str,
+        conversation_id: &str,
+        manager_session: &str,
+        tool: &str,
+    ) {
+        let routed = self.work_services().is_some_and(|services| {
+            let project_id = match self.store.get_run(run_id) {
+                Ok(run) => run.project_id,
+                Err(_) => return false,
+            };
+            let specialist = services
+                .members
+                .by_conversation(&project_id, conversation_id)
+                .ok()
+                .flatten()
+                .map_or_else(
+                    || "A specialist".to_owned(),
+                    |resolved| format!("@{}", resolved.member.handle),
+                );
+            services
+                .orchestrator
+                .route_permission_review(&project_id, manager_session, request_id, &specialist, tool)
+                .map_err(|error| {
+                    eprintln!(
+                        "WARN: permission request {request_id} could not be routed to the manager: {error}"
+                    );
+                })
+                .is_ok()
+        });
+        if !routed {
+            self.system_escalate(request_id, "route_failed");
+            return;
+        }
+        // Undecided in time, it goes to the researcher by itself.
+        let timeout = *self
+            .manager_review_timeout
+            .lock()
+            .expect("manager review timeout mutex poisoned");
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            let runtime = self.clone();
+            let request_id = request_id.to_owned();
+            handle.spawn(async move {
+                tokio::time::sleep(timeout).await;
+                runtime.system_escalate(&request_id, "timeout");
+            });
+        }
+    }
+
+    /// Escalates a request still waiting on the manager to the researcher,
+    /// recorded as the server's decision with a reason code.
+    pub(super) fn system_escalate(&self, request_id: &str, code: &str) {
+        let (run_id, tool) = {
+            let permissions = self
+                .pending_permissions
+                .lock()
+                .expect("pending permission mutex poisoned");
+            let Some(pending) = permissions
+                .get(request_id)
+                .filter(|pending| pending.request_payload["reviewer"] == "manager")
+            else {
+                return;
+            };
+            (
+                pending.run_id.clone(),
+                text_field(&pending.request_payload, "tool", 200).unwrap_or_default(),
+            )
+        };
+        if self.escalate_team_permission(request_id).is_err() {
+            return;
+        }
+        let Ok(run) = self.store.get_run(&run_id) else {
+            return;
+        };
+        let _ = self.record_review(
+            &run,
+            request_id,
+            ReviewOutcome {
+                tool,
+                decision: "escalated",
+                decided_by: "system",
+                option_id: None,
+                reason: code.to_owned(),
+            },
+        );
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_manager_review_timeout(&self, timeout: std::time::Duration) {
+        *self
+            .manager_review_timeout
+            .lock()
+            .expect("manager review timeout mutex poisoned") = timeout;
+    }
+
+    fn record_review(
+        &self,
+        run: &AgentRun,
+        request_id: &str,
+        outcome: ReviewOutcome,
+    ) -> Result<crate::agent_store::ManagerPermissionReview, ManagerReviewError> {
+        let review = crate::agent_store::ManagerPermissionReview {
+            id: Uuid::new_v4().to_string(),
+            project_id: run.project_id.clone(),
+            request_id: request_id.to_owned(),
+            run_id: run.id.clone(),
+            conversation_id: run.conversation_id.clone(),
+            tool: outcome.tool,
+            decision: outcome.decision.to_owned(),
+            decided_by: outcome.decided_by.to_owned(),
+            option_id: outcome.option_id,
+            reason: outcome.reason,
+            created_at: crate::agent_store::utc_now(),
+        };
+        self.store.record_manager_review(&review)?;
+        let _ = self.store.append_workspace_event(
+            "permission_reviewed",
+            Some(&run.project_id),
+            Some(&run.conversation_id),
+            Some(&run.id),
+            &json!({
+                "request_id": request_id,
+                "conversation_id": run.conversation_id,
+                "decision": review.decision,
+            }),
+        );
+        Ok(review)
+    }
+
+    /// Specialists' permission requests in `project_id` waiting on the manager.
+    pub fn manager_review_queue(
+        &self,
+        project_id: &str,
+        caller: &str,
+    ) -> Result<Vec<ManagerReviewRequest>, ManagerReviewError> {
+        self.require_manager(project_id, caller)?;
+        let waiting: Vec<(String, String, Value, String)> = self
+            .pending_permissions
+            .lock()
+            .expect("pending permission mutex poisoned")
+            .iter()
+            .filter(|(_, pending)| pending.request_payload["reviewer"] == "manager")
+            .map(|(request_id, pending)| {
+                (
+                    request_id.clone(),
+                    pending.run_id.clone(),
+                    pending.request_payload.clone(),
+                    pending.requested_at.clone(),
+                )
+            })
+            .collect();
+        let members = self.work_services().map(|services| services.members);
+        let mut requests = Vec::new();
+        for (request_id, run_id, payload, requested_at) in waiting {
+            let Ok(run) = self.store.get_run(&run_id) else {
+                continue;
+            };
+            if run.project_id != project_id {
+                continue;
+            }
+            let view = PendingPermission::view_payload(&request_id, &payload);
+            let member = members
+                .as_ref()
+                .and_then(|members| {
+                    members
+                        .by_conversation(project_id, &run.conversation_id)
+                        .ok()
+                        .flatten()
+                })
+                .map(|resolved| crate::attention::MemberRef {
+                    id: resolved.member.id,
+                    name: resolved.member.name,
+                    handle: resolved.member.handle,
+                    role: resolved.member.role.as_str().to_owned(),
+                });
+            let input = serde_json::to_string(payload.get("input").unwrap_or(&Value::Null))
+                .unwrap_or_default()
+                .chars()
+                .take(REVIEW_INPUT_CHARS)
+                .collect();
+            requests.push(ManagerReviewRequest {
+                request_id,
+                conversation_id: run.conversation_id,
+                member,
+                tool: view.tool.unwrap_or_default(),
+                input,
+                options: view.options,
+                requested_at,
+            });
+        }
+        requests.sort_by(|a, b| a.requested_at.cmp(&b.requested_at));
+        Ok(requests)
+    }
+
+    /// The manager approves, denies, or escalates a specialist's waiting
+    /// request, with a reason; the decision is recorded and announced without
+    /// the tool's input or the reason (ADR 0237).
+    pub fn manager_review_permission(
+        &self,
+        project_id: &str,
+        caller: &str,
+        request_id: &str,
+        verdict: ManagerVerdict,
+        reason: &str,
+    ) -> Result<crate::agent_store::ManagerPermissionReview, ManagerReviewError> {
+        self.require_manager(project_id, caller)?;
+        let reason = reason.trim();
+        if reason.is_empty() {
+            return Err(ManagerReviewError::Invalid(
+                "a decision needs a reason the researcher can read",
+            ));
+        }
+        let reason: String = reason.chars().take(REVIEW_REASON_CHARS).collect();
+        let mut permissions = self
+            .pending_permissions
+            .lock()
+            .expect("pending permission mutex poisoned");
+        let pending = permissions
+            .get(request_id)
+            .filter(|pending| pending.request_payload["reviewer"] == "manager")
+            .ok_or(ManagerReviewError::NotWaiting)?;
+        let run = self.store.get_run(&pending.run_id)?;
+        if run.project_id != project_id {
+            return Err(ManagerReviewError::NotWaiting);
+        }
+        let view = PendingPermission::view_payload(request_id, &pending.request_payload);
+        let option_of_kind = |kind: &str| {
+            view.options
+                .iter()
+                .find(|option| option.kind == kind)
+                .map(|option| option.id.clone())
+        };
+        let (decision, option_id) = match &verdict {
+            ManagerVerdict::Approve(chosen) => {
+                let option = match chosen {
+                    Some(chosen) => view
+                        .options
+                        .iter()
+                        .find(|option| option.id == *chosen && option.kind == "allow_once")
+                        .map(|option| option.id.clone())
+                        .ok_or(ManagerReviewError::Invalid(
+                            "approve with one of the request's allow-once options",
+                        ))?,
+                    None => option_of_kind("allow_once").ok_or(ManagerReviewError::Invalid(
+                        "this request offers no allow-once option; escalate it to the researcher",
+                    ))?,
+                };
+                ("approved", Some(option))
+            }
+            ManagerVerdict::Deny => ("denied", option_of_kind("reject_once")),
+            ManagerVerdict::Escalate => ("escalated", None),
+        };
+        let tool = view.tool.clone().unwrap_or_default();
+        let run_id = pending.run_id.clone();
+        if verdict == ManagerVerdict::Escalate {
+            drop(permissions);
+            self.escalate_team_permission(request_id)
+                .map_err(|_| ManagerReviewError::NotWaiting)?;
+        } else {
+            let pending = permissions
+                .remove(request_id)
+                .ok_or(ManagerReviewError::NotWaiting)?;
+            drop(permissions);
+            let outcome = match &option_id {
+                Some(option) => RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
+                    PermissionOptionId::new(option.clone()),
+                )),
+                None => RequestPermissionOutcome::Cancelled,
+            };
+            // Never remembered: a manager's approval adds nothing to
+            // always-allow memory, which only the researcher writes.
+            let _ = pending.sender.send(outcome);
+            announce_wait_ended(&self.store, &run_id);
+        }
+        self.record_review(
+            &run,
+            request_id,
+            ReviewOutcome {
+                tool,
+                decision,
+                decided_by: "manager",
+                option_id,
+                reason,
+            },
+        )
+    }
+
+    fn require_manager(&self, project_id: &str, caller: &str) -> Result<(), ManagerReviewError> {
+        let services = self.work_services().ok_or(ManagerReviewError::NotManager)?;
+        let manager = services
+            .members
+            .is_general(project_id, caller)
+            .map_err(|error| ManagerReviewError::Members(error.to_string()))?;
+        if manager {
+            Ok(())
+        } else {
+            Err(ManagerReviewError::NotManager)
+        }
+    }
+
+    /// Registers a permission request exactly as the session actor does for
+    /// a provider's request, without a provider.
+    #[cfg(test)]
+    pub(crate) fn ask_permission_for_test(
+        &self,
+        conversation_id: &str,
+        run_id: &str,
+        request_id: &str,
+        tool: &str,
+        input: Value,
+        options: &[(&str, &str)],
+    ) -> oneshot::Receiver<RequestPermissionOutcome> {
+        let manager_session = self.manager_reviewer_session(conversation_id);
+        let reviewer = if manager_session.is_some() {
+            "manager"
+        } else {
+            "user"
+        };
+        let (sender, receiver) = oneshot::channel();
+        self.pending_permissions
+            .lock()
+            .expect("pending permission mutex poisoned")
+            .insert(
+                request_id.to_owned(),
+                PendingPermission {
+                    allowed_options: options.iter().map(|(id, _)| (*id).to_owned()).collect(),
+                    request_payload: json!({
+                        "request_id": request_id,
+                        "tool": tool,
+                        "input": input,
+                        "reviewer": reviewer,
+                        "options": options.iter().map(|(id, kind)| json!({
+                            "id": id, "label": id, "kind": kind,
+                        })).collect::<Vec<_>>(),
+                    }),
+                    run_id: run_id.to_owned(),
+                    sender,
+                    always_allow: None,
+                    requested_at: crate::agent_store::utc_now(),
+                },
+            );
+        if let Some(manager_session) = manager_session {
+            self.route_permission_review(
+                request_id,
+                run_id,
+                conversation_id,
+                &manager_session,
+                tool,
+            );
+        }
+        receiver
     }
 
     pub fn escalate_team_permission(&self, request_id: &str) -> Result<(), RuntimeError> {
@@ -640,40 +1078,37 @@ fn side_question_capability(store: &AgentStore, conversation_id: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// Claude Code tools that edit files or run commands: withdrawn from the
-/// General Agent's sessions when they start, whatever the user's own Claude
-/// settings allow (ADR 0226).
-const MANAGER_WITHDRAWN_CLAUDE_TOOLS: &[&str] = &[
-    "Bash",
-    "BashOutput",
-    "KillShell",
-    "Edit",
-    "MultiEdit",
-    "Write",
-    "NotebookEdit",
-    // Runs a shell command and watches its output.
-    "Monitor",
-    "TaskOutput",
-    "TaskStop",
-    // Creates a git worktree.
-    "EnterWorktree",
-    "PowerShell",
-];
+/// The native mode a permission profile sets when a session starts.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum NativeMode {
+    /// The provider's own default (or its launch environment) stands.
+    Unchanged,
+    /// Set through the `mode` session config option.
+    Config(&'static str),
+    /// Set through `session/set_mode`.
+    Session(&'static str),
+}
 
-/// Session metadata a provider reads when a session starts (new, loaded, or
-/// resumed). Only the manager's Claude Code sessions carry any: the tools it
-/// may not use are withdrawn at the source, not refused one request at a time.
-pub(super) fn session_meta(
-    agent_id: AgentId,
-    profile: AgentPermissionProfile,
-) -> Option<agent_client_protocol::schema::v1::Meta> {
-    if agent_id != AgentId::ClaudeCode || profile != AgentPermissionProfile::Manager {
-        return None;
+/// What each profile asks of each provider. The manager runs with full native
+/// permissions, like a Maximum (Yolo) Team member (ADR 0237); OpenCode's full
+/// access is set in its launch environment instead.
+pub(super) fn native_mode(profile: AgentPermissionProfile, agent_id: AgentId) -> NativeMode {
+    match (profile, agent_id) {
+        (AgentPermissionProfile::Default, _)
+        | (AgentPermissionProfile::Maximum | AgentPermissionProfile::Manager, AgentId::OpenCode) => {
+            NativeMode::Unchanged
+        }
+        (AgentPermissionProfile::Maximum | AgentPermissionProfile::Manager, AgentId::Codex) => {
+            NativeMode::Config("agent-full-access")
+        }
+        (
+            AgentPermissionProfile::Maximum | AgentPermissionProfile::Manager,
+            AgentId::ClaudeCode,
+        ) => NativeMode::Config("bypassPermissions"),
+        (AgentPermissionProfile::ReadOnly, AgentId::Codex) => NativeMode::Config("read-only"),
+        (AgentPermissionProfile::ReadOnly, AgentId::ClaudeCode) => NativeMode::Config("plan"),
+        (AgentPermissionProfile::ReadOnly, AgentId::OpenCode) => NativeMode::Session("plan"),
     }
-    let value = serde_json::json!({
-        "claudeCode": { "options": { "disallowedTools": MANAGER_WITHDRAWN_CLAUDE_TOOLS } }
-    });
-    value.as_object().cloned()
 }
 
 pub(super) async fn apply_native_permission_profile(
@@ -682,95 +1117,56 @@ pub(super) async fn apply_native_permission_profile(
     agent_id: AgentId,
     profile: AgentPermissionProfile,
 ) -> Result<(), agent_client_protocol::Error> {
-    let config_value = |value: &str| SessionConfigOptionValue::value_id(value.to_owned());
-    match (profile, agent_id) {
-        (AgentPermissionProfile::Default, _)
-        | (AgentPermissionProfile::Maximum, AgentId::OpenCode) => Ok(()),
-        (AgentPermissionProfile::Maximum, AgentId::Codex) => {
-            connection
+    // A widening profile that cannot be applied is reported as such; a
+    // read-only one fails with the provider's own error.
+    let widening = matches!(
+        profile,
+        AgentPermissionProfile::Maximum | AgentPermissionProfile::Manager
+    );
+    match native_mode(profile, agent_id) {
+        NativeMode::Unchanged => Ok(()),
+        NativeMode::Config(value) => {
+            let result = connection
                 .send_request(SetSessionConfigOptionRequest::new(
                     session_id.clone(),
                     "mode",
-                    config_value("agent-full-access"),
+                    SessionConfigOptionValue::value_id(value.to_owned()),
                 ))
                 .block_task()
-                .await
-                .map_err(native_permission_error)?;
-            Ok(())
+                .await;
+            match result {
+                Ok(_) => Ok(()),
+                Err(error) if widening => Err(native_permission_error(error)),
+                Err(error) => Err(error),
+            }
         }
-        (AgentPermissionProfile::Maximum, AgentId::ClaudeCode) => {
+        NativeMode::Session(mode) => {
             connection
-                .send_request(SetSessionConfigOptionRequest::new(
-                    session_id.clone(),
-                    "mode",
-                    config_value("bypassPermissions"),
-                ))
-                .block_task()
-                .await
-                .map_err(native_permission_error)?;
-            Ok(())
-        }
-        (AgentPermissionProfile::ReadOnly, AgentId::Codex) => {
-            connection
-                .send_request(SetSessionConfigOptionRequest::new(
-                    session_id.clone(),
-                    "mode",
-                    config_value("read-only"),
-                ))
-                .block_task()
-                .await?;
-            Ok(())
-        }
-        (AgentPermissionProfile::ReadOnly, AgentId::ClaudeCode) => {
-            connection
-                .send_request(SetSessionConfigOptionRequest::new(
-                    session_id.clone(),
-                    "mode",
-                    config_value("plan"),
-                ))
-                .block_task()
-                .await?;
-            Ok(())
-        }
-        // The manager's Codex runs read-only: commands stay inside a read-only,
-        // no-network sandbox, and editing or leaving the sandbox needs an
-        // approval, which the runtime refuses for the manager.
-        (AgentPermissionProfile::Manager, AgentId::Codex) => {
-            connection
-                .send_request(SetSessionConfigOptionRequest::new(
-                    session_id.clone(),
-                    "mode",
-                    config_value("read-only"),
-                ))
-                .block_task()
-                .await
-                .map_err(native_permission_error)?;
-            Ok(())
-        }
-        // Claude Code's editing and shell tools were withdrawn at launch; its
-        // mode is reset to the one that asks, never one that skips asking.
-        (AgentPermissionProfile::Manager, AgentId::ClaudeCode) => {
-            connection
-                .send_request(SetSessionConfigOptionRequest::new(
-                    session_id.clone(),
-                    "mode",
-                    config_value("default"),
-                ))
-                .block_task()
-                .await
-                .map_err(native_permission_error)?;
-            Ok(())
-        }
-        // OpenCode's editing and shell were denied in its launch environment.
-        (AgentPermissionProfile::Manager, AgentId::OpenCode) => Ok(()),
-        (AgentPermissionProfile::ReadOnly, AgentId::OpenCode) => {
-            connection
-                .send_request(SetSessionModeRequest::new(session_id.clone(), "plan"))
+                .send_request(SetSessionModeRequest::new(session_id.clone(), mode))
                 .block_task()
                 .await?;
             Ok(())
         }
     }
+}
+
+/// How a request from the manager's own provider is answered: granted once,
+/// without asking anyone (ADR 0237). Never an always option while an
+/// allow-once is offered, so nothing is added to always-allow memory.
+pub(super) fn manager_self_grant(options: &[PermissionOption]) -> RequestPermissionOutcome {
+    options
+        .iter()
+        .find(|option| option.kind == PermissionOptionKind::AllowOnce)
+        .or_else(|| {
+            options
+                .iter()
+                .find(|option| option.kind == PermissionOptionKind::AllowAlways)
+        })
+        .map_or(RequestPermissionOutcome::Cancelled, |option| {
+            RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
+                option.option_id.clone(),
+            ))
+        })
 }
 
 fn native_permission_error(error: agent_client_protocol::Error) -> agent_client_protocol::Error {
@@ -789,38 +1185,33 @@ mod tests {
     use crate::workspace::WorkspaceService;
 
     #[test]
-    fn a_manager_claude_session_starts_without_editing_or_shell_tools() {
-        let meta = session_meta(AgentId::ClaudeCode, AgentPermissionProfile::Manager)
-            .expect("a manager's Claude session carries its restriction");
-        let disallowed: Vec<&str> = meta["claudeCode"]["options"]["disallowedTools"]
-            .as_array()
-            .expect("disallowed tools")
-            .iter()
-            .filter_map(|tool| tool.as_str())
-            .collect();
-        for tool in [
-            "Bash",
-            "Edit",
-            "MultiEdit",
-            "Write",
-            "NotebookEdit",
-            // Runs a shell command and watches it.
-            "Monitor",
-            "TaskOutput",
-            "TaskStop",
-            // Writes a git worktree.
-            "EnterWorktree",
-            "PowerShell",
-        ] {
-            assert!(
-                disallowed.contains(&tool),
-                "{tool} is not withdrawn: {disallowed:?}"
-            );
-        }
-        // Other profiles and providers start as before.
-        assert!(session_meta(AgentId::ClaudeCode, AgentPermissionProfile::Default).is_none());
-        assert!(session_meta(AgentId::Codex, AgentPermissionProfile::Manager).is_none());
-        assert!(session_meta(AgentId::OpenCode, AgentPermissionProfile::Manager).is_none());
+    fn a_manager_session_launches_with_full_native_permissions() {
+        assert_eq!(
+            native_mode(AgentPermissionProfile::Manager, AgentId::ClaudeCode),
+            NativeMode::Config("bypassPermissions")
+        );
+        assert_eq!(
+            native_mode(AgentPermissionProfile::Manager, AgentId::Codex),
+            NativeMode::Config("agent-full-access")
+        );
+        // OpenCode's full access is in its launch environment.
+        assert_eq!(
+            native_mode(AgentPermissionProfile::Manager, AgentId::OpenCode),
+            NativeMode::Unchanged
+        );
+        // The other profiles keep their modes.
+        assert_eq!(
+            native_mode(AgentPermissionProfile::ReadOnly, AgentId::Codex),
+            NativeMode::Config("read-only")
+        );
+        assert_eq!(
+            native_mode(AgentPermissionProfile::ReadOnly, AgentId::OpenCode),
+            NativeMode::Session("plan")
+        );
+        assert_eq!(
+            native_mode(AgentPermissionProfile::Default, AgentId::Codex),
+            NativeMode::Unchanged
+        );
     }
 
     #[test]
@@ -1161,26 +1552,22 @@ mod tests {
     }
 
     #[test]
-    fn the_manager_is_refused_native_edit_delete_move_and_execute_but_not_reading_or_its_own_tools()
-    {
-        for kind in [
-            ToolKind::Edit,
-            ToolKind::Delete,
-            ToolKind::Move,
-            ToolKind::Execute,
-        ] {
-            assert!(denied_for_manager(Some(kind)), "{kind:?}");
-        }
-        for kind in [
-            ToolKind::Read,
-            ToolKind::Search,
-            ToolKind::Fetch,
-            ToolKind::Think,
-            ToolKind::Other,
-        ] {
-            assert!(!denied_for_manager(Some(kind)), "{kind:?}");
-        }
-        assert!(!denied_for_manager(None));
+    fn the_manager_s_own_requests_are_granted_once_without_asking() {
+        let option = |id: &str, kind| PermissionOption::new(id.to_owned(), id.to_owned(), kind);
+        let options = [
+            option("always", PermissionOptionKind::AllowAlways),
+            option("once", PermissionOptionKind::AllowOnce),
+            option("reject", PermissionOptionKind::RejectOnce),
+        ];
+        assert_eq!(selected_option(manager_self_grant(&options)), "once");
+        // Without an allow-once option it still proceeds, with the agent's
+        // own allow option.
+        assert_eq!(selected_option(manager_self_grant(&options[..1])), "always");
+        // Nothing to allow with: the tool call is cancelled.
+        assert!(matches!(
+            manager_self_grant(&options[2..]),
+            RequestPermissionOutcome::Cancelled
+        ));
     }
 
     fn selected_option(outcome: RequestPermissionOutcome) -> String {

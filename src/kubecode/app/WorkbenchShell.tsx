@@ -1249,6 +1249,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
               <NeedsYouView
                 entries={needsYou}
                 incomplete={(attention.snapshot?.incomplete.length ?? 0) > 0}
+                managerDecisions={attention.snapshot?.manager_decisions ?? []}
                 status={attention.status}
                 t={t}
                 onOpenTarget={openNeedsYouTarget}

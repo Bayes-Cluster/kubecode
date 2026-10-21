@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { createTranslator } from '@/lib/i18n'
 
-import { permissionItem, proposalItem, questionItem, snapshot } from './attentionFixtures'
+import { analyst, managerDecision, permissionItem, proposalItem, questionItem, snapshot } from './attentionFixtures'
 import { needsYouFromAttention } from './attentionTargets'
 import { NeedsYouView } from './NeedsYouView'
 
@@ -66,5 +66,35 @@ describe('NeedsYouView', () => {
     expect(screen.queryByText('Nothing is waiting for you.')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
     expect(onRetryLoad).toHaveBeenCalled()
+  })
+
+  it('shows what the project manager decided as information, not as something to answer', () => {
+    view({
+      managerDecisions: [
+        managerDecision(),
+        managerDecision({ id: 'md2', request_id: 'q2', decision: 'escalated', member: null, reason: 'Deletes data.' }),
+      ],
+    })
+    const list = screen.getByRole('list', { name: 'Decided by the project manager' })
+    const rows = within(list).getAllByRole('listitem')
+    expect(rows).toHaveLength(2)
+    expect(rows[0]).toHaveTextContent('Approved')
+    expect(rows[0]).toHaveTextContent(`${analyst.name} asked to use Run pytest -q`)
+    expect(rows[0]).toHaveTextContent('Reason: Tests only read the workspace.')
+    expect(rows[1]).toHaveTextContent('Escalated to you')
+    expect(rows[1]).toHaveTextContent('A specialist asked to use Run pytest -q')
+    expect(within(list).queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  it('words a request the server escalated by itself, not the manager', () => {
+    view({ managerDecisions: [managerDecision({ decision: 'escalated', decided_by: 'system', reason: 'timeout' })] })
+    const row = within(screen.getByRole('list', { name: 'Decided by the project manager' })).getByRole('listitem')
+    expect(row).toHaveTextContent('Reason: The project manager did not decide in time.')
+    expect(row).toHaveTextContent('Escalated to you')
+  })
+
+  it('shows no manager decisions section when there are none', () => {
+    view()
+    expect(screen.queryByRole('list', { name: 'Decided by the project manager' })).not.toBeInTheDocument()
   })
 })

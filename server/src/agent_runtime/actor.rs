@@ -330,7 +330,24 @@ async fn run_acp_session(
                 let team_permission = team_member.filter(|(_, member)| {
                     member.role == crate::teams::TeamRole::Teammate
                 });
-                let reviewer = if team_permission.is_some() { "leader" } else { "user" };
+                // The General Agent's own requests are granted (ADR 0237); a
+                // current specialist's go to the manager before the researcher.
+                let manager = permission_profile == AgentPermissionProfile::Manager;
+                let manager_session = if team_permission.is_none()
+                    && !manager
+                    && !discriminator_request
+                {
+                    permission_runtime.manager_reviewer_session(&permission_conversation_id)
+                } else {
+                    None
+                };
+                let reviewer = if team_permission.is_some() {
+                    "leader"
+                } else if manager_session.is_some() {
+                    "manager"
+                } else {
+                    "user"
+                };
                 let should_route_to_leader = team_permission.is_some();
                 let request_payload = json!({
                     "request_id": request_id,
@@ -344,19 +361,25 @@ async fn run_acp_session(
                         "kind": option.kind,
                     })).collect::<Vec<_>>(),
                 });
-                // The General Agent manages: native file-editing, deleting,
-                // moving, and command-execution tools are refused outright, not
-                // surfaced for approval (ADR 0220 §4). Anything else it asks for
-                // is put to the researcher every time, never answered from
-                // always-allow memory (ADR 0226). Its management tools are
-                // Kubecode's own, which this does not touch.
-                let manager = permission_profile == AgentPermissionProfile::Manager;
-                let manager_denied =
-                    manager && super::permissions::denied_for_manager(request.tool_call.fields.kind);
-                let outcome = if discriminator_request || manager_denied {
+                let outcome = if discriminator_request {
                     RequestPermissionOutcome::Cancelled
-                } else if !manager
-                    && let Some(run_id) = run_id.as_deref()
+                } else if manager {
+                    // The manager runs with full permissions: whatever its
+                    // provider still asks is granted once, never surfaced.
+                    let outcome = super::permissions::manager_self_grant(&request.options);
+                    if let Some(run_id) = run_id.as_deref() {
+                        let _ = permission_store.append_event(
+                            run_id,
+                            AgentEventKind::PermissionResolved,
+                            &json!({
+                                "request_id": request_id,
+                                "outcome": outcome,
+                                "decided_by": "manager_profile",
+                            }),
+                        );
+                    }
+                    outcome
+                } else if let Some(run_id) = run_id.as_deref()
                     && let Some(outcome) = remembered_permission_outcome(
                         &permission_runtime,
                         run_id,
@@ -511,6 +534,18 @@ async fn run_acp_session(
                     if should_route_to_leader && !routed_to_leader {
                         let _ = permission_runtime.escalate_team_permission(&request_id);
                     }
+                    if let Some(manager_session) = manager_session.as_deref() {
+                        permission_runtime.route_permission_review(
+                            &request_id,
+                            &run_id,
+                            &permission_conversation_id,
+                            manager_session,
+                            request_payload
+                                .get("tool")
+                                .and_then(Value::as_str)
+                                .unwrap_or("Tool"),
+                        );
+                    }
                     let outcome = receiver
                         .await
                         .unwrap_or(RequestPermissionOutcome::Cancelled);
@@ -649,8 +684,6 @@ async fn run_acp_session(
                 &initialization.agent_capabilities,
                 Some(&generation),
             )?;
-            let session_meta =
-                super::permissions::session_meta(config.agent_id, config.permission_profile);
             let mcp_http = if initialization.agent_capabilities.mcp_capabilities.http {
                 runtime
                     .mcp_http_servers(&conversation_id)
@@ -667,8 +700,7 @@ async fn run_acp_session(
                     let response = connection
                         .send_request(
                             LoadSessionRequest::new(session_id.clone(), cwd.clone())
-                                .mcp_servers(mcp_http.clone())
-                                .meta(session_meta.clone()),
+                                .mcp_servers(mcp_http.clone()),
                         )
                         .block_task()
                         .await?;
@@ -695,8 +727,7 @@ async fn run_acp_session(
                         match connection
                             .send_request(
                                 ResumeSessionRequest::new(session_id.clone(), cwd.clone())
-                                    .mcp_servers(mcp_http.clone())
-                                    .meta(session_meta.clone()),
+                                    .mcp_servers(mcp_http.clone()),
                             )
                             .block_task()
                             .await
@@ -728,7 +759,7 @@ async fn run_acp_session(
                             .send_request(LoadSessionRequest::new(
                                 session_id.clone(),
                                 cwd.clone(),
-                            ).mcp_servers(mcp_http.clone()).meta(session_meta.clone()))
+                            ).mcp_servers(mcp_http.clone()))
                             .block_task()
                             .await
                         {
@@ -751,7 +782,6 @@ async fn run_acp_session(
                                     &connection,
                                     cwd.clone(),
                                     ProviderSessionCreation {
-                                        meta: session_meta.clone(),
                                         runtime: &runtime,
                                         conversation_id: &conversation_id,
                                         mcp_http: mcp_http.clone(),
@@ -771,7 +801,6 @@ async fn run_acp_session(
                     &connection,
                     cwd.clone(),
                     ProviderSessionCreation {
-                        meta: session_meta.clone(),
                         runtime: &runtime,
                         conversation_id: &conversation_id,
                         mcp_http,
@@ -1052,8 +1081,6 @@ type StartupStageCapture = Arc<Mutex<Option<AgentStartupStage>>>;
 struct ProviderSessionCreation<'a> {
     runtime: &'a AgentRuntime,
     mcp_http: Vec<McpServer>,
-    /// What the provider reads when the session starts (the manager's restriction).
-    meta: Option<agent_client_protocol::schema::v1::Meta>,
     conversation_id: &'a str,
     captured_responses: &'a SessionResponseCapture,
     startup_stage: &'a StartupStageCapture,
@@ -1075,7 +1102,6 @@ async fn create_provider_session(
     let ProviderSessionCreation {
         runtime,
         mcp_http,
-        meta,
         conversation_id,
         captured_responses,
         startup_stage,
@@ -1085,7 +1111,7 @@ async fn create_provider_session(
     set_startup_stage(startup_stage, AgentStartupStage::SessionNew);
     if !mcp_http.is_empty() {
         let response = connection
-            .send_request(NewSessionRequest::new(cwd).mcp_servers(mcp_http).meta(meta))
+            .send_request(NewSessionRequest::new(cwd).mcp_servers(mcp_http))
             .block_task()
             .await?;
         let session_id = response.session_id.clone();
@@ -1131,7 +1157,7 @@ async fn create_provider_session(
         return Ok((session_id, Some(active_session)));
     }
     let response = connection
-        .send_request(NewSessionRequest::new(cwd).meta(meta))
+        .send_request(NewSessionRequest::new(cwd))
         .block_task()
         .await?;
     let session_id = response.session_id.clone();

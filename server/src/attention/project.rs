@@ -323,5 +323,6 @@ pub fn project(project_id: &str, cursor: u64, inputs: AttentionInputs) -> Attent
         undelivered,
         incomplete: inputs.failed_sources.clone(),
         truncated,
+        manager_decisions: inputs.manager_decisions,
     }
 }

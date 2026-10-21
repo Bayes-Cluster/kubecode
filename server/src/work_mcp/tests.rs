@@ -1230,3 +1230,383 @@ async fn the_manager_s_mode_cannot_be_widened_through_the_api_or_the_runtime() {
         Err(RuntimeError::ManagerModeLocked)
     ));
 }
+
+struct ReviewRig {
+    rig: Rig,
+    manager_session: String,
+    specialist_session: String,
+    run_id: String,
+}
+
+fn review_rig() -> ReviewRig {
+    let rig = rig();
+    let available: &dyn Fn(AgentId) -> bool = &|_| true;
+    let project = rig.f.project_id.clone();
+    let general = rig
+        .state
+        .members
+        .ensure_general(&project, available, AgentId::OpenCode)
+        .unwrap();
+    let analyst = rig
+        .state
+        .members
+        .create_specialist(
+            &project,
+            crate::member_store::NewMember {
+                name: "Analyst".into(),
+                ..Default::default()
+            },
+            available,
+            AgentId::OpenCode,
+        )
+        .unwrap();
+    let specialist_session = analyst.public_conversation_id.clone().unwrap();
+    let run_id = rig
+        .f
+        .agents
+        .start_run(
+            &specialist_session,
+            &project,
+            "Clean up",
+            PermissionMode::Safe,
+        )
+        .unwrap()
+        .id;
+    ReviewRig {
+        manager_session: general.public_conversation_id.clone().unwrap(),
+        specialist_session,
+        run_id,
+        rig,
+    }
+}
+
+impl ReviewRig {
+    /// A specialist's provider asks permission, exactly as the session actor
+    /// registers and routes it.
+    fn ask(
+        &self,
+        request_id: &str,
+    ) -> tokio::sync::oneshot::Receiver<agent_client_protocol::schema::v1::RequestPermissionOutcome>
+    {
+        self.rig.runtime.ask_permission_for_test(
+            &self.specialist_session,
+            &self.run_id,
+            request_id,
+            "Run rm -rf build",
+            json!({"command": "rm -rf build"}),
+            &[
+                ("allow_once", "allow_once"),
+                ("allow_always", "allow_always"),
+                ("reject_once", "reject_once"),
+            ],
+        )
+    }
+}
+
+fn selected(outcome: agent_client_protocol::schema::v1::RequestPermissionOutcome) -> String {
+    match outcome {
+        agent_client_protocol::schema::v1::RequestPermissionOutcome::Selected(selected) => {
+            selected.option_id.to_string()
+        }
+        other => format!("{other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn a_specialist_s_permission_goes_to_the_manager_who_approves_it_with_a_recorded_reason() {
+    let r = review_rig();
+    let receiver = r.ask("perm-1");
+
+    // The researcher is not asked: the request waits on the manager.
+    let pending = r.rig.runtime.pending_requests();
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].reviewer, "manager");
+    let snapshot = crate::attention::collect(&r.rig.state, &r.rig.f.project_id);
+    assert!(
+        snapshot
+            .items
+            .iter()
+            .all(|item| item.key != "permission:perm-1"),
+        "a request the manager reviews is not the researcher's to answer"
+    );
+    // The manager is told, by a durable route to its public Session.
+    let routes = r
+        .rig
+        .state
+        .orchestrator
+        .routes(&r.rig.f.project_id, None, 50)
+        .unwrap();
+    let route = routes
+        .iter()
+        .find(|route| route.source_id == "perm-1")
+        .expect("a permission review route");
+    assert_eq!(route.kind.as_str(), "permission_review");
+    assert!(matches!(
+        &route.target,
+        crate::orchestrator::Target::Session { session_id } if *session_id == r.manager_session
+    ));
+    assert!(route.body.contains("permission_review"), "{}", route.body);
+
+    // Only the manager's Session may see or decide it.
+    let specialist = r.rig.server(&r.specialist_session);
+    let error = refused(specialist.permission_reviews().await);
+    assert!(error.contains("project manager"), "{error}");
+
+    let manager = r.rig.server(&r.manager_session);
+    let listed = payload(manager.permission_reviews().await);
+    assert_eq!(listed[0]["request_id"], "perm-1");
+    assert_eq!(listed[0]["member"]["handle"], "analyst");
+    assert!(
+        listed[0]["input"]
+            .as_str()
+            .unwrap()
+            .contains("rm -rf build")
+    );
+
+    // A decision needs a reason.
+    let error = refused(
+        manager
+            .permission_review(Parameters(PermissionReviewInput {
+                request_id: "perm-1".into(),
+                decision: "approve".into(),
+                reason: "  ".into(),
+                option_id: None,
+            }))
+            .await,
+    );
+    assert!(error.contains("reason"), "{error}");
+
+    let cursor = r.rig.f.agents.latest_workspace_event_id().unwrap();
+    let decided = payload(
+        manager
+            .permission_review(Parameters(PermissionReviewInput {
+                request_id: "perm-1".into(),
+                decision: "approve".into(),
+                reason: "The build directory is generated output.".into(),
+                option_id: None,
+            }))
+            .await,
+    );
+    assert_eq!(decided["decision"], "approved");
+    // Approved once: a manager approval never writes always-allow memory.
+    assert_eq!(selected(receiver.await.unwrap()), "allow_once");
+    assert!(r.rig.runtime.pending_requests().is_empty());
+
+    // The researcher sees what the manager decided, afterwards.
+    let snapshot = crate::attention::collect(&r.rig.state, &r.rig.f.project_id);
+    let decision = &snapshot.manager_decisions[0];
+    assert_eq!(decision.request_id, "perm-1");
+    assert_eq!(decision.decision, "approved");
+    assert_eq!(decision.reason, "The build directory is generated output.");
+    assert_eq!(decision.decided_by, "manager");
+    assert_eq!(decision.tool, "Run rm -rf build");
+    assert_eq!(
+        decision
+            .member
+            .as_ref()
+            .map(|member| member.handle.as_str()),
+        Some("analyst")
+    );
+    // The broadcast says only that it was decided: no input, no reason.
+    let event = r
+        .rig
+        .f
+        .agents
+        .workspace_events_after(cursor)
+        .unwrap()
+        .into_iter()
+        .find(|event| event.kind == "permission_reviewed")
+        .expect("permission_reviewed event");
+    let text = event.payload.to_string();
+    assert_eq!(event.payload["decision"], "approved");
+    assert!(!text.contains("rm -rf"), "{text}");
+    assert!(!text.contains("generated output"), "{text}");
+
+    // It is answered: a second decision is refused.
+    let error = refused(
+        manager
+            .permission_review(Parameters(PermissionReviewInput {
+                request_id: "perm-1".into(),
+                decision: "deny".into(),
+                reason: "Changed my mind.".into(),
+                option_id: None,
+            }))
+            .await,
+    );
+    assert!(error.contains("no longer waiting"), "{error}");
+}
+
+#[tokio::test]
+async fn the_manager_denies_or_escalates_a_specialist_s_permission() {
+    let r = review_rig();
+    let manager = r.rig.server(&r.manager_session);
+
+    let denied = r.ask("perm-deny");
+    payload(
+        manager
+            .permission_review(Parameters(PermissionReviewInput {
+                request_id: "perm-deny".into(),
+                decision: "deny".into(),
+                reason: "Out of the Task's scope.".into(),
+                option_id: None,
+            }))
+            .await,
+    );
+    assert_eq!(selected(denied.await.unwrap()), "reject_once");
+
+    // An always option is never the manager's to grant.
+    let _always = r.ask("perm-always");
+    let error = refused(
+        manager
+            .permission_review(Parameters(PermissionReviewInput {
+                request_id: "perm-always".into(),
+                decision: "approve".into(),
+                reason: "Fine.".into(),
+                option_id: Some("allow_always".into()),
+            }))
+            .await,
+    );
+    assert!(error.contains("allow-once"), "{error}");
+
+    // Unsure: the researcher decides, and now sees it in Needs you.
+    let escalated = payload(
+        manager
+            .permission_review(Parameters(PermissionReviewInput {
+                request_id: "perm-always".into(),
+                decision: "escalate".into(),
+                reason: "This deletes data; the researcher should decide.".into(),
+                option_id: None,
+            }))
+            .await,
+    );
+    assert_eq!(escalated["decision"], "escalated");
+    let snapshot = crate::attention::collect(&r.rig.state, &r.rig.f.project_id);
+    assert!(
+        snapshot
+            .items
+            .iter()
+            .any(|item| item.key == "permission:perm-always"),
+        "an escalated request waits on the researcher"
+    );
+    let decisions: Vec<&str> = snapshot
+        .manager_decisions
+        .iter()
+        .map(|decision| decision.decision.as_str())
+        .collect();
+    assert_eq!(decisions, vec!["escalated", "denied"], "newest first");
+    // Escalated, it is no longer the manager's.
+    assert!(
+        payload(manager.permission_reviews().await)
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn without_a_manager_a_specialist_s_permission_goes_to_the_researcher() {
+    let rig = rig();
+    let session = rig.session("Not a member");
+    let run_id = rig
+        .f
+        .agents
+        .start_run(&session, &rig.f.project_id, "Work", PermissionMode::Safe)
+        .unwrap()
+        .id;
+    let _receiver = rig.runtime.ask_permission_for_test(
+        &session,
+        &run_id,
+        "perm-user",
+        "Edit file",
+        json!({}),
+        &[("allow_once", "allow_once")],
+    );
+    assert_eq!(rig.runtime.pending_requests()[0].reviewer, "user");
+}
+
+#[tokio::test]
+async fn an_undecided_review_escalates_to_the_researcher_after_the_timeout() {
+    let r = review_rig();
+    r.rig
+        .runtime
+        .set_manager_review_timeout(std::time::Duration::from_millis(50));
+    let _receiver = r.ask("perm-late");
+    assert_eq!(r.rig.runtime.pending_requests()[0].reviewer, "manager");
+    let mut escalated = false;
+    for _ in 0..100 {
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        if r.rig.runtime.pending_requests()[0].reviewer == "user" {
+            escalated = true;
+            break;
+        }
+    }
+    assert!(escalated, "the request reaches the researcher by itself");
+    let snapshot = crate::attention::collect(&r.rig.state, &r.rig.f.project_id);
+    assert!(
+        snapshot
+            .items
+            .iter()
+            .any(|item| item.key == "permission:perm-late")
+    );
+    let decision = &snapshot.manager_decisions[0];
+    assert_eq!(decision.decision, "escalated");
+    assert_eq!(decision.decided_by, "system");
+    assert_eq!(decision.reason, "timeout");
+    // The manager can no longer decide it.
+    let error = refused(
+        r.rig
+            .server(&r.manager_session)
+            .permission_review(Parameters(PermissionReviewInput {
+                request_id: "perm-late".into(),
+                decision: "approve".into(),
+                reason: "Too late.".into(),
+                option_id: None,
+            }))
+            .await,
+    );
+    assert!(error.contains("no longer waiting"), "{error}");
+}
+
+#[tokio::test]
+async fn a_specialist_s_direct_message_permission_goes_straight_to_the_researcher() {
+    let r = review_rig();
+    let available: &dyn Fn(AgentId) -> bool = &|_| true;
+    let analyst = r
+        .rig
+        .state
+        .members
+        .find(&r.rig.f.project_id, "analyst")
+        .unwrap()
+        .unwrap();
+    let dm = r
+        .rig
+        .state
+        .members
+        .ensure_dm_session(&r.rig.f.project_id, &analyst.id, available)
+        .unwrap()
+        .dm_conversation_id
+        .unwrap();
+    let run_id = r
+        .rig
+        .f
+        .agents
+        .start_run(&dm, &r.rig.f.project_id, "Private", PermissionMode::Safe)
+        .unwrap()
+        .id;
+    let _receiver = r.rig.runtime.ask_permission_for_test(
+        &dm,
+        &run_id,
+        "perm-dm",
+        "Edit notes",
+        json!({}),
+        &[("allow_once", "allow_once")],
+    );
+    assert_eq!(r.rig.runtime.pending_requests()[0].reviewer, "user");
+    let routes = r
+        .rig
+        .state
+        .orchestrator
+        .routes(&r.rig.f.project_id, None, 50)
+        .unwrap();
+    assert!(routes.iter().all(|route| route.source_id != "perm-dm"));
+}
