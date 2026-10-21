@@ -2,6 +2,18 @@
 @import "tw-animate-css";
 /* ADR 0241: streamdown renders official AI Elements markdown. */
 @source "../node_modules/streamdown/dist/*.js";
+/* ADR 0241: inside official surfaces `dark:` follows the app theme
+   (data-theme); elsewhere it keeps following the system, as before. */
+@custom-variant dark {
+  @media (prefers-color-scheme: dark) {
+    &:where(:not([data-ws-components='official'], [data-ws-components='official'] *)) {
+      @slot;
+    }
+  }
+  &:where([data-theme='dark'] [data-ws-components='official'], [data-theme='dark'] [data-ws-components='official'] *) {
+    @slot;
+  }
+}
 
 /* ============================================================
    Theme Variables — app-owned light/dark contract

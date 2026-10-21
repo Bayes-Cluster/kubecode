@@ -140,11 +140,11 @@ The shadcn variables already alias the semantic tokens globally
 `--ws-surface-quiet`, `--accent` → `--ws-accent-soft`, `--border`/`--input`
 → `--ws-hairline-strong`, `--ring` → `--state-focus-ring`. Light and dark
 follow the tokens; no palette is added. Product surfaces opt in when their
-slice moves, so S0 changes no product view. Tailwind `dark:` variants in the
-official files still follow the system preference rather than
-`data-theme`; S1 adds a `dark` custom variant on `data-theme` when product
-surfaces adopt them, because it also changes today's `ui/` buttons and
-inputs. streamdown's class names are made visible to Tailwind with
+slice moves, so S0 changes no product view. Tailwind's `dark:` variant
+follows `data-theme` inside official surfaces (Code Block, for one, shows
+its dark highlighting only through `dark:`) and keeps following the system
+preference elsewhere, so today's `ui/` buttons and inputs are unchanged; S5
+makes `data-theme` the only source once every surface has moved. streamdown's class names are made visible to Tailwind with
 `@source`.
 
 ### 6. Localisation
