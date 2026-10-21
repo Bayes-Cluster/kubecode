@@ -69,7 +69,7 @@ function createRouteStore(initial: WorkspaceRoute | null) {
  * first), `pending` is true and intermediate states are not written back over
  * it; if it is not reached within `APPLY_TIMEOUT_MS`, where the researcher is
  * gets written. A route `apply` refuses (an unknown Project) is abandoned at
- * once, and the address then names where the researcher is.
+ * once, or once its asynchronous check refuses it, and the address then names where the researcher is.
  */
 export function useWorkspaceRouteSync({
   apply,
@@ -78,8 +78,12 @@ export function useWorkspaceRouteSync({
   ignoreInitialLink = false,
   historyMode,
 }: {
-  /** Moves the shell to the route; false when it cannot be honoured (an unknown Project). */
-  apply: (route: WorkspaceRoute) => boolean
+  /**
+   * Moves the shell to the route; false when it cannot be honoured (an unknown
+   * Project). A promise means the shell must first check (a Project registered
+   * since load): the route stays pending until it settles.
+   */
+  apply: (route: WorkspaceRoute) => boolean | Promise<boolean>
   current: WorkspaceRoute
   /** The shell has its Projects and can honour a route. */
   ready: boolean
@@ -120,16 +124,31 @@ export function useWorkspaceRouteSync({
       awaitingStore.set(null)
     }, APPLY_TIMEOUT_MS)
     target.current = { text: wanted, route, timer }
-    if (applyRef.current(route)) {
+    // Cannot be honoured: the address names where the researcher is, in place of the link.
+    const abandon = () => {
+      window.clearTimeout(timer)
+      target.current = null
+      awaitingStore.set(null)
+      synced.current = latest.current
+      window.history.replaceState(window.history.state, '', routeHash(latest.current.route))
+    }
+    const outcome = applyRef.current(route)
+    if (outcome === true) {
       awaitingStore.set(route)
       return
     }
-    // Cannot be honoured: the address names where the researcher is, in place of the link.
-    window.clearTimeout(timer)
-    target.current = null
-    awaitingStore.set(null)
-    synced.current = latest.current
-    window.history.replaceState(window.history.state, '', routeHash(latest.current.route))
+    if (outcome === false) {
+      abandon()
+      return
+    }
+    // The shell must first learn whether the Project exists (one registered elsewhere since load).
+    awaitingStore.set(route)
+    const settle = (honoured: boolean) => {
+      // A later move already replaced this request.
+      if (target.current?.timer !== timer) return
+      if (!honoured) abandon()
+    }
+    outcome.then(settle, () => settle(false))
   }, [awaitingStore])
 
   useEffect(() => {

@@ -380,6 +380,43 @@ describe('Workspace navigation and routes', () => {
     expect(screen.getByRole('region', { name: 'task r1' })).toBeInTheDocument()
   })
 
+  it('opens a Workspace registered elsewhere since load when a link names it, and abandons an unknown one', async () => {
+    window.history.replaceState(null, '', '/#/p/project-1/general')
+    const known = [{ id: 'project-1', name: 'Demo', path: '/demo' }]
+    const listProjects = vi.fn().mockResolvedValue(known)
+    render(<KubecodeApp api={api({ listProjects })} />)
+    expect(await screen.findByRole('heading', { name: 'General', exact: true, level: 2 })).toBeInTheDocument()
+    await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/general'))
+
+    // Registered through the API after the page read its Workspaces.
+    listProjects.mockResolvedValue([...known, { id: 'project-3', name: 'Fresh', path: '/fresh' }])
+    act(() => {
+      window.history.pushState(null, '', '/#/p/project-3/resources')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+    expect(await screen.findByRole('heading', { name: 'Resources', level: 2 })).toBeInTheDocument()
+    await waitFor(() => expect(window.location.hash).toBe('#/p/project-3/resources'))
+    expect(screen.getByRole('button', { name: 'Fresh' })).toBeInTheDocument()
+
+    act(() => {
+      window.history.pushState(null, '', '/#/p/project-unknown/general')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+    await waitFor(() => expect(window.location.hash).toBe('#/p/project-3/resources'))
+  })
+
+  it('opens the linked Workspace on a reload, over the remembered one', async () => {
+    storeLocations({
+      lastProjectId: 'project-1',
+      seq: 2,
+      workspaces: { 'project-1': { current: 'board', at: 2, views: { board: '/p/project-1/board' } } },
+    })
+    window.history.replaceState(null, '', '/#/p/project-2/general')
+    render(<KubecodeApp api={api()} />)
+    expect(await screen.findByRole('heading', { name: 'General', exact: true, level: 2 })).toBeInTheDocument()
+    await waitFor(() => expect(window.location.hash).toBe('#/p/project-2/general'))
+  })
+
   it('reopens the last Workspace at its remembered place when there is no link', async () => {
     storeLocations({
       lastProjectId: 'project-2',
