@@ -6083,6 +6083,13 @@ button.kubecode-reference-chip-open:focus-visible,
   width: min(100%, max(var(--ws-composer-max), 480px));
 }
 .kubecode-composer-notice { margin: 0; }
+/* Empty, the card is two lines; it grows with the text up to a limit, then scrolls. */
+.kubecode-conversation-dock .kubecode-ai-prompt-input .kubecode-composer textarea {
+  field-sizing: content;
+  max-height: min(40dvh, 18rem);
+  min-height: calc(2lh + 2 * var(--ws-space-1));
+  overflow-y: auto;
+}
 
 @media (max-width: 767px) {
   .kubecode-channel-messages { padding-inline: var(--ws-space-3); }

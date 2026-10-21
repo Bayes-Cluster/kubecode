@@ -461,9 +461,10 @@ scroll under 720 px, and failed turns show "Open {name} in Members" until
 dismissed (place memory). The composers of General and the DM offer no Stop.
 General and the DM render messages with the AI Elements `Message` composition
 and dock the execution strip, the outbox rows and the Prompt Input card (reply
-and references, the shared `Composer`, recipients or the DM's privacy line)
-at the foot of the view (#232, ADR 0233 §7), the list and the dock in one
-column centered in the pane (ADR 0238); `MessageList` keeps its own
+and references, the shared `Composer`, and only actionable states)
+at the foot of the view (#232, ADR 0233 §7); the thread takes the middle three
+quarters of the pane, the dock is centered and at most half of it, and the
+researcher's messages sit on the right (ADR 0239); `MessageList` keeps its own
 scroller for older messages and the reading position.
 `attention/useMessageDeliveries.ts` reads `GET …/deliveries` for the
 researcher's top-level messages on screen, again on `orchestration_updated`

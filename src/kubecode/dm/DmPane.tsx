@@ -222,6 +222,7 @@ export function DmPane({
                 focusKey={`composer:dm:${member.id}`}
                 label={t('kubecode.dm.placeholder', { name: member.name })}
                 placeholder={t('kubecode.dm.placeholder', { name: member.name })}
+                rows={2}
                 sendLabel={t('kubecode.channel.send')}
                 value={draft.body}
                 onChange={(body) => setDraft((current) => ({ ...current, body }))}
@@ -229,22 +230,20 @@ export function DmPane({
               />
             </PromptInputBody>
             <PromptInputFooter className="kubecode-composer-footer">
-              {ready
-                ? <p className="kubecode-composer-hint">{t('kubecode.dm.destination', { name: member.name })}</p>
-                : (
-                  <p className="kubecode-composer-warning" role="status">
-                    {t('kubecode.dm.needsSetup', { name: member.name })}{' '}
-                    {navigation && (
-                      <Button
-                        size="xs"
-                        variant="outline"
-                        onClick={() => navigation.openPlace({ view: 'members' }, { inspect: { kind: 'member', id: member.id } })}
-                      >
-                        {t('kubecode.dm.fixInMembers')}
-                      </Button>
-                    )}
-                  </p>
-                )}
+              {!ready && (
+                <p className="kubecode-composer-warning" role="status">
+                  {t('kubecode.dm.needsSetup', { name: member.name })}{' '}
+                  {navigation && (
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      onClick={() => navigation.openPlace({ view: 'members' }, { inspect: { kind: 'member', id: member.id } })}
+                    >
+                      {t('kubecode.dm.fixInMembers')}
+                    </Button>
+                  )}
+                </p>
+              )}
             </PromptInputFooter>
           </PromptInput>
         </div>

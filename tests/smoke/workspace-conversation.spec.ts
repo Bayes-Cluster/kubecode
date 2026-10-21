@@ -86,17 +86,20 @@ test.describe('on a desktop', () => {
       await page.goto(`${workspaceUrl}/#/p/${projectId}/general`)
       await expect(page.getByRole('heading', { name: 'General', exact: true, level: 2 })).toBeVisible()
 
-      // 1. No message types: a message names no one, so it goes to the project manager, as the To row says.
+      // 1. No message types and no To row in the card: a message that names no one goes to the
+      //    project manager, as the sent message says.
       await expect(page.getByRole('combobox', { name: 'Message type' })).toHaveCount(0)
-      await expect(toRow(page)).toContainText('Project manager')
+      await expect(toRow(page)).toHaveCount(0)
       await send(page, 'Should we prune the attention heads?')
       await expect(row(page, 'Should we prune the attention heads?')).toHaveAttribute('aria-label', 'You')
+      await expect(row(page, 'Should we prune the attention heads?').locator('.kubecode-message-recipients')).toContainText(manager.name)
       // One input surface (#232): the text and its controls in the Prompt Input card, whom it reaches in its footer;
       // the researcher's own message reads as theirs.
       const promptCard = page.locator('.kubecode-ai-prompt-input')
       await expect(promptCard.getByRole('combobox', { name: 'Message the Workspace' })).toBeVisible()
       await expect(promptCard.getByRole('button', { name: 'Add context' })).toBeVisible()
-      await expect(promptCard.locator('.kubecode-ai-prompt-input-footer .kubecode-composer-to')).toContainText('Project manager')
+      await expect(promptCard.locator('.kubecode-composer-to')).toHaveCount(0)
+      await expect(promptCard).not.toContainText('never start work')
       await expect(row(page, 'Should we prune the attention heads?')).toHaveAttribute('data-from', 'self')
       await waitForPrompt(manager.public_conversation_id!, (text) => text.includes('Should we prune the attention heads?'))
 
@@ -105,10 +108,10 @@ test.describe('on a desktop', () => {
       await expect(page.getByRole('option', { name: /Specialist · Analysis/ })).toBeVisible()
       await composer(page).press('Enter')
       await expect(composer(page)).toHaveValue('@analyst ')
-      await expect(toRow(page).getByRole('list', { name: 'To' })).toContainText('Analyst')
       await composer(page).pressSequentially('please size the sweep')
       await page.getByRole('button', { name: 'Send', exact: true }).click()
       await expect(log(page).getByText('@analyst please size the sweep')).toBeVisible()
+      await expect(row(page, '@analyst please size the sweep').locator('.kubecode-message-recipients')).toContainText('Analyst')
       await waitForPrompt(analyst.public_conversation_id!, (text) => text.includes('please size the sweep'))
       expect(promptsOf(manager.public_conversation_id!).some((text) => text.includes('please size the sweep'))).toBe(false)
       await send(page, '@writer please draft the outline')
@@ -126,6 +129,24 @@ test.describe('on a desktop', () => {
       await expect(row(page, 'Outline drafted.')).toHaveAttribute('aria-label', 'Writer')
       await expect(row(page, 'Noted, tracking both.')).toHaveAttribute('aria-label', manager.name)
       await expect(row(page, '@writer please draft the outline')).toContainText('Writer')
+
+      // A chat at 1440px (ADR 0239): the thread is the middle three quarters, the composer card at most
+      // half the pane and centred, the researcher's messages on the right and members' on the left.
+      await page.setViewportSize({ width: 1440, height: 900 })
+      const pane = (await page.locator('.kubecode-channel-main').boundingBox())!
+      const dock = (await page.locator('.kubecode-conversation-dock').boundingBox())!
+      expect(dock.width).toBeLessThanOrEqual(Math.max(pane.width * 0.5, 480) + 1)
+      expect(Math.abs((dock.x - pane.x) - (pane.x + pane.width - dock.x - dock.width))).toBeLessThanOrEqual(2)
+      const thread = await log(page).evaluate((element) => {
+        const style = getComputedStyle(element)
+        return element.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)
+      })
+      expect(thread / pane.width).toBeGreaterThan(0.7)
+      expect(thread / pane.width).toBeLessThan(0.8)
+      const mine = (await row(page, 'Should we prune the attention heads?').boundingBox())!
+      const theirs = (await row(page, 'Outline drafted.').boundingBox())!
+      expect(mine.x + mine.width).toBeGreaterThan(theirs.x + theirs.width - 1)
+      expect(mine.x).toBeGreaterThan(theirs.x)
 
       // 4. Reply cites the old message and addresses the Analyst, whose new Session gets it with the citation.
       const old = page.locator('article[data-author="agent"]').filter({ hasText: 'Sweep sized: twelve runs.' })
@@ -215,7 +236,6 @@ test.describe('on a desktop', () => {
       await expect(unsent).toContainText('half a thought')
       await expect(composer(page)).toHaveValue('')
       await expect(about).toContainText('Structured pruning')
-      await expect(toRow(page)).toContainText('Project manager')
       await unsent.getByRole('button', { name: 'Send again' }).click()
       await expect(unsent).toHaveCount(0)
       await expect(log(page).getByText('half a thought', { exact: true })).toHaveCount(1)
@@ -237,7 +257,11 @@ test.describe('on a desktop', () => {
       await expect(log(page)).not.toContainText('secret plan')
       await workspaceNav(page).getByRole('button', { name: 'Message Analyst privately' }).click()
       await expect(dm).toHaveValue('secret plan')
-      await expect(page.getByText('Only Analyst sees this message.')).toBeVisible()
+      await expect(page.getByText('Only Analyst sees this message.')).toHaveCount(0)
+      // The private composer follows the same rule as General's: centred, at most half the pane.
+      const dmPane = (await page.locator('.kubecode-channel-main').boundingBox())!
+      const dmDock = (await page.locator('.kubecode-conversation-dock').boundingBox())!
+      expect(dmDock.width).toBeLessThanOrEqual(Math.max(dmPane.width * 0.5, 480) + 1)
       await page.getByRole('button', { name: 'Send', exact: true }).click()
       await expect(dm).toHaveValue('')
       await expect(page.getByRole('log').getByText('secret plan')).toBeVisible()

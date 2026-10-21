@@ -90,6 +90,8 @@ describe('MessageComposer', () => {
     expect(screen.queryByText(/never start work/)).not.toBeInTheDocument()
     expect(screen.queryByText('Project manager')).not.toBeInTheDocument()
     expect(box()).not.toHaveAccessibleDescription(/never start work/)
+    // Empty, the card is compact: two lines that grow with the text.
+    expect(box()).toHaveAttribute('rows', '2')
   })
 
   it('sends to the mentioned members without a recipient row in the card', async () => {

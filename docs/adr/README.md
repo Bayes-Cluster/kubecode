@@ -82,3 +82,4 @@ ADRs are immutable after acceptance; a later decision supersedes an earlier one.
 | [0236](0236-one-presentation-of-cited-materials.md) | One presentation of cited materials: Sources in messages, readable evidence, and recovery from Resources |
 | [0237](0237-manager-permission-authority.md) | The manager runs with full native permissions and reviews specialists' permission requests |
 | [0238](0238-one-stop-per-task-and-a-centered-conversation-dock.md) | One Stop per Task, a folded running list, and one centered conversation column |
+| [0239](0239-chat-aligned-conversation-wide-thread-quiet-composer.md) | Chat-aligned conversation, a wide thread, and a quiet composer |

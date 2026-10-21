@@ -367,6 +367,7 @@ export function MessageComposer({
             mentionLabel={t('kubecode.composer.mentions')}
             mentions={mentionOptions(directory, t)}
             placeholder={placeholder}
+            rows={2}
             sendDisabledReason={blocked ?? undefined}
             sendLabel={t('kubecode.channel.send')}
             stop={stop}

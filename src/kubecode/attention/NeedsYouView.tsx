@@ -41,7 +41,6 @@ function ManagerDecisions({ decisions, t }: { decisions: ManagerDecision[]; t: T
   return (
     <div className="kubecode-needs-you-group">
       <h3 className="kubecode-nav-heading" id={heading}>{t('kubecode.needsYou.managerDecisions.title')}</h3>
-      <p className="kubecode-research-nav-note">{t('kubecode.needsYou.managerDecisions.description')}</p>
       <ul aria-labelledby={heading} className="kubecode-research-nav-list">
         {decisions.map((decision) => (
           <li className="kubecode-needs-you-decision" data-decision={decision.decision} key={decision.id}>
