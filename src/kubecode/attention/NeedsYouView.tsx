@@ -1,4 +1,9 @@
+import { useId } from 'react'
+
+import { StatusBadge, type StatusTone } from '@/components/workspace/StatusBadge'
 import type { Translator } from '@/lib/i18n'
+
+import type { ManagerDecision } from '../api'
 
 import { DestinationHeader } from '../app/DestinationHeader'
 import type { NeedsYouEntry, NeedsYouTarget } from '../app/location/needsYou'
@@ -8,17 +13,66 @@ export type NeedsYouViewProps = {
   entries: NeedsYouEntry[]
   status: 'loading' | 'ready' | 'error'
   incomplete: boolean
+  /** What the project manager decided on specialists' permission requests (ADR 0237). */
+  managerDecisions?: ManagerDecision[]
   t: Translator
   onOpenTarget: (target: NeedsYouTarget) => void
   onRetryLoad: () => void
 }
 
+const DECISION_TONE: Record<ManagerDecision['decision'], StatusTone> = {
+  approved: 'ok',
+  denied: 'muted',
+  escalated: 'warn',
+}
+
+/** The manager's own words, or the server's reason code worded here. */
+function reasonOf(decision: ManagerDecision, t: Translator): string {
+  if (decision.decided_by !== 'system') return decision.reason
+  return decision.reason === 'timeout'
+    ? t('kubecode.needsYou.managerDecisions.systemTimeout')
+    : t('kubecode.needsYou.managerDecisions.systemUnreachable')
+}
+
+/** The manager's decisions, shown afterwards as information: nothing here is answered. */
+function ManagerDecisions({ decisions, t }: { decisions: ManagerDecision[]; t: Translator }) {
+  const heading = useId()
+  if (decisions.length === 0) return null
+  return (
+    <div className="kubecode-needs-you-group">
+      <h3 className="kubecode-nav-heading" id={heading}>{t('kubecode.needsYou.managerDecisions.title')}</h3>
+      <p className="kubecode-research-nav-note">{t('kubecode.needsYou.managerDecisions.description')}</p>
+      <ul aria-labelledby={heading} className="kubecode-research-nav-list">
+        {decisions.map((decision) => (
+          <li className="kubecode-needs-you-decision" data-decision={decision.decision} key={decision.id}>
+            <span className="kubecode-needs-you-text">
+              <span className="kubecode-needs-you-title">
+                {t('kubecode.needsYou.managerDecisions.summary', {
+                  member: decision.member?.name ?? t('kubecode.needsYou.managerDecisions.someone'),
+                  tool: decision.tool,
+                })}
+              </span>
+              <span className="kubecode-needs-you-detail">
+                {t('kubecode.needsYou.managerDecisions.reason', { reason: reasonOf(decision, t) })}
+              </span>
+            </span>
+            <StatusBadge tone={DECISION_TONE[decision.decision]}>
+              {t(`kubecode.needsYou.managerDecisions.${decision.decision}`)}
+            </StatusBadge>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 /**
  * Needs you as a Workspace destination (ADR 0234): the same header as
  * General, Kanban, Resources and Members, then every decision and setup item
- * that waits, each opening where it is answered. It hosts no inspector.
+ * that waits, each opening where it is answered, then what the project
+ * manager decided for the researcher to read. It hosts no inspector.
  */
-export function NeedsYouView({ entries, incomplete, onOpenTarget, onRetryLoad, status, t }: NeedsYouViewProps) {
+export function NeedsYouView({ entries, incomplete, managerDecisions = [], onOpenTarget, onRetryLoad, status, t }: NeedsYouViewProps) {
   return (
     <section aria-label={t('kubecode.nav.needsYou')} className="kubecode-needs-you-view">
       <DestinationHeader description={t('kubecode.nav.needsYouDescription')} destination="needs-you" t={t} />
@@ -32,6 +86,7 @@ export function NeedsYouView({ entries, incomplete, onOpenTarget, onRetryLoad, s
           onOpenTarget={onOpenTarget}
           onRetryLoad={onRetryLoad}
         />
+        <ManagerDecisions decisions={managerDecisions} t={t} />
       </div>
     </section>
   )

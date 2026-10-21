@@ -263,7 +263,10 @@ impl AgentAdapter for OpenCodeAdapter {
         _descriptor: &AgentDescriptor,
         permission_profile: AgentPermissionProfile,
     ) -> Vec<EnvVariable> {
-        if permission_profile == AgentPermissionProfile::Maximum {
+        if matches!(
+            permission_profile,
+            AgentPermissionProfile::Maximum | AgentPermissionProfile::Manager
+        ) {
             vec![EnvVariable::new(
                 "OPENCODE_PERMISSION",
                 OPENCODE_MAXIMUM_PERMISSION,

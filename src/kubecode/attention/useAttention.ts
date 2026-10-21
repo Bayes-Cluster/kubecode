@@ -15,6 +15,7 @@ const KINDS = new Set([
   'orchestration_updated',
   'permission_requested',
   'permission_resolved',
+  'permission_reviewed',
   'elicitation_requested',
   'elicitation_resolved',
   'team_permission_updated',

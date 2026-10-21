@@ -47,6 +47,8 @@ text_enum!(RouteKind {
     AgentHandoff => "agent_handoff",
     // The researcher's decision on a Task's results, for the project manager.
     TaskReview => "task_review",
+    // A specialist's permission request, for the project manager to review (ADR 0237).
+    PermissionReview => "permission_review",
 });
 
 impl RouteKind {
@@ -58,7 +60,11 @@ impl RouteKind {
     pub fn follows_member(self) -> bool {
         matches!(
             self,
-            Self::Discussion | Self::Mention | Self::AgentHandoff | Self::TaskReview
+            Self::Discussion
+                | Self::Mention
+                | Self::AgentHandoff
+                | Self::TaskReview
+                | Self::PermissionReview
         )
     }
 }
@@ -71,6 +77,7 @@ text_enum!(SourceKind {
     Experiment => "experiment",
     Decision => "decision",
     Review => "review",
+    Permission => "permission",
 });
 
 // `delivered` is receipt of the event by the Session. It is not task

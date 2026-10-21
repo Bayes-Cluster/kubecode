@@ -13,7 +13,8 @@ pub use self::dispatch::{
     PromptAdmission, StartAgentRun, StartComposerCommand, StartStructuredComposerRun,
 };
 pub use self::permissions::{
-    PendingKind, PendingOptionView, PendingRequestView, SideQuestionAccepted,
+    MANAGER_DECISIONS_SHOWN, ManagerReviewError, ManagerReviewRequest, ManagerVerdict, PendingKind,
+    PendingOptionView, PendingRequestView, SideQuestionAccepted,
 };
 
 use std::collections::{HashMap, HashSet};
@@ -190,6 +191,8 @@ pub struct AgentRuntime {
     session_actor_policy: SessionActorPolicy,
     session_activity_sequence: Arc<AtomicU64>,
     pending_permissions: Arc<Mutex<HashMap<String, PendingPermission>>>,
+    /// How long a specialist's request waits on the manager (ADR 0237).
+    manager_review_timeout: Arc<Mutex<std::time::Duration>>,
     pending_elicitations: Arc<Mutex<HashMap<String, PendingElicitation>>>,
     pending_side_questions: Arc<Mutex<HashSet<String>>>,
     terminals: Option<Arc<TerminalManager>>,
@@ -296,9 +299,8 @@ pub enum AgentPermissionProfile {
     Default,
     Maximum,
     ReadOnly,
-    /// The General Agent: it manages, so its provider starts without the tools
-    /// that edit files or run commands (ADR 0226). Kubecode's own management
-    /// tools and reading stay available.
+    /// The General Agent: full native permissions, its own requests granted
+    /// without asking, its mode locked (ADR 0237).
     Manager,
 }
 
@@ -363,6 +365,7 @@ impl AgentRuntime {
             session_actor_policy: SessionActorPolicy::default(),
             session_activity_sequence: Arc::new(AtomicU64::new(0)),
             pending_permissions: Arc::new(Mutex::new(HashMap::new())),
+            manager_review_timeout: Arc::new(Mutex::new(permissions::MANAGER_REVIEW_TIMEOUT)),
             pending_elicitations: Arc::new(Mutex::new(HashMap::new())),
             pending_side_questions: Arc::new(Mutex::new(HashSet::new())),
             terminals: None,

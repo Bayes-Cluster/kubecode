@@ -1492,10 +1492,15 @@ project manager, exactly one) or a **specialist** with a responsibility
 template. A member runs on **Sessions** — a public one for shared work and a
 separate private one for direct messages — that can be replaced without
 changing who the member is. The manager clarifies, plans, delegates, tracks,
-and reports; it cannot be assigned or perform specialist work, and this is
-enforced by the service, not by instructions: its Sessions start with the
-**Manager** permission profile, which withdraws editing and command tools at
-the provider's launch. See ADRs 0220 and 0226. Every Session a member has had
+and reports; it cannot be assigned work or act as an executor, and this is
+enforced by the service, not by instructions. Its Sessions start with the
+**Manager** permission profile: full native permissions, so its own actions
+never ask the researcher. A specialist's **permission request** in its public
+Session is reviewed by the manager first (approve, deny, or escalate to the
+researcher, always with a reason; undecided after two minutes it escalates by
+itself), and every **manager decision** is recorded and shown in Needs you. A
+request in a direct message goes straight to the researcher.
+See ADRs 0220, 0226, and 0237. Every Session a member has had
 is recorded, so its messages keep naming it after a replacement or a removal
 (ADR 0229).
 
