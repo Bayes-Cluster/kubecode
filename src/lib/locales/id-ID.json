@@ -2858,5 +2858,8 @@
   "kubecode.proto.review.versions": "Versi",
   "kubecode.proto.review.shown": "versi yang sedang Anda tinjau",
   "kubecode.proto.review.newerVersion": "lebih baru, belum ditinjau",
-  "kubecode.proto.review.olderVersion": "versi sebelumnya"
+  "kubecode.proto.review.olderVersion": "versi sebelumnya",
+  "kubecode.resources.findInResources": "Cari di Sumber Daya",
+  "kubecode.reference.sources": "Sumber ({count})",
+  "kubecode.reference.sourcesAttention": "{count} berubah atau dihapus"
 }

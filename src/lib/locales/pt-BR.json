@@ -2858,5 +2858,8 @@
   "kubecode.proto.review.versions": "Versões",
   "kubecode.proto.review.shown": "a versão que você está revisando",
   "kubecode.proto.review.newerVersion": "mais recente, ainda não revisada",
-  "kubecode.proto.review.olderVersion": "versão anterior"
+  "kubecode.proto.review.olderVersion": "versão anterior",
+  "kubecode.resources.findInResources": "Encontrar em Recursos",
+  "kubecode.reference.sources": "Fontes ({count})",
+  "kubecode.reference.sourcesAttention": "{count} alteradas ou removidas"
 }

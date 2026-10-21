@@ -1478,7 +1478,9 @@ Conversation-shaped presentation — messages with authors, long research
 responses, inline citations, sources, recorded activity, tool calls, internal
 work steps, queues, and pending decisions — comes from adapted shadcn **AI
 Elements** that compose these primitives and share one token layer aligned with
-the Harness reference. They present server projections and never decide
+the Harness reference. A sent message's citations are a **Sources** list of
+version-aware reference chips, and evidence is named and versioned like any
+reference (ADR 0236). They present server projections and never decide
 anything themselves: a confirmation's actions are decisions, a suggestion only
 fills a draft. Fixture prototypes of the main screens open at `#/prototypes`.
 See ADR 0233.

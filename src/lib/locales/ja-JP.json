@@ -2858,5 +2858,8 @@
   "kubecode.proto.review.versions": "バージョン",
   "kubecode.proto.review.shown": "レビュー中のバージョン",
   "kubecode.proto.review.newerVersion": "新しい版、未レビュー",
-  "kubecode.proto.review.olderVersion": "以前のバージョン"
+  "kubecode.proto.review.olderVersion": "以前のバージョン",
+  "kubecode.resources.findInResources": "リソースで探す",
+  "kubecode.reference.sources": "ソース（{count}）",
+  "kubecode.reference.sourcesAttention": "{count} 件が変更または削除済み"
 }

@@ -2858,5 +2858,8 @@
   "kubecode.proto.review.versions": "Viersii",
   "kubecode.proto.review.shown": "viersija, jakuju Vy praviarajecie",
   "kubecode.proto.review.newerVersion": "naviejšaja, jašče nie pravieranaja",
-  "kubecode.proto.review.olderVersion": "papiaredniaja viersija"
+  "kubecode.proto.review.olderVersion": "papiaredniaja viersija",
+  "kubecode.resources.findInResources": "Znajści ŭ resursach",
+  "kubecode.reference.sources": "Krynicy ({count})",
+  "kubecode.reference.sourcesAttention": "Zmieniena abo vydaliena: {count}"
 }

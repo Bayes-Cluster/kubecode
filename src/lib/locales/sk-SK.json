@@ -2858,5 +2858,8 @@
   "kubecode.proto.review.versions": "Verzie",
   "kubecode.proto.review.shown": "verzia, ktorú kontrolujete",
   "kubecode.proto.review.newerVersion": "novšia, zatiaľ neskontrolovaná",
-  "kubecode.proto.review.olderVersion": "staršia verzia"
+  "kubecode.proto.review.olderVersion": "staršia verzia",
+  "kubecode.resources.findInResources": "Nájsť v Zdrojoch",
+  "kubecode.reference.sources": "Zdroje ({count})",
+  "kubecode.reference.sourcesAttention": "Zmenené alebo odstránené: {count}"
 }
