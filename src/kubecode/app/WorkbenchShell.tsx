@@ -17,6 +17,8 @@ import {
 import { ContextWorkbench } from '../ContextWorkbench'
 import { ChannelNavigator } from '../channel/ChannelNavigator'
 import { TaskBoardView } from '../tasks/TaskBoardView'
+import { ManagerSetupNotice } from '../members/ManagerSetupNotice'
+import { managerSetup } from '../members/memberModel'
 import { MembersView } from '../members/MembersView'
 import { memberDirectory, MemberDirectoryContext } from '../members/memberDirectory'
 import { useMembers } from '../members/useMembers'
@@ -334,6 +336,15 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   const { agents, agentsRefreshing, layoutHydrated, refreshAgents } = bootstrap
   /** What waits for the researcher in this Workspace (ADR 0232), one server projection. */
   const attention = useAttentionStore(api, projectId, reconciliation.workspaceEvents, reconciliation.connectionState)
+  // A member's setup can fail after the roster was read; Needs you learns of it
+  // first, so the roster (and General's manager-setup notice) is read again.
+  const setupAttention = (attention.snapshot?.items ?? [])
+    .flatMap((item) => item.kind === 'setup' ? [`${item.member_id}:${item.setup_code ?? ''}`] : [])
+    .join(',')
+  const reloadRoster = roster.reload
+  useEffect(() => {
+    if (setupAttention) reloadRoster()
+  }, [reloadRoster, setupAttention])
   // The bell: the other Workspaces' counts (this one's entries are fresher, from its own snapshot).
   const attentionSummary = useAttentionSummary(api, reconciliation.workspaceEvents, reconciliation.connectionState)
 
@@ -1235,6 +1246,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
                   events={reconciliation.workspaceEvents}
                   projectId={projectId}
                   scrollKey={placeKey.view(projectId, 'members')}
+                  sessions={sessionCatalog}
                   t={t}
                   onDefaultsLoaded={setMemberDefaults}
                   onOpenDm={openDm}
@@ -1242,6 +1254,18 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
                 />
               </WithInspector>
             ) : place.view === 'general' ? (
+              <div className="kubecode-general-stack">
+              <ManagerSetupNotice
+                api={api}
+                projectId={projectId}
+                setup={managerSetup(roster.roster)}
+                t={t}
+                onOpenMembers={(memberId) => openPlace(
+                  { view: 'members' },
+                  memberId ? { inspect: { kind: 'member', id: memberId } } : undefined,
+                )}
+                onReload={roster.reload}
+              />
               <ChannelWorkspace
                 api={api}
                 connectionState={reconciliation.connectionState}
@@ -1270,6 +1294,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
                 t={t}
                 workspaceName={project?.name ?? t('kubecode.appName')}
               />
+              </div>
             ) : place.view === 'question' ? (
               <ResearchWorkspace
                 agents={agents}
@@ -1455,11 +1480,13 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
         notificationPermission={browserPermission}
         notificationTestStatus={preferences.notificationTestStatus}
         activeProjectId={projectId}
-        connectionState={reconciliation.connectionState}
         key={settingsSection}
         open={settingsOpen}
         requestedSection={settingsSection}
-        onOpenMemberDm={openDm}
+        onOpenWorkspaceMembers={() => {
+          setSettingsOpen(false)
+          openPlace({ view: 'members' })
+        }}
         onAppearanceChange={preferences.setAppearance}
         onAgentPreferencesChange={preferences.setAgentPreferences}
         onEditorPreferencesChange={preferences.setEditorPreferences}

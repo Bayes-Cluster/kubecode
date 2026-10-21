@@ -1,6 +1,13 @@
 import type { Translator } from '@/lib/i18n'
 
-import { ApiError, type MemberState, type MemberTemplate } from '../api'
+import {
+  ApiError,
+  type Conversation,
+  type Member,
+  type MemberRoster,
+  type MemberState,
+  type MemberTemplate,
+} from '../api'
 
 export const TEMPLATE_LABELS: Record<MemberTemplate, Parameters<Translator>[0]> = {
   general: 'kubecode.members.template.general',
@@ -50,4 +57,46 @@ export function configFromRows(rows: Array<{ key: string; value: string }>): Rec
     if (key.trim() && value.trim()) out[key.trim()] = value.trim()
   }
   return out
+}
+
+/**
+ * Whether the project manager can take the researcher's messages (ADR 0220):
+ * `missing` and `needs_setup` are the recovery states a new Workspace can land
+ * in; `unknown` is a roster that has not loaded.
+ */
+export type ManagerSetup =
+  | { kind: 'unknown' }
+  | { kind: 'ready'; manager: Member }
+  | { kind: 'missing' }
+  | { kind: 'needs_setup'; manager: Member }
+
+export function managerSetup(roster: MemberRoster | null): ManagerSetup {
+  if (!roster) return { kind: 'unknown' }
+  const manager = roster.members.find((item) => item.id === roster.general_id && item.state !== 'removed')
+  if (!manager) return { kind: 'missing' }
+  return manager.state === 'setup_required' ? { kind: 'needs_setup', manager } : { kind: 'ready', manager }
+}
+
+/** What a member is executing, read from its Session's latest run; membership never is. */
+export type MemberActivity = 'running' | 'waiting'
+
+export function memberActivity(item: Member, sessions: readonly Conversation[]): MemberActivity | null {
+  if (!item.public_conversation_id) return null
+  const status = sessions.find((session) => session.id === item.public_conversation_id)?.latest_run_status
+  if (status === 'running') return 'running'
+  if (status === 'waiting_permission') return 'waiting'
+  return null
+}
+
+export const ACTIVITY_LABELS: Record<MemberActivity, Parameters<Translator>[0]> = {
+  running: 'kubecode.members.activity.running',
+  waiting: 'kubecode.members.activity.waiting',
+}
+
+/**
+ * The project manager's mode is locked read-only by the runtime (ADR 0226),
+ * so its defaults may not carry a mode option: the first such key, or null.
+ */
+export function lockedManagerOption(rows: Array<{ key: string; value: string }>): string | null {
+  return rows.find((row) => /(^|[_\-\s])mode$/i.test(row.key.trim()))?.key ?? null
 }

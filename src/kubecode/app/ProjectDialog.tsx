@@ -155,6 +155,7 @@ export function ProjectDialog({
         <DialogHeader className="kubecode-path-picker-heading">
           <DialogTitle>{mode === 'create' ? t('kubecode.createProject') : t('kubecode.importProject')}</DialogTitle>
           <DialogDescription>{t('kubecode.projectPath')}</DialogDescription>
+          <p className="kubecode-project-next">{t('kubecode.projectDialog.next')}</p>
         </DialogHeader>
         <div className="kubecode-mode-switch">
           <Button variant={mode === 'create' ? 'default' : 'outline'} onClick={() => setMode('create')}>{t('kubecode.createProject')}</Button>
