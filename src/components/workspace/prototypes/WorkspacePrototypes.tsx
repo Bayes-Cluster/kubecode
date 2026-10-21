@@ -5,8 +5,9 @@ import { WORKSPACE_DESTINATION_ICONS } from '@/kubecode/icons/workspaceIcons'
 import { createTranslator, type TranslationKey } from '@/lib/i18n'
 import { applyThemeModeToDocument } from '@/lib/themeMode'
 
-import { MemberAvatar } from '../MemberIdentity'
-import { StatusBadge } from '../StatusBadge'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Badge } from '@/components/ui/badge'
+
 import { AgentsMain, WorkQueue } from './AgentsPrototype'
 import { FIXTURE_MEMBERS } from './fixtures'
 import { GeneralMain, Materials } from './GeneralPrototype'
@@ -63,10 +64,10 @@ export function WorkspacePrototypes({ request }: { request: PrototypeRequest }) 
   const generalPlace = request.screen === 'general' || (request.screen === 'agents') ? 'page' as const : undefined
 
   return (
-    <div className="kubecode-app kubecode-proto" data-screen={request.screen} data-state={request.state} data-testid="workspace-prototypes">
+    <div className="kubecode-app kubecode-proto" data-ws-components="official" data-screen={request.screen} data-state={request.state} data-testid="workspace-prototypes">
       <div className="kubecode-proto-bar">
         <p className="kubecode-proto-fixture" role="note">
-          <StatusBadge tone="warn">{t('kubecode.proto.fixture.badge')}</StatusBadge>
+          <Badge variant="outline">{t('kubecode.proto.fixture.badge')}</Badge>
           <span>{t('kubecode.proto.fixture.body')}</span>
         </p>
         <nav aria-label={t('kubecode.proto.screens')} className="kubecode-proto-switcher">
@@ -106,14 +107,14 @@ export function WorkspacePrototypes({ request }: { request: PrototypeRequest }) 
               <a href={link({ screen: 'agents', state: 'default' })}>
                 <Icon role="navigation" source={WORKSPACE_DESTINATION_ICONS.needsYou.Icon} />
                 <span>{t('kubecode.vocab.destination.needsYou')}</span>
-                <StatusBadge tone="warn">1</StatusBadge>
+                <Badge variant="secondary">1</Badge>
               </a>
             </li>
           </ul>
           <p className="kubecode-proto-places-heading">{t('kubecode.proto.directMessages')}</p>
           <ul>
             <li className="kubecode-proto-dm">
-              <MemberAvatar name={FIXTURE_MEMBERS.ada.name} role="specialist" size="sm" />
+              <Avatar className="size-5"><AvatarFallback>A</AvatarFallback></Avatar>
               <span>{FIXTURE_MEMBERS.ada.name}</span>
               <small>{t('kubecode.proto.dmPrivate')}</small>
             </li>

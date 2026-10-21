@@ -5,22 +5,32 @@ import {
   ChainOfThoughtContent,
   ChainOfThoughtHeader,
   ChainOfThoughtStep,
+} from '@/components/ai-elements/chain-of-thought'
+import {
   Confirmation,
   ConfirmationAccepted,
+  ConfirmationAction,
   ConfirmationActions,
   ConfirmationRejected,
   ConfirmationRequest,
   ConfirmationTitle,
+} from '@/components/ai-elements/confirmation'
+import {
   Conversation,
   ConversationContent,
   ConversationEmptyState,
   ConversationScrollButton,
-  Message,
-  MessageContent,
-  MessageResponse,
+} from '@/components/ai-elements/conversation'
+import { Message, MessageAction, MessageContent, MessageResponse } from '@/components/ai-elements/message'
+import {
   PromptInput,
   PromptInputBody,
   PromptInputFooter,
+  PromptInputSubmit,
+  PromptInputTextarea,
+  PromptInputTools,
+} from '@/components/ai-elements/prompt-input'
+import {
   Queue,
   QueueItem,
   QueueItemContent,
@@ -31,45 +41,46 @@ import {
   QueueSectionContent,
   QueueSectionLabel,
   QueueSectionTrigger,
-  Shimmer,
-  Task,
-  TaskContent,
-  TaskItem,
-  TaskTrigger,
-  Tool,
-  ToolContent,
-  ToolHeader,
-  ToolInput,
-  ToolOutput,
-  type ConfirmationState,
-} from '@/components/ai-elements'
+} from '@/components/ai-elements/queue'
+import { Shimmer } from '@/components/ai-elements/shimmer'
+import { Task, TaskContent, TaskItem, TaskTrigger } from '@/components/ai-elements/task'
+import { Tool, ToolContent, ToolHeader, ToolInput, ToolOutput } from '@/components/ai-elements/tool'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { Icon } from '@/kubecode/icons'
 import { WORKSPACE_COMMAND_ICONS, WORKSPACE_DESTINATION_ICONS } from '@/kubecode/icons/workspaceIcons'
 import type { Translator } from '@/lib/i18n'
 
-import { Composer } from '../Composer'
-import { DecisionButton } from '../DecisionButton'
-import { IconButton } from '../IconButton'
-import { StatusBadge } from '../StatusBadge'
 import { ViewHeader } from '../ViewHeader'
 import { prototypeHash } from './prototypeRoute'
-import { FIXTURE_MEMBERS, FIXTURE_MENTIONS, FIXTURE_TASK_TITLE, FIXTURE_TOOL } from './fixtures'
+import { FIXTURE_MEMBERS, FIXTURE_TASK_TITLE, FIXTURE_TOOL } from './fixtures'
 import { Author, FixtureReference, type ScreenProps } from './shared'
 
+type Decision = 'requested' | 'approved' | 'rejected'
+
 function PendingDecision({ busy, t }: { busy: boolean; t: Translator }) {
-  const [state, setState] = useState<ConfirmationState>('requested')
+  const [decision, setDecision] = useState<Decision>('requested')
+  const title = t('kubecode.proto.decision.title', { name: FIXTURE_MEMBERS.turing.name })
   return (
-    <Confirmation state={state}>
-      <ConfirmationTitle>{t('kubecode.proto.decision.title', { name: FIXTURE_MEMBERS.turing.name })}</ConfirmationTitle>
-      <ConfirmationRequest>
-        <p>Launch 3 jobs on 2 GPUs each (about 6 GPU-hours). This goes past the round limit you set for RQ-2.</p>
-        <p className="kubecode-proto-note">{t('kubecode.proto.decision.scope')}</p>
-      </ConfirmationRequest>
-      <ConfirmationAccepted><p>{t('kubecode.proto.decision.approved')}</p></ConfirmationAccepted>
-      <ConfirmationRejected><p>{t('kubecode.proto.decision.declined')}</p></ConfirmationRejected>
+    <Confirmation
+      approval={decision === 'requested' ? { id: 'launch' } : { id: 'launch', approved: decision === 'approved' }}
+      aria-label={title}
+      role="region"
+      state={decision === 'requested' ? 'approval-requested' : 'approval-responded'}
+    >
+      <ConfirmationTitle>
+        <strong className="block">{title}</strong>
+        <ConfirmationRequest>
+          <span className="block">Launch 3 jobs on 2 GPUs each (about 6 GPU-hours). This goes past the round limit you set for RQ-2.</span>
+          <span className="block text-muted-foreground">{t('kubecode.proto.decision.scope')}</span>
+        </ConfirmationRequest>
+        <ConfirmationAccepted><span className="block">{t('kubecode.proto.decision.approved')}</span></ConfirmationAccepted>
+        <ConfirmationRejected><span className="block">{t('kubecode.proto.decision.declined')}</span></ConfirmationRejected>
+      </ConfirmationTitle>
       <ConfirmationActions>
-        <DecisionButton variant="secondary" onDecide={() => setState('rejected')}>{t('kubecode.proto.decision.decline')}</DecisionButton>
-        <DecisionButton busy={busy} variant="primary" onDecide={() => setState('approved')}>{t('kubecode.proto.decision.allow')}</DecisionButton>
+        <ConfirmationAction variant="outline" onClick={() => setDecision('rejected')}>{t('kubecode.proto.decision.decline')}</ConfirmationAction>
+        <ConfirmationAction disabled={busy} onClick={() => setDecision('approved')}>{t('kubecode.proto.decision.allow')}</ConfirmationAction>
       </ConfirmationActions>
     </Confirmation>
   )
@@ -81,32 +92,35 @@ export function AgentsMain({ request, t }: Pick<ScreenProps, 'request' | 't'>) {
   const [stopped, setStopped] = useState(false)
   const empty = state === 'empty'
   const failed = state === 'error'
+  const running = !(empty || stopped || failed)
 
   return (
     <div className="kubecode-proto-conversation">
       <ViewHeader
         icon={<Icon role="navigation" source={WORKSPACE_DESTINATION_ICONS.general.Icon} />}
         level={1}
-        meta={empty ? undefined : <StatusBadge tone="info">{t('kubecode.proto.agents.working', { count: 2 })}</StatusBadge>}
+        meta={empty ? undefined : <Badge variant="secondary">{t('kubecode.proto.agents.working', { count: 2 })}</Badge>}
         title={t('kubecode.channel.general')}
       />
-      <Conversation initial="end" label={t('kubecode.channel.general')}>
+      <Conversation aria-label={t('kubecode.channel.general')} initial="instant">
         {empty ? (
           <ConversationEmptyState
             description={t('kubecode.proto.agents.emptyDescription')}
             title={t('kubecode.proto.agents.emptyTitle')}
           />
         ) : (
-          <ConversationContent>
-            <Message author={<Author member={FIXTURE_MEMBERS.self} time="11:02" />} from="self">
+          <ConversationContent className="mx-auto w-full max-w-(--ws-conversation-width)">
+            <Message from="user">
+              <Author member={FIXTURE_MEMBERS.self} time="11:02" />
               <MessageContent>
-                <MessageResponse><p>@general go ahead with the ablation in RQ-2 and run the three seeds.</p></MessageResponse>
+                <MessageResponse>@general go ahead with the ablation in RQ-2 and run the three seeds.</MessageResponse>
               </MessageContent>
             </Message>
-            <Message author={<Author member={FIXTURE_MEMBERS.general} time="11:03" />} from="member">
+            <Message from="assistant">
+              <Author member={FIXTURE_MEMBERS.general} time="11:03" />
               <MessageContent>
                 <MessageResponse>
-                  <p>Started on your instruction. Turing runs the seed sweep; Noether prepares the analysis as runs finish.</p>
+                  Started on your instruction. Turing runs the seed sweep; Noether prepares the analysis as runs finish.
                 </MessageResponse>
                 <Task defaultOpen={false}>
                   <TaskTrigger title={t('kubecode.proto.agents.plan', { count: 3 })} />
@@ -119,50 +133,61 @@ export function AgentsMain({ request, t }: Pick<ScreenProps, 'request' | 't'>) {
                 <FixtureReference kind="task" t={t} title={FIXTURE_TASK_TITLE} />
               </MessageContent>
             </Message>
-            <Message
-              author={<Author activity={stopped ? t('kubecode.proto.agents.stopped') : <Shimmer>{t('kubecode.proto.agents.running')}</Shimmer>} member={FIXTURE_MEMBERS.turing} time="11:05" />}
-              from="member"
-            >
-              <MessageContent>
+            <Message from="assistant">
+              <Author
+                activity={stopped ? t('kubecode.proto.agents.stopped') : <Shimmer as="span">{t('kubecode.proto.agents.running')}</Shimmer>}
+                member={FIXTURE_MEMBERS.turing}
+                time="11:05"
+              />
+              <MessageContent className="w-full">
                 <Tool defaultOpen>
                   <ToolHeader
-                    state={failed ? 'failed' : stopped ? 'denied' : 'running'}
-                    stateLabel={failed ? t('kubecode.proto.tool.failed') : stopped ? t('kubecode.proto.agents.stopped') : t('kubecode.proto.tool.running')}
+                    state={failed ? 'output-error' : stopped ? 'output-denied' : 'input-available'}
+                    statusLabel={failed ? t('kubecode.proto.tool.failed') : stopped ? t('kubecode.proto.agents.stopped') : t('kubecode.proto.tool.running')}
                     title="launch_experiment"
+                    type="tool-launch_experiment"
                   />
                   <ToolContent>
-                    <ToolInput input={FIXTURE_TOOL.launch} label={t('kubecode.proto.tool.input')} />
-                    <ToolOutput errorText={failed ? FIXTURE_TOOL.failure : undefined} label={t('kubecode.proto.tool.error')} />
+                    <ToolInput input={JSON.parse(FIXTURE_TOOL.launch)} label={t('kubecode.proto.tool.input')} />
+                    <ToolOutput
+                      errorLabel={t('kubecode.proto.tool.error')}
+                      errorText={failed ? FIXTURE_TOOL.failure : undefined}
+                      output={undefined}
+                    />
                   </ToolContent>
                 </Tool>
                 {failed && (
-                  <p className="kubecode-proto-delivery" role="alert">
-                    <span>{t('kubecode.proto.agents.failedHint', { name: FIXTURE_MEMBERS.turing.name })}</span>
-                    <IconButton icon={<Icon role="command" source={WORKSPACE_COMMAND_ICONS.retry.Icon} />} label={t('kubecode.vocab.command.retry')} />
-                  </p>
+                  <Alert role="alert" variant="destructive">
+                    <AlertDescription className="flex flex-wrap items-center gap-2">
+                      <span>{t('kubecode.proto.agents.failedHint', { name: FIXTURE_MEMBERS.turing.name })}</span>
+                      <MessageAction label={t('kubecode.vocab.command.retry')} tooltip={t('kubecode.vocab.command.retry')}>
+                        <Icon role="command" source={WORKSPACE_COMMAND_ICONS.retry.Icon} />
+                      </MessageAction>
+                    </AlertDescription>
+                  </Alert>
                 )}
                 <ChainOfThought defaultOpen>
                   <ChainOfThoughtHeader>{t('kubecode.proto.activity')}</ChainOfThoughtHeader>
                   <ChainOfThoughtContent>
-                    <ChainOfThoughtStep label="Prepared configs for 9 runs" status="complete" statusLabel={t('kubecode.proto.step.complete')} />
-                    <ChainOfThoughtStep label="Seed 1 at 16k and 32k" status="complete" statusLabel={t('kubecode.proto.step.complete')} />
+                    <ChainOfThoughtStep description={t('kubecode.proto.step.complete')} label="Prepared configs for 9 runs" status="complete" />
+                    <ChainOfThoughtStep description={t('kubecode.proto.step.complete')} label="Seed 1 at 16k and 32k" status="complete" />
                     <ChainOfThoughtStep
-                      description="Waiting for GPU capacity"
+                      description={failed ? t('kubecode.proto.tool.failed') : `${t('kubecode.proto.step.active')} · Waiting for GPU capacity`}
                       label="Seed 1 at 64k"
-                      status={failed ? 'failed' : 'active'}
-                      statusLabel={failed ? t('kubecode.proto.tool.failed') : t('kubecode.proto.step.active')}
+                      status="active"
                     />
-                    <ChainOfThoughtStep label="Seeds 2 and 3" status="pending" statusLabel={t('kubecode.proto.step.pending')} />
+                    <ChainOfThoughtStep description={t('kubecode.proto.step.pending')} label="Seeds 2 and 3" status="pending" />
                   </ChainOfThoughtContent>
                 </ChainOfThought>
               </MessageContent>
             </Message>
-            <Message author={<Author activity={t('kubecode.proto.agents.waiting')} member={FIXTURE_MEMBERS.noether} time="11:07" />} from="member">
-              <MessageContent>
+            <Message from="assistant">
+              <Author activity={t('kubecode.proto.agents.waiting')} member={FIXTURE_MEMBERS.noether} time="11:07" />
+              <MessageContent className="w-full">
                 <Tool>
-                  <ToolHeader state="completed" stateLabel={t('kubecode.proto.tool.completed')} title="load_results" />
+                  <ToolHeader state="output-available" statusLabel={t('kubecode.proto.tool.completed')} title="load_results" type="tool-load_results" />
                   <ToolContent>
-                    <ToolOutput label={t('kubecode.proto.tool.output')} output={FIXTURE_TOOL.loadOutput} />
+                    <ToolOutput errorText={undefined} output={FIXTURE_TOOL.loadOutput} resultLabel={t('kubecode.proto.tool.output')} />
                   </ToolContent>
                 </Tool>
               </MessageContent>
@@ -170,30 +195,29 @@ export function AgentsMain({ request, t }: Pick<ScreenProps, 'request' | 't'>) {
             {!failed && <PendingDecision busy={state === 'busy'} t={t} />}
           </ConversationContent>
         )}
-        <ConversationScrollButton label={t('kubecode.vocab.command.latest')} />
+        <ConversationScrollButton aria-label={t('kubecode.vocab.command.latest')} />
       </Conversation>
-      <div className="kubecode-proto-dock">
-        <PromptInput>
+      <div className="kubecode-proto-dock mx-auto w-full max-w-(--ws-composer-width)">
+        <PromptInput onSubmit={() => setDraft('')}>
           <PromptInputBody>
-            <Composer
-              label={t('kubecode.proto.composerLabel')}
-              mentionLabel={t('kubecode.vocab.command.mention')}
-              mentions={FIXTURE_MENTIONS}
+            <PromptInputTextarea
+              aria-label={t('kubecode.proto.composerLabel')}
               placeholder={t('kubecode.channel.composerPlaceholder')}
-              rows={2}
-              sendLabel={t('kubecode.channel.send')}
-              stop={empty || stopped || failed ? undefined : {
-                label: t('kubecode.proto.agents.stop', { name: FIXTURE_MEMBERS.turing.name }),
-                shortLabel: t('kubecode.vocab.command.stopRun'),
-                onStop: () => setStopped(true),
-              }}
               value={draft}
-              onChange={setDraft}
-              onSend={() => setDraft('')}
+              onChange={(event) => setDraft(event.currentTarget.value)}
             />
           </PromptInputBody>
-          <PromptInputFooter>{t('kubecode.proto.mentionRule')}</PromptInputFooter>
+          <PromptInputFooter>
+            <PromptInputTools />
+            <PromptInputSubmit
+              aria-label={running ? t('kubecode.proto.agents.stop', { name: FIXTURE_MEMBERS.turing.name }) : t('kubecode.channel.send')}
+              disabled={!running && !draft.trim()}
+              status={running ? 'streaming' : undefined}
+              onStop={() => setStopped(true)}
+            />
+          </PromptInputFooter>
         </PromptInput>
+        <p className="kubecode-proto-note">{t('kubecode.proto.mentionRule')}</p>
       </div>
     </div>
   )
@@ -205,21 +229,30 @@ export function WorkQueue({ request, t }: Pick<ScreenProps, 'request' | 't'>) {
     <div className="kubecode-proto-inspector-body">
       <ViewHeader level={2} title={t('kubecode.proto.work')} />
       {empty ? (
-        <p className="kubecode-proto-note">{t('kubecode.proto.queue.empty')}</p>
+        <Empty>
+          <EmptyHeader>
+            <EmptyTitle>{t('kubecode.proto.work')}</EmptyTitle>
+            <EmptyDescription>{t('kubecode.proto.queue.empty')}</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
       ) : (
         <Queue aria-label={t('kubecode.proto.work')}>
           <QueueSection>
             <QueueSectionTrigger><QueueSectionLabel label={t('kubecode.proto.queue.running', { count: 2 })} /></QueueSectionTrigger>
             <QueueSectionContent>
-              <QueueList label={t('kubecode.proto.queue.running', { count: 2 })}>
+              <QueueList aria-label={t('kubecode.proto.queue.running', { count: 2 })}>
                 <QueueItem>
-                  <QueueItemIndicator />
-                  <QueueItemContent>Seed sweep · {FIXTURE_MEMBERS.turing.name}</QueueItemContent>
+                  <div className="flex items-center gap-2">
+                    <QueueItemIndicator />
+                    <QueueItemContent>Seed sweep · {FIXTURE_MEMBERS.turing.name}</QueueItemContent>
+                  </div>
                   <QueueItemDescription>{request.state === 'error' ? t('kubecode.proto.tool.failed') : t('kubecode.proto.step.active')}</QueueItemDescription>
                 </QueueItem>
                 <QueueItem>
-                  <QueueItemIndicator />
-                  <QueueItemContent>Recall analysis · {FIXTURE_MEMBERS.noether.name}</QueueItemContent>
+                  <div className="flex items-center gap-2">
+                    <QueueItemIndicator />
+                    <QueueItemContent>Recall analysis · {FIXTURE_MEMBERS.noether.name}</QueueItemContent>
+                  </div>
                   <QueueItemDescription>{t('kubecode.proto.agents.waiting')}</QueueItemDescription>
                 </QueueItem>
               </QueueList>
@@ -228,10 +261,12 @@ export function WorkQueue({ request, t }: Pick<ScreenProps, 'request' | 't'>) {
           <QueueSection>
             <QueueSectionTrigger><QueueSectionLabel label={t('kubecode.proto.queue.queued', { count: 1 })} /></QueueSectionTrigger>
             <QueueSectionContent>
-              <QueueList label={t('kubecode.proto.queue.queued', { count: 1 })}>
+              <QueueList aria-label={t('kubecode.proto.queue.queued', { count: 1 })}>
                 <QueueItem>
-                  <QueueItemIndicator />
-                  <QueueItemContent>Request review · {FIXTURE_MEMBERS.general.name}</QueueItemContent>
+                  <div className="flex items-center gap-2">
+                    <QueueItemIndicator />
+                    <QueueItemContent>Request review · {FIXTURE_MEMBERS.general.name}</QueueItemContent>
+                  </div>
                 </QueueItem>
               </QueueList>
             </QueueSectionContent>
@@ -239,11 +274,13 @@ export function WorkQueue({ request, t }: Pick<ScreenProps, 'request' | 't'>) {
           <QueueSection defaultOpen={false}>
             <QueueSectionTrigger><QueueSectionLabel label={t('kubecode.proto.queue.done', { count: 1 })} /></QueueSectionTrigger>
             <QueueSectionContent>
-              <QueueList label={t('kubecode.proto.queue.done', { count: 1 })}>
-                <QueueItem completed>
-                  <QueueItemIndicator completed />
-                  <QueueItemContent>Prepare configs · {FIXTURE_MEMBERS.turing.name}</QueueItemContent>
-                  <QueueItemDescription>{t('kubecode.proto.step.complete')}</QueueItemDescription>
+              <QueueList aria-label={t('kubecode.proto.queue.done', { count: 1 })}>
+                <QueueItem>
+                  <div className="flex items-center gap-2">
+                    <QueueItemIndicator completed />
+                    <QueueItemContent completed>Prepare configs · {FIXTURE_MEMBERS.turing.name}</QueueItemContent>
+                  </div>
+                  <QueueItemDescription completed>{t('kubecode.proto.step.complete')}</QueueItemDescription>
                 </QueueItem>
               </QueueList>
             </QueueSectionContent>
