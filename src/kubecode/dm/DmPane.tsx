@@ -1,5 +1,6 @@
 import { useContext, useEffect, useRef, useState } from 'react'
 
+import { Message, MessageContent, MessageResponse, PromptInput, PromptInputBody, PromptInputFooter, Shimmer } from '@/components/ai-elements'
 import { MarkdownContent } from '@/components/MarkdownContent'
 import { Button } from '@/components/ui/button'
 import { Composer } from '@/components/workspace/Composer'
@@ -170,46 +171,73 @@ export function DmPane({
             <p className="kubecode-research-muted">{t('kubecode.dm.empty')}</p>
           )}
           {turns.map((turn) => (
-            <article className="kubecode-dm-turn" data-testid={`dm-turn-${turn.run_id}`} key={turn.run_id}>
-              <div className="kubecode-dm-side" data-side="researcher">
-                <Identity size="sm" view={you} />
-                <div className="kubecode-message-body"><MarkdownContent content={turn.user} images="text" /></div>
-              </div>
+            <div className="kubecode-dm-turn" data-testid={`dm-turn-${turn.run_id}`} key={turn.run_id}>
+              <Message author={<Identity size="sm" view={you} />} from="self">
+                <MessageContent>
+                  <MessageResponse className="kubecode-message-body"><MarkdownContent content={turn.user} images="text" /></MessageResponse>
+                </MessageContent>
+              </Message>
               {turn.assistant && (
-                <div className="kubecode-dm-side" data-side="member">
-                  <Identity size="sm" view={them} />
-                  <div className="kubecode-message-body"><MarkdownContent content={turn.assistant} images="text" /></div>
-                </div>
+                <Message author={<Identity size="sm" view={them} />} from="member">
+                  <MessageContent>
+                    <MessageResponse className="kubecode-message-body"><MarkdownContent content={turn.assistant} images="text" /></MessageResponse>
+                  </MessageContent>
+                </Message>
               )}
-            </article>
+            </div>
           ))}
           {newest && !newest.assistant && (
-            <p className="kubecode-research-muted" role="status">{t('kubecode.dm.waitingReply', { name: member.name })}</p>
+            <Message author={<Identity size="sm" view={them} />} from="member" state="pending">
+              <MessageContent>
+                <p className="kubecode-dm-waiting" role="status">
+                  <Shimmer>{t('kubecode.dm.waitingReply', { name: member.name })}</Shimmer>
+                </p>
+              </MessageContent>
+            </Message>
           )}
           {queue.pending.map((item) => (
-            <article className="kubecode-dm-turn" data-state="queued" key={item.client_message_id}>
-              <div className="kubecode-dm-side" data-side="researcher">
-                <Identity size="sm" view={you} />
-                <div className="kubecode-message-body"><MarkdownContent content={item.text} images="text" /></div>
+            <Message author={<Identity size="sm" view={you} />} from="self" key={item.client_message_id} state="pending">
+              <MessageContent>
+                <MessageResponse className="kubecode-message-body"><MarkdownContent content={item.text} images="text" /></MessageResponse>
                 <p className="kubecode-message-delivery" data-delivery="queued">{t('kubecode.dm.queued', { name: member.name })}</p>
-              </div>
-            </article>
+              </MessageContent>
+            </Message>
           ))}
         </div>
-        <ExecutionStrip api={api} scope={{ binding: 'dm', memberId: member.id }} t={t} />
-        <OutboxRows
-          items={outbox.items}
-          t={t}
-          onDiscard={(item) => outbox.discard(item.id)}
-          onEdit={draft.body.trim() === '' ? (item) => {
-            outbox.discard(item.id)
-            setDraft((current) => ({ ...current, body: item.payload.text }))
-          } : undefined}
-          onSendAgain={(item) => void deliver(item)}
-        />
-        <Composer
-          below={(
-            <>
+        {/* What is under way, what did not go, and the input card, together at the foot (#232). */}
+        <div className="kubecode-conversation-dock">
+          <ExecutionStrip api={api} scope={{ binding: 'dm', memberId: member.id }} t={t} />
+          <OutboxRows
+            items={outbox.items}
+            t={t}
+            onDiscard={(item) => outbox.discard(item.id)}
+            onEdit={draft.body.trim() === '' ? (item) => {
+              outbox.discard(item.id)
+              setDraft((current) => ({ ...current, body: item.payload.text }))
+            } : undefined}
+            onSendAgain={(item) => void deliver(item)}
+          />
+          <PromptInput>
+            <PromptInputBody>
+              <Composer
+                disabled={!ready}
+                focusKey={`composer:dm:${member.id}`}
+                label={t('kubecode.dm.placeholder', { name: member.name })}
+                placeholder={t('kubecode.dm.placeholder', { name: member.name })}
+                sendLabel={t('kubecode.channel.send')}
+                stop={replying.length === 1 ? {
+                  label: t('kubecode.execution.stopReply', { name: member.name }),
+                  shortLabel: t('kubecode.execution.stopShort'),
+                  onStop: () => {
+                    void api.cancelRun(replying[0].run_id).then(() => attention?.reload(), () => undefined)
+                  },
+                } : undefined}
+                value={draft.body}
+                onChange={(body) => setDraft((current) => ({ ...current, body }))}
+                onSend={send}
+              />
+            </PromptInputBody>
+            <PromptInputFooter className="kubecode-composer-footer">
               {ready
                 ? <p className="kubecode-composer-hint">{t('kubecode.dm.destination', { name: member.name })}</p>
                 : (
@@ -226,24 +254,9 @@ export function DmPane({
                     )}
                   </p>
                 )}
-            </>
-          )}
-          disabled={!ready}
-          focusKey={`composer:dm:${member.id}`}
-          label={t('kubecode.dm.placeholder', { name: member.name })}
-          placeholder={t('kubecode.dm.placeholder', { name: member.name })}
-          sendLabel={t('kubecode.channel.send')}
-          stop={replying.length === 1 ? {
-            label: t('kubecode.execution.stopReply', { name: member.name }),
-            shortLabel: t('kubecode.execution.stopShort'),
-            onStop: () => {
-              void api.cancelRun(replying[0].run_id).then(() => attention?.reload(), () => undefined)
-            },
-          } : undefined}
-          value={draft.body}
-          onChange={(body) => setDraft((current) => ({ ...current, body }))}
-          onSend={send}
-        />
+            </PromptInputFooter>
+          </PromptInput>
+        </div>
       </div>
       <DmShareDialog
         api={api}

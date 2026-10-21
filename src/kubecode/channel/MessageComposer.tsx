@@ -1,5 +1,6 @@
 import { useContext, useEffect, useId, useRef, useState, type Dispatch, type Ref, type SetStateAction } from 'react'
 
+import { PromptInput, PromptInputBody, PromptInputFooter, PromptInputHeader } from '@/components/ai-elements'
 import { Button } from '@/components/ui/button'
 import { Composer } from '@/components/workspace/Composer'
 import { IconButton } from '@/components/workspace/IconButton'
@@ -297,9 +298,10 @@ export function MessageComposer({
         onEdit={draft.body.trim() === '' ? edit : undefined}
         onSendAgain={(item) => void deliver(item)}
       />
-      <Composer
-        above={(
-          <>
+      {/* One input surface (#232): what it replies to and cites, the text with its controls, and whom it reaches. */}
+      <PromptInput>
+        {(draft.reply || taskLabel || draft.references.length > 0) && (
+          <PromptInputHeader className="kubecode-composer-context">
             {draft.reply && (
               <p className="kubecode-channel-replying">
                 <span>{t('kubecode.channel.replyingToExcerpt', { author: draft.reply.authorName, excerpt: draft.reply.excerpt })}</span>
@@ -350,54 +352,56 @@ export function MessageComposer({
                 </ul>
               </div>
             )}
-          </>
+          </PromptInputHeader>
         )}
-        below={(
-          <>
-            <RecipientRow
-              empty={nobody}
-              label={t('kubecode.channel.to')}
-              recipients={toRecipients}
-              onFocusAfterLast={focusText}
-            />
-            {blocked && draft.body.trim() !== '' && <p className="kubecode-composer-warning" role="status">{blocked}</p>}
-            <p className="kubecode-composer-hint" id={hintId}>{t('kubecode.channel.authorizationHint')}</p>
-            {gate && <p className="kubecode-research-error" role="alert">{gate}</p>}
-          </>
-        )}
-        canSend={ready}
-        controls={(
-          <>
-            <IconButton
-              icon={<Icon role="command" source={WORKSPACE_COMMAND_ICONS.addContext.Icon} />}
-              label={t('kubecode.vocab.command.addContext')}
-              onClick={() => {
-                saveCaret()
-                setPicker(true)
-              }}
-            />
-            <IconButton
-              icon={<Icon role="command" source={WORKSPACE_COMMAND_ICONS.mention.Icon} />}
-              label={t('kubecode.vocab.command.mention')}
-              onClick={insertMention}
-            />
-          </>
-        )}
-        describedBy={hintId}
-        focusKey={focusKey}
-        label={placeholder}
-        mentionLabel={t('kubecode.composer.mentions')}
-        mentions={mentionOptions(directory, t)}
-        placeholder={placeholder}
-        sendDisabledReason={blocked ?? undefined}
-        sendLabel={t('kubecode.channel.send')}
-        stop={stop}
-        textareaRef={setArea}
-        value={draft.body}
-        // Emptied by hand: the draft is given up, so the same words later are a new message.
-        onChange={(body) => update({ body })}
-        onSend={send}
-      />
+        <PromptInputBody>
+          <Composer
+            canSend={ready}
+            controls={(
+              <>
+                <IconButton
+                  icon={<Icon role="command" source={WORKSPACE_COMMAND_ICONS.addContext.Icon} />}
+                  label={t('kubecode.vocab.command.addContext')}
+                  onClick={() => {
+                    saveCaret()
+                    setPicker(true)
+                  }}
+                />
+                <IconButton
+                  icon={<Icon role="command" source={WORKSPACE_COMMAND_ICONS.mention.Icon} />}
+                  label={t('kubecode.vocab.command.mention')}
+                  onClick={insertMention}
+                />
+              </>
+            )}
+            describedBy={hintId}
+            focusKey={focusKey}
+            label={placeholder}
+            mentionLabel={t('kubecode.composer.mentions')}
+            mentions={mentionOptions(directory, t)}
+            placeholder={placeholder}
+            sendDisabledReason={blocked ?? undefined}
+            sendLabel={t('kubecode.channel.send')}
+            stop={stop}
+            textareaRef={setArea}
+            value={draft.body}
+            // Emptied by hand: the draft is given up, so the same words later are a new message.
+            onChange={(body) => update({ body })}
+            onSend={send}
+          />
+        </PromptInputBody>
+        <PromptInputFooter className="kubecode-composer-footer">
+          <RecipientRow
+            empty={nobody}
+            label={t('kubecode.channel.to')}
+            recipients={toRecipients}
+            onFocusAfterLast={focusText}
+          />
+          {blocked && draft.body.trim() !== '' && <p className="kubecode-composer-warning" role="status">{blocked}</p>}
+          <p className="kubecode-composer-hint" id={hintId}>{t('kubecode.channel.authorizationHint')}</p>
+          {gate && <p className="kubecode-research-error" role="alert">{gate}</p>}
+        </PromptInputFooter>
+      </PromptInput>
       <span className="sr-only" role="status">{announcement}</span>
       {(
         <AddContextDialog

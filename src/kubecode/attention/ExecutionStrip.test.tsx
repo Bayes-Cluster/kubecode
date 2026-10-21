@@ -58,6 +58,8 @@ describe('ExecutionStrip', () => {
     const region = screen.getByRole('region', { name: 'Working now' })
     expect(region).toHaveTextContent('Analyst is working on Structured pruning')
     expect(region).toHaveTextContent('2 more messages queued')
+    // Work in progress shimmers, in words (AI Elements Shimmer, #232).
+    expect(region.querySelector('.kubecode-ai-shimmer')).toHaveTextContent('Analyst is working on Structured pruning')
     const stop = within(region).getByRole('button', { name: "Stop Analyst's current turn" })
     expect(stop).toHaveAccessibleDescription(/Work assigned to Analyst stays open/)
     fireEvent.click(stop)

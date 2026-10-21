@@ -1,3 +1,4 @@
+import { Message, MessageContent, MessageResponse, type MessageProps } from '@/components/ai-elements'
 import { MarkdownContent } from '@/components/MarkdownContent'
 import { IconButton } from '@/components/workspace/IconButton'
 import { MoreActions, type MoreActionItem } from '@/components/workspace/MoreActions'
@@ -62,6 +63,18 @@ function deliveryText(state: 'queued' | 'delivered', recipients: string[], local
     : t('kubecode.channel.delivery.deliveredTo', { names })
 }
 
+/** How far the message got, as the conversation draws it: failed, still on its way, or settled. */
+function messageState(delivery: MessageDeliveryView | null): MessageProps['state'] {
+  if (!delivery) return 'default'
+  if (delivery.state === 'failed') return 'failed'
+  if (delivery.state === 'queued') return 'pending'
+  if (delivery.state !== 'facts') return 'default'
+  // Facts (ADR 0232): partial delivery stays default, its words say who was missed.
+  const { state } = delivery.delivery
+  if (state === 'failed' || state === 'denied') return 'failed'
+  return state === 'sending' ? 'pending' : 'default'
+}
+
 /**
  * One message of General (ADR 0229): who wrote it and whom it was for, its
  * Markdown body, the one Task it is about and its titled references, and
@@ -107,8 +120,37 @@ export function MessageItem({
   )
   const focusKey = `message:${message.id}`
   return (
-    <article
+    <Message
       aria-label={author.name}
+      author={(
+        <>
+          <Identity
+            className="kubecode-message-author"
+            from={focusKey}
+            meta={date && (
+              <time dateTime={date.toISOString()} title={date.toLocaleString(dateLocale)}>{shortTime(date, dateLocale)}</time>
+            )}
+            size={continued ? 'sm' : 'md'}
+            view={author}
+          />
+          {message.intent !== 'say' && (
+            <StatusBadge tone="muted">
+              {intentLabel(t, message.intent)}
+              {message.intent_claimed_by ? ` · ${t('kubecode.channel.intent.claimed')}` : ''}
+            </StatusBadge>
+          )}
+          <div className="kubecode-message-toolbar" data-coarse={coarse}>
+            {!coarse && on.reply && (
+              <IconButton
+                icon={<Icon role="command" source={WORKSPACE_COMMAND_ICONS.reply.Icon} />}
+                label={t('kubecode.channel.replyTo', { author: author.name })}
+                onClick={on.reply}
+              />
+            )}
+            <MoreActions items={actions} label={t('kubecode.channel.messageActions', { author: author.name })} />
+          </div>
+        </>
+      )}
       className="kubecode-message"
       data-author={message.author_kind}
       data-continued={continued}
@@ -117,36 +159,11 @@ export function MessageItem({
       data-message-id={message.id}
       data-scroll-anchor={message.id}
       data-testid={`message-${message.seq}`}
+      from={message.author_kind === 'researcher' ? 'self' : 'member'}
       id={`message-${message.id}`}
+      state={messageState(delivery)}
     >
-      <header className="kubecode-message-header">
-        <Identity
-          className="kubecode-message-author"
-          from={focusKey}
-          meta={date && (
-            <time dateTime={date.toISOString()} title={date.toLocaleString(dateLocale)}>{shortTime(date, dateLocale)}</time>
-          )}
-          size={continued ? 'sm' : 'md'}
-          view={author}
-        />
-        {message.intent !== 'say' && (
-          <StatusBadge tone="muted">
-            {intentLabel(t, message.intent)}
-            {message.intent_claimed_by ? ` · ${t('kubecode.channel.intent.claimed')}` : ''}
-          </StatusBadge>
-        )}
-        <div className="kubecode-message-toolbar" data-coarse={coarse}>
-          {!coarse && on.reply && (
-            <IconButton
-              icon={<Icon role="command" source={WORKSPACE_COMMAND_ICONS.reply.Icon} />}
-              label={t('kubecode.channel.replyTo', { author: author.name })}
-              onClick={on.reply}
-            />
-          )}
-          <MoreActions items={actions} label={t('kubecode.channel.messageActions', { author: author.name })} />
-        </div>
-      </header>
-      <div className="kubecode-message-content">
+      <MessageContent className="kubecode-message-content">
         {cited && message.reply_to && (
           <button
             className="kubecode-channel-citation"
@@ -181,9 +198,9 @@ export function MessageItem({
             )}
           </p>
         )}
-        <div className="kubecode-message-body">
+        <MessageResponse className="kubecode-message-body">
           <MarkdownContent content={message.body} images="text" />
-        </div>
+        </MessageResponse>
         {proposal && message.task_id && onBoard && !onBoard(message.task_id) && (
           <p className="kubecode-research-muted">{t('kubecode.task.proposalHint')}</p>
         )}
@@ -227,7 +244,7 @@ export function MessageItem({
             {deliveryText(delivery.state, delivery.recipients, dateLocale, t)}
           </p>
         )}
-      </div>
-    </article>
+      </MessageContent>
+    </Message>
   )
 }

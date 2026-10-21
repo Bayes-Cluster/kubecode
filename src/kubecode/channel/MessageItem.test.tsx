@@ -185,3 +185,25 @@ describe('MessageItem', () => {
     expect(article).toHaveAttribute('data-testid', 'message-7')
   })
 })
+
+describe('MessageItem as a conversation message (#232)', () => {
+  it('tints the researcher\'s own message, reads a member\'s as a member\'s, and keeps the body as safe Markdown', () => {
+    const { article } = item()
+    expect(article).toHaveAttribute('data-from', 'member')
+    expect(article.querySelector('.kubecode-ai-response strong')).toHaveTextContent('prune')
+    cleanup()
+    const own = channelMessage(5, { author_kind: 'researcher', body: 'mine <script>x</script>', task_id: null })
+    const { article: mine } = item({ message: own })
+    expect(mine).toHaveAttribute('data-from', 'self')
+    expect(mine.querySelector('script')).toBeNull()
+  })
+
+  it('marks a message that was not delivered as failed, and one still on its way as pending', () => {
+    const own = channelMessage(6, { author_kind: 'researcher', body: 'to the analyst', task_id: null })
+    const { article } = item({ message: own, delivery: { state: 'failed', text: 'The analyst is gone.' } })
+    expect(article).toHaveAttribute('data-state', 'failed')
+    cleanup()
+    const { article: queued } = item({ message: own, delivery: { state: 'queued', recipients: [] } })
+    expect(queued).toHaveAttribute('data-state', 'pending')
+  })
+})
