@@ -1,5 +1,6 @@
 import { useContext, useEffect, useRef, useState } from 'react'
 
+import { Shimmer } from '@/components/ai-elements'
 import { Button } from '@/components/ui/button'
 import { MemberIdentity } from '@/components/workspace/MemberIdentity'
 import { StopButton } from '@/components/workspace/SendButton'
@@ -115,7 +116,10 @@ function RunRow({ dm, onStop, run, stopping, t }: {
         ? <MemberIdentity handle={run.member.handle} name={run.member.name} role={run.member.role === 'general' ? 'manager' : 'specialist'} size="sm" />
         : <strong>{name}</strong>}
       <span className="kubecode-execution-state">
-        {stateText(run, t)}
+        {/* Work still under way shimmers; a wait on the researcher is said plainly. */}
+        {run.waiting_keys.length > 0 || run.status === 'waiting_permission'
+          ? stateText(run, t)
+          : <Shimmer>{stateText(run, t)}</Shimmer>}
         {run.queued > 0 && <> · {t('kubecode.execution.queued', { count: run.queued, plural: run.queued === 1 ? '' : 's' })}</>}
         {stopping && <> · {t('kubecode.execution.stopping')}</>}
       </span>

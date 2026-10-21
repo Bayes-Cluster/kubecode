@@ -91,6 +91,13 @@ test.describe('on a desktop', () => {
       await expect(toRow(page)).toContainText('Project manager')
       await send(page, 'Should we prune the attention heads?')
       await expect(row(page, 'Should we prune the attention heads?')).toHaveAttribute('aria-label', 'You')
+      // One input surface (#232): the text and its controls in the Prompt Input card, whom it reaches in its footer;
+      // the researcher's own message reads as theirs.
+      const promptCard = page.locator('.kubecode-ai-prompt-input')
+      await expect(promptCard.getByRole('combobox', { name: 'Message the Workspace' })).toBeVisible()
+      await expect(promptCard.getByRole('button', { name: 'Add context' })).toBeVisible()
+      await expect(promptCard.locator('.kubecode-ai-prompt-input-footer .kubecode-composer-to')).toContainText('Project manager')
+      await expect(row(page, 'Should we prune the attention heads?')).toHaveAttribute('data-from', 'self')
       await waitForPrompt(manager.public_conversation_id!, (text) => text.includes('Should we prune the attention heads?'))
 
       // 2. Mentioning a member by @ shows them as the recipient, and only they are prompted.
@@ -285,6 +292,8 @@ test.describe('on a phone', () => {
       await expect(items.first()).toHaveText('Reply')
       await items.first().click()
       await expect(page.getByText(/Replying to You:/)).toBeVisible()
+      // The reply heads the same card the text is in, on a phone too.
+      await expect(page.locator('.kubecode-ai-prompt-input-header')).toContainText('Replying to You:')
       await expectContained(page)
     } finally {
       await request.delete(`${api}/projects/${projectId}`)
