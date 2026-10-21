@@ -64,13 +64,13 @@ ADRs are immutable after acceptance; a later decision supersedes an earlier one.
 | [0217](0217-orchestrated-research-execution.md) | Orchestrated research execution: routes, round limits, and caller-bound work tools |
 | [0218](0218-single-workspace-work-board.md) | One Workspace work board over canonical work records |
 | [0219](0219-experiment-analysis-and-evidence-review.md) | Experiment analysis, evidence review, and decisions on native work |
-| [0220](0220-workspace-members-and-the-general-agent.md) | Workspace members, the General Agent, and role-bounded authority |
+| [0220](0220-workspace-members-and-the-general-agent.md) | Workspace members, the General Agent, and role-bounded authority (§4 provider-tool bound superseded by 0237) |
 | [0221](0221-tasks-and-human-authorized-admission.md) | Tasks, and admission authorized by the researcher through the General Agent |
 | [0222](0222-shared-workspace-controls-and-composer.md) | Shared Workspace controls and one Composer for General and direct messages |
 | [0223](0223-general-conversation-routing-and-direct-messages.md) | One General conversation, routed to members, with private direct messages |
 | [0224](0224-workspace-shell-navigation-and-routes.md) | Workspace shell: General, Kanban, Resources, and members, with stable hash routes (partially superseded by 0228) |
 | [0225](0225-task-board-inspector-and-browser-acceptance.md) | The Task board, the Task inspector, and browser acceptance with member fixtures |
-| [0226](0226-manager-launch-profile-review-routing-and-evidence-pins.md) | The manager's provider launch profile, review decisions routed to the manager, and review evidence pins |
+| [0226](0226-manager-launch-profile-review-routing-and-evidence-pins.md) | The manager's provider launch profile, review decisions routed to the manager, and review evidence pins (§1 superseded by 0237) |
 | [0227](0227-workspace-visual-vocabulary.md) | One visual vocabulary for Workspace views: semantic icons, layout tokens, identity, references, and scoped controls |
 | [0228](0228-workspace-places-navigation-and-inspector-stack.md) | Workspace places, secondary execution history, and one inspector stack (partially superseded by 0234) |
 | [0229](0229-member-identity-member-following-routes-and-one-public-reply.md) | Member identity in the conversation, member-following routes, and one public reply |
@@ -80,3 +80,4 @@ ADRs are immutable after acceptance; a later decision supersedes an earlier one.
 | [0233](0233-ai-elements-foundation-and-workspace-prototypes.md) | AI Elements as the Workspace component foundation, a Harness-aligned token layer, and fixture prototypes (proposed) |
 | [0234](0234-needs-you-destination-and-one-shell-frame.md) | Needs you as a Workspace destination, one destination header, and a 360-pixel inspector (proposed) |
 | [0236](0236-one-presentation-of-cited-materials.md) | One presentation of cited materials: Sources in messages, readable evidence, and recovery from Resources (proposed) |
+| [0237](0237-manager-permission-authority.md) | The manager runs with full native permissions and reviews specialists' permission requests |
