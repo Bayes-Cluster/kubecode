@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { StickToBottomContext } from 'use-stick-to-bottom'
 
 import { Conversation as ConversationScroller, ConversationContent, ConversationScrollButton } from '@/components/ai-elements/conversation'
@@ -66,6 +66,11 @@ type MessageListProps = {
   focusOnLand?: boolean
 }
 
+/** How long a landing is held in place while the conversation finishes drawing. */
+const LANDING_HOLD_MS = 3_000
+/** What the reader does to scroll by themselves, which lets a landing go. */
+const USER_SCROLL_EVENTS = ['wheel', 'touchstart', 'keydown', 'pointerdown'] as const
+
 /** The message whose row is nearest the middle of the scroller. */
 function messageAtMiddle(scroller: HTMLElement): string | null {
   const box = scroller.getBoundingClientRect()
@@ -124,6 +129,34 @@ export function MessageList({
   const conversation = useRef<StickToBottomContext | null>(null)
   const scrollerOf = () => conversation.current?.scrollRef.current ?? null
   const stuck = useRef(true)
+  // While a landing is held, the Conversation's own scrolling (its first run to the latest,
+  // following content that grows) is turned back to the landed message, which makes it let
+  // go as it would for a reader scrolling up. The reader's own scroll, or time, ends the hold.
+  const releaseLanding = useRef<() => void>(() => undefined)
+  useEffect(() => () => releaseLanding.current(), [])
+  const holdLanding = (target: HTMLElement) => {
+    releaseLanding.current()
+    const scroller = scrollerOf()
+    if (!scroller) return
+    const keep = () => {
+      if (!target.isConnected) return
+      const box = scroller.getBoundingClientRect()
+      const rect = target.getBoundingClientRect()
+      if (rect.bottom > box.top && rect.top < box.bottom) return
+      target.scrollIntoView?.({ block: 'center' })
+    }
+    const release = () => {
+      window.clearTimeout(timer)
+      scroller.removeEventListener('scroll', keep)
+      for (const name of USER_SCROLL_EVENTS) scroller.removeEventListener(name, release)
+      releaseLanding.current = () => undefined
+    }
+    const timer = window.setTimeout(release, LANDING_HOLD_MS)
+    scroller.addEventListener('scroll', keep, { passive: true })
+    for (const name of USER_SCROLL_EVENTS) scroller.addEventListener(name, release, { passive: true })
+    releaseLanding.current = release
+  }
+
   const coarse = useCoarsePointer()
   const [announcement, setAnnouncement] = useState('')
   const byId = useMemo(() => new Map(feed.messages.map((message) => [message.id, message])), [feed.messages])
@@ -148,6 +181,7 @@ export function MessageList({
     conversation.current?.stopScroll()
     target.setAttribute('tabindex', '-1')
     target.scrollIntoView?.({ block: 'center' })
+    holdLanding(target)
     if (focus) target.focus({ preventScroll: true })
   }
 
@@ -171,6 +205,19 @@ export function MessageList({
     return () => element.removeEventListener('scroll', onScroll)
   }, [])
 
+  // Arriving with nothing to land on, the reader starts at the latest, even when the messages
+  // were already known (coming back to General) and the Conversation saw no first growth.
+  const started = useRef(false)
+  const hasMessages = feed.messages.length > 0
+  useLayoutEffect(() => {
+    if (started.current || !hasMessages) return
+    started.current = true
+    const element = scrollerOf()
+    if (!focusId && element) element.scrollTop = element.scrollHeight
+    // Only the first page of messages decides where the reader starts.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasMessages])
+
   const focusOnLandRef = useRef(focusOnLand)
   useEffect(() => { focusOnLandRef.current = focusOnLand })
 
@@ -182,13 +229,15 @@ export function MessageList({
       landed.current = null
       return
     }
-    if (!present || landed.current === focusId) return
-    landed.current = focusId
+    // Per Workspace: coming back to another Workspace's General is a new conversation to land in.
+    const landing = `${projectId}:${focusId}`
+    if (!present || landed.current === landing) return
+    landed.current = landing
     // Landing happens once per message; how it lands is read at that moment.
     jump(focusId, focusOnLandRef.current)
     // jump reads the DOM only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusId, present])
+  }, [focusId, present, projectId])
 
   const copyLink = (message: ChannelMessage) => {
     const link = `${window.location.origin}${window.location.pathname}${window.location.search}${routeHash({
@@ -208,7 +257,8 @@ export function MessageList({
         aria-label={label}
         className="kubecode-conversation"
         contextRef={conversation}
-        initial="instant"
+        // Arriving to land on a message, the conversation starts where that message is, not at the latest.
+        initial={focusId ? false : 'instant'}
         resize="smooth"
       >
         <ConversationContent className="kubecode-conversation-thread" scrollClassName="kubecode-channel-messages">

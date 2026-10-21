@@ -366,6 +366,9 @@ export function ChannelWorkspace({
           // While a detail is open the reader is in it; coming back lands on the message again.
           focusId={detail ? null : jumpTarget ?? focusMessageId}
           focusOnLand={jumpTarget !== null || landing === 'focus'}
+          // Another Workspace's General is another conversation: its scroller and its landing start
+          // afresh, so following one never scrolls (or reports a reading position for) the other.
+          key={`${projectId}:${channel?.id ?? ''}`}
           label={t('kubecode.channel.messages')}
           labels={labels}
           locale={locale}

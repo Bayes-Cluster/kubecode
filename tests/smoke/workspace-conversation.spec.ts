@@ -138,7 +138,7 @@ test.describe('on a desktop', () => {
         const dock = (await page.locator('.kubecode-conversation-dock').boundingBox())!
         expect(dock.width).toBeLessThanOrEqual(Math.max(pane.width * 0.5, 480) + 1)
         expect(Math.abs((dock.x - pane.x) - (pane.x + pane.width - dock.x - dock.width))).toBeLessThanOrEqual(2)
-        const threadWidth = await log(page).evaluate((element) => {
+        const threadWidth = await log(page).locator('.kubecode-channel-messages').evaluate((element) => {
           const style = getComputedStyle(element)
           return element.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)
         })
@@ -157,7 +157,7 @@ test.describe('on a desktop', () => {
         expect(card.width).toBeLessThanOrEqual(960)
         expect(Math.abs((card.x - widePane.x) - (widePane.x + widePane.width - card.x - card.width))).toBeLessThanOrEqual(2)
         expect(Math.abs((wideDock.x - widePane.x) - (widePane.x + widePane.width - wideDock.x - wideDock.width))).toBeLessThanOrEqual(2)
-        await log(page).evaluate((element) => { element.scrollTop = element.scrollHeight })
+        await log(page).locator('.kubecode-channel-messages').evaluate((element) => { element.scrollTop = element.scrollHeight })
         const last = (await page.locator('article[data-message-id]').last().boundingBox())!
         expect(last.y + last.height).toBeLessThanOrEqual(wideDock.y + 1)
         await page.setViewportSize({ width: 1440, height: 900 })

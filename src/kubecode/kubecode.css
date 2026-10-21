@@ -6003,9 +6003,9 @@ button.kubecode-reference-chip-open:focus-visible,
 /* The Conversation (use-stick-to-bottom): the named log fills the pane; its
    scroller keeps the scrollbar at the pane's edge and the thread in the middle
    three quarters (ADR 0239). */
-.kubecode-message-list > .kubecode-conversation { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }
-.kubecode-message-list > .kubecode-conversation > div { min-height: 0; }
-.kubecode-channel-messages { min-height: 0; overflow-y: auto; }
+/* As before (ADR 0239), the log keeps at least 120px however tall the dock grows. */
+.kubecode-message-list > .kubecode-conversation { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 120px; }
+.kubecode-channel-messages { overflow-y: auto; }
 .kubecode-conversation-thread {
   display: flex;
   flex-direction: column;
