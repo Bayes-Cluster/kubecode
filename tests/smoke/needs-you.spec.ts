@@ -114,7 +114,7 @@ test.describe('on a desktop', () => {
       await send(page, '@analyst [smoke:permission] run the tests')
       await waitForPrompt(analyst.public_conversation_id!, (text) => text.includes('[smoke:permission]'))
       await escalateThroughManager(request, api, projectId, 1)
-      await expect(strip(page)).toContainText('Analyst is waiting for your permission', { timeout: 30_000 })
+      await expect(strip(page)).toContainText('Waiting for your permission', { timeout: 30_000 })
       await expect(needsYouPlace(page).locator('.kubecode-research-badge')).toHaveText('1')
       // The bell has this Workspace's request and the other Workspace's review.
       const bell = page.getByRole('button', { name: 'Needs you: 2' })
@@ -261,6 +261,25 @@ test.describe('on a phone', () => {
       await expect(list.getByRole('button', { name: /^Stop .*'s reply$/ })).toHaveCount(2)
       await page.keyboard.press('Escape')
       await expect(list).toHaveCount(0)
+
+      // On a 4K-wide pane (ADR 0240) the strip, its list and the card share one width, centred.
+      await page.setViewportSize({ width: 2560, height: 1440 })
+      {
+        const card = (await page.locator('.kubecode-conversation-dock .kubecode-ai-prompt-input').boundingBox())!
+        const stripWide = (await strip(page).boundingBox())!
+        const pane = (await page.locator('.kubecode-channel-main').boundingBox())!
+        expect(Math.abs(card.width - stripWide.width)).toBeLessThanOrEqual(2)
+        expect(Math.abs(card.x - stripWide.x)).toBeLessThanOrEqual(2)
+        expect(card.width).toBeLessThanOrEqual(960)
+        expect(Math.abs((card.x - pane.x) - (pane.x + pane.width - card.x - card.width))).toBeLessThanOrEqual(2)
+        await running.click()
+        const wideList = (await list.boundingBox())!
+        expect(Math.abs(wideList.width - card.width)).toBeLessThanOrEqual(2)
+        await page.keyboard.press('Escape')
+        await expect(list).toHaveCount(0)
+      }
+      await page.setViewportSize({ width: 390, height: 844 })
+
       const stripBox = await strip(page).boundingBox()
       expect(stripBox!.height).toBeLessThanOrEqual(844 * 0.6)
       await expect(composer(page)).toBeInViewport()

@@ -148,6 +148,19 @@ test.describe('on a desktop', () => {
         const theirs = (await row(page, 'Outline drafted.').boundingBox())!
         expect(mine.x + mine.width).toBeGreaterThan(theirs.x + theirs.width - 1)
         expect(mine.x).toBeGreaterThan(theirs.x)
+
+        // At 2560px (ADR 0240) the card fills the dock, both centred, and the last message ends above the dock.
+        await page.setViewportSize({ width: 2560, height: 1440 })
+        const widePane = (await page.locator('.kubecode-channel-main').boundingBox())!
+        const wideDock = (await page.locator('.kubecode-conversation-dock').boundingBox())!
+        const card = (await page.locator('.kubecode-conversation-dock .kubecode-ai-prompt-input').boundingBox())!
+        expect(card.width).toBeLessThanOrEqual(960)
+        expect(Math.abs((card.x - widePane.x) - (widePane.x + widePane.width - card.x - card.width))).toBeLessThanOrEqual(2)
+        expect(Math.abs((wideDock.x - widePane.x) - (widePane.x + widePane.width - wideDock.x - wideDock.width))).toBeLessThanOrEqual(2)
+        await log(page).evaluate((element) => { element.scrollTop = element.scrollHeight })
+        const last = (await page.locator('article[data-message-id]').last().boundingBox())!
+        expect(last.y + last.height).toBeLessThanOrEqual(wideDock.y + 1)
+        await page.setViewportSize({ width: 1440, height: 900 })
       }
 
       // 4. Reply cites the old message and addresses the Analyst, whose new Session gets it with the citation.
