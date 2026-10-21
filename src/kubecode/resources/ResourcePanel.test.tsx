@@ -227,4 +227,20 @@ describe('ResourcePanel', () => {
     mount({ kind: 'resource', ref: { kind: 'artifact', id: 'a1' } }, read)
     expect(await screen.findByText('This item is no longer available.')).toBeInTheDocument()
   })
+
+  it('a record that is gone, opened outside Resources, offers to find it again there', async () => {
+    const read = vi.fn().mockResolvedValue(finding({ availability: 'removed', sections: [] }))
+    const navigation = fakeNavigation()
+    mount({ kind: 'resource', ref: { kind: 'artifact', id: 'a1' } }, read, navigation)
+    fireEvent.click(await screen.findByRole('button', { name: 'Find in Resources' }))
+    expect(navigation.openPlace).toHaveBeenCalledWith({ view: 'resources' }, { inspector: 'keep' })
+  })
+
+  it('a record that is gone, opened from Resources itself, does not offer to go there', async () => {
+    const read = vi.fn().mockResolvedValue(finding({ availability: 'removed', sections: [] }))
+    const navigation = fakeNavigation({ location: { place: { view: 'resources' }, inspector: [] } })
+    mount({ kind: 'resource', ref: { kind: 'artifact', id: 'a1' } }, read, navigation)
+    expect(await screen.findByText('This item is no longer available.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Find in Resources' })).not.toBeInTheDocument()
+  })
 })

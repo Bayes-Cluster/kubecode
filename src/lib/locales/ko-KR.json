@@ -2832,5 +2832,8 @@
   "kubecode.proto.review.versions": "버전",
   "kubecode.proto.review.shown": "검토 중인 버전",
   "kubecode.proto.review.newerVersion": "최신 버전, 아직 검토 안 됨",
-  "kubecode.proto.review.olderVersion": "이전 버전"
+  "kubecode.proto.review.olderVersion": "이전 버전",
+  "kubecode.resources.findInResources": "리소스에서 찾기",
+  "kubecode.reference.sources": "출처({count})",
+  "kubecode.reference.sourcesAttention": "{count}개 변경 또는 삭제됨"
 }

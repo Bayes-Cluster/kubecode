@@ -104,6 +104,13 @@ test.describe('on a desktop', () => {
       // The file changes: the citation says so, still naming the version cited.
       await writeFile(`${projectPath}/results/summary.csv`, `${first}pruned-more,0.88\n`)
       await expect(message.getByRole('button', { name: `${chipName} Changed since cited` })).toBeVisible({ timeout: 30_000 })
+      // Cited materials are the message's Sources (ADR 0236): the collapsed trigger still warns, and the list fits the message.
+      await expect(message.getByRole('button', { name: 'Sources (1) · 1 changed or gone' })).toBeVisible()
+      const [messageBox, sourcesBox] = await Promise.all([
+        message.boundingBox(),
+        message.getByRole('list', { name: 'References' }).boundingBox(),
+      ])
+      expect(sourcesBox!.x + sourcesBox!.width).toBeLessThanOrEqual(messageBox!.x + messageBox!.width + 1)
 
       // 4. Resources is a library: a row previews beside the list, and the place is kept across a visit elsewhere.
       await workspaceNav(page).getByRole('button', { name: 'Resources' }).click()

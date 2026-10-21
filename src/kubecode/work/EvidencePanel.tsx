@@ -8,6 +8,8 @@ import { useInspectionRecord, useInspectorEntry, useInspectorServices } from '..
 import { InspectorPanel } from '../app/inspector/InspectorPanel'
 import type { InspectorPanelProps } from '../app/inspector/inspectorPanels'
 import { isRoutableRecordKind, type InspectorEntry } from '../app/location/inspector'
+import { useWorkspaceNavigation } from '../app/location/WorkspaceNavigation'
+import { fallbackTitle, formatVersion, kindLabelKey } from '../resources/referenceKinds'
 import { EvidenceViewer, type DisplayedEvidence, type EvidenceTarget } from './EvidenceViewer'
 
 /**
@@ -19,7 +21,8 @@ import { EvidenceViewer, type DisplayedEvidence, type EvidenceTarget } from './E
  * opens over it, so what was cited stays the one displayed.
  */
 export function EvidencePanel({ entry, parentTask, projectId }: InspectorPanelProps<Extract<InspectorEntry, { kind: 'evidence' }>>) {
-  const { api, t } = useInspectorServices()
+  const { api, events, t } = useInspectorServices()
+  const navigation = useWorkspaceNavigation()
   const { push } = useInspectorEntry()
   const { markDisplayed } = useInspectionRecord()
   const { id, kind, revision = null } = entry.ref
@@ -39,21 +42,37 @@ export function EvidencePanel({ entry, parentTask, projectId }: InspectorPanelPr
     push({ kind: 'resource', ref: { kind: ref.kind, id: ref.id } }, { from: `related:${ref.kind}:${ref.id}` })
   }, [push])
 
+  // Named and versioned like every reference (ADR 0231 §5): never an id, never a raw fingerprint.
+  const routable = isRoutableRecordKind(kind) || kind === 'file'
+  const title = shown?.title ?? (routable ? fallbackTitle({ kind, id }, t) : t('kubecode.vocab.object.evidence'))
+  const shownVersion = shown?.revision
+    ? (routable ? formatVersion(kind, shown.revision, t) : undefined) ?? shown.revision.slice(0, 12)
+    : undefined
+  const recovery = {
+    label: t('kubecode.resources.findInResources'),
+    run: () => navigation.openPlace({ view: 'resources' }, { inspector: 'keep' }),
+  }
+
   return (
     <InspectorPanel
       icon={<Icon role="navigation" source={WORKSPACE_OBJECT_ICONS.evidence.Icon} />}
-      meta={shown?.revision ? (
-        <StatusBadge tone="muted">{t('kubecode.task.evidence.shownVersion', { revision: shown.revision.slice(0, 12) })}</StatusBadge>
-      ) : undefined}
-      title={shown?.title ?? `${kind}:${id}`}
+      meta={(
+        <>
+          {routable && <StatusBadge tone="muted">{t(kindLabelKey(kind))}</StatusBadge>}
+          {shownVersion && <StatusBadge tone="muted">{t('kubecode.task.evidence.shownVersion', { revision: shownVersion })}</StatusBadge>}
+        </>
+      )}
+      title={title}
     >
       {failed && parentTask && (
         <p className="kubecode-research-notice" role="status">{t('kubecode.task.evidence.cannotAccept')}</p>
       )}
       <EvidenceViewer
         api={api}
+        events={events}
         key={`${kind}:${id}:${revision ?? ''}`}
         projectId={projectId}
+        recovery={recovery}
         t={t}
         target={target}
         onDisplayed={onDisplayed}

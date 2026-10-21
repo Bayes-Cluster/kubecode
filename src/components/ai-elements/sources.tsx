@@ -28,10 +28,10 @@ export function SourcesTrigger({ children, className, label, ...props }: Compone
   )
 }
 
-export function SourcesContent({ children, className, ...props }: ComponentProps<typeof CollapsibleContent>) {
+export function SourcesContent({ children, className, listLabel, ...props }: ComponentProps<typeof CollapsibleContent> & { listLabel?: string }) {
   return (
     <CollapsibleContent className={cn('kubecode-ai-sources-content', className)} {...props}>
-      <ul className="kubecode-ai-sources-list">{children}</ul>
+      <ul aria-label={listLabel} className="kubecode-ai-sources-list">{children}</ul>
     </CollapsibleContent>
   )
 }

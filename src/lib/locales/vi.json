@@ -2832,5 +2832,8 @@
   "kubecode.proto.review.versions": "Phiên bản",
   "kubecode.proto.review.shown": "phiên bản bạn đang duyệt",
   "kubecode.proto.review.newerVersion": "mới hơn, chưa duyệt",
-  "kubecode.proto.review.olderVersion": "phiên bản trước"
+  "kubecode.proto.review.olderVersion": "phiên bản trước",
+  "kubecode.resources.findInResources": "Tìm trong Tài nguyên",
+  "kubecode.reference.sources": "Nguồn ({count})",
+  "kubecode.reference.sourcesAttention": "{count} đã thay đổi hoặc bị xóa"
 }

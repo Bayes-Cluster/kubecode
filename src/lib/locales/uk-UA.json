@@ -2832,5 +2832,8 @@
   "kubecode.proto.review.versions": "Версії",
   "kubecode.proto.review.shown": "версія, яку ви перевіряєте",
   "kubecode.proto.review.newerVersion": "новіша, ще не перевірена",
-  "kubecode.proto.review.olderVersion": "попередня версія"
+  "kubecode.proto.review.olderVersion": "попередня версія",
+  "kubecode.resources.findInResources": "Знайти в ресурсах",
+  "kubecode.reference.sources": "Джерела ({count})",
+  "kubecode.reference.sourcesAttention": "Змінено або видалено: {count}"
 }
