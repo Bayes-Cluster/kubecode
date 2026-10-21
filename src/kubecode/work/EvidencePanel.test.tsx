@@ -5,7 +5,7 @@ import { ApiError, type KubecodeApi } from '../api'
 import { useInspectionRecord } from '../app/inspector/inspectorContext'
 import { InspectorPanel } from '../app/inspector/InspectorPanel'
 import { INSPECTOR_PANELS } from '../app/inspector/inspectorPanels'
-import { fakeServices, renderInspector } from '../app/inspector/inspectorTesting'
+import { fakeNavigation, fakeServices, renderInspector } from '../app/inspector/inspectorTesting'
 import type { InspectorEntry } from '../app/location/inspector'
 import { fileDocument } from '../tasks/taskFixtures'
 
@@ -40,8 +40,9 @@ function document(revision: string | null) {
   }
 }
 
-function mount(stackTop: InspectorEntry, api: Partial<KubecodeApi>) {
+function mount(stackTop: InspectorEntry, api: Partial<KubecodeApi>, navigation = fakeNavigation()) {
   return renderInspector({
+    navigation,
     panels,
     services: fakeServices({ api: api as KubecodeApi }),
     stack: [task, stackTop],
@@ -116,5 +117,21 @@ describe('EvidencePanel', () => {
     expect(await screen.findByText('acc,0.91')).toBeInTheDocument()
     await waitFor(() => expect(screen.getByText('file displayed f9')).toBeInTheDocument())
     expect(screen.getByText('artifact never displayed')).toBeInTheDocument()
+  })
+
+  it('names evidence readably before it is shown, never by its id', () => {
+    const readProjectContext = vi.fn().mockReturnValue(new Promise(() => undefined))
+    mount({ kind: 'evidence', ref: { kind: 'artifact', id: 'a1', revision: '3f' } }, { readProjectContext })
+    expect(screen.getByRole('heading', { name: 'Artifact (no title)', level: 3 })).toBeInTheDocument()
+    expect(screen.queryByText(/artifact:a1/)).not.toBeInTheDocument()
+  })
+
+  it('offers a way to find the material again when cited evidence is gone, and says it cannot be accepted', async () => {
+    const navigation = fakeNavigation()
+    const readProjectContext = vi.fn().mockRejectedValue(new ApiError('not_found', 'x', 404))
+    mount({ kind: 'evidence', ref: { kind: 'artifact', id: 'a1', revision: '3f' } }, { readProjectContext }, navigation)
+    expect(await screen.findByText(/can't be accepted/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Find in Resources' }))
+    expect(navigation.openPlace).toHaveBeenCalledWith({ view: 'resources' }, { inspector: 'keep' })
   })
 })

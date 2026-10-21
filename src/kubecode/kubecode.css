@@ -5850,6 +5850,9 @@ button.kubecode-reference-chip-open:focus-visible,
   .kubecode-destination-body { padding: var(--ws-space-2) var(--ws-space-3); }
 }
 
+/* A message's cited materials as Sources (ADR 0236): aligned with the message text. */
+.kubecode-reference-sources { min-width: 0; }
+.kubecode-reference-sources .kubecode-ai-sources-list { padding-inline: 0; }
 /*
  * General and DMs as one conversation (#232, ADR 0233): each message is an
  * AI Elements Message (the researcher's own tinted, a failed one marked at

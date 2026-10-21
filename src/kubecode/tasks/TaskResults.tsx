@@ -19,6 +19,7 @@ import { errorMessage } from '../app/errors'
 import { useInspectionRecord, useInspectorEntry, useInspectorServices } from '../app/inspector/inspectorContext'
 import { placeKey, usePlaceState } from '../app/location/placeMemory'
 import { resolveThrough, useAttention } from '../attention/attentionContext'
+import { fallbackTitle, formatVersion } from '../resources/referenceKinds'
 import { ResearchFindingsPanel } from '../research/ResearchFindingsPanel'
 import type { ResearchBundle } from '../research/useResearch'
 import { evidenceKind, outcomeLabel, recordKindOf, taskTime } from './taskLabels'
@@ -176,6 +177,8 @@ function EvidenceChip({ evidence }: { evidence: TaskEvidence }) {
   const open = useOpenEvidence(evidence)
   const kind = evidenceKind(t, evidence.kind)
   const pinned = evidence.cited_by.find((citation) => citation.pinned)?.pinned ?? null
+  // Named and versioned like every reference (ADR 0231 §5): never an id, never a raw fingerprint.
+  const record = recordKindOf(evidence.kind)
   return (
     <ReferenceChip
       kind={kind.kind}
@@ -185,8 +188,8 @@ function EvidenceChip({ evidence }: { evidence: TaskEvidence }) {
         : evidence.status === 'removed'
           ? { kind: 'removed', label: t('kubecode.task.evidenceState.removed') }
           : undefined}
-      title={evidence.title ?? evidence.ref_id}
-      version={pinned ? pinned.slice(0, 8) : undefined}
+      title={evidence.title ?? (record ? fallbackTitle({ kind: record, id: evidence.ref_id }, t) : kind.label)}
+      version={record ? formatVersion(record, pinned, t) : undefined}
       onOpen={open ?? undefined}
     />
   )

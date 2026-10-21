@@ -48,6 +48,8 @@ export type RecordPreviewProps = {
   onShowCurrent?: () => void
   /** A narrower layout for a dialog or a picker. */
   compact?: boolean
+  /** Somewhere to look for the material again, offered when it is gone or could not be read. */
+  recovery?: { label: string; run: () => void }
 }
 
 /**
@@ -70,6 +72,7 @@ export function RecordPreview({
   onLoaded,
   onShowCurrent,
   projectId,
+  recovery,
   t,
   target,
 }: RecordPreviewProps) {
@@ -112,14 +115,22 @@ export function RecordPreview({
   if (state.status === 'loading') {
     return <p className="kubecode-research-muted" role="status">{t('kubecode.work.evidence.loading')}</p>
   }
+  const recover = recovery && (
+    <Button size="xs" variant="outline" onClick={recovery.run}>{recovery.label}</Button>
+  )
   if (state.status === 'removed') {
-    return <p className="kubecode-research-error" role="alert">{t('kubecode.work.evidence.removed')}</p>
+    return (
+      <p className="kubecode-research-error" role="alert">
+        {t('kubecode.work.evidence.removed')}{recover && ' '}{recover}
+      </p>
+    )
   }
   if (state.status === 'error') {
     return (
       <p className="kubecode-research-error" role="alert">
         {t('kubecode.work.evidence.failed')}{' '}
         <Button size="xs" variant="ghost" onClick={state.retry}>{t('kubecode.vocab.command.retry')}</Button>
+        {recover && ' '}{recover}
       </p>
     )
   }

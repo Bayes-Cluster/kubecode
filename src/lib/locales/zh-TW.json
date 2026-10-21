@@ -2832,5 +2832,8 @@
   "kubecode.proto.review.versions": "版本",
   "kubecode.proto.review.shown": "你正在審閱的版本",
   "kubecode.proto.review.newerVersion": "較新，尚未審閱",
-  "kubecode.proto.review.olderVersion": "較早的版本"
+  "kubecode.proto.review.olderVersion": "較早的版本",
+  "kubecode.resources.findInResources": "在資源中尋找",
+  "kubecode.reference.sources": "來源（{count}）",
+  "kubecode.reference.sourcesAttention": "{count} 項已變更或已移除"
 }

@@ -53,6 +53,22 @@ const lookAt = async () => {
 const backToTask = () => fireEvent.click(screen.getByRole('button', { name: 'Back to Pruning heads' }))
 
 describe('TaskResults', () => {
+  it('names cited evidence like every reference: a readable title and a short version, never an id or raw fingerprint', async () => {
+    const pinned = '3f2c1a9e5b7d4c6a'
+    mount(taskDetail({ evidence: [evidenceRow({
+      key: 'artifact:a1',
+      kind: 'artifact',
+      ref_id: 'a1',
+      title: null,
+      cited_by: [{ work_id: '', result_id: 'artifact:a1', request_id: 'rq1', pinned }],
+      current: pinned,
+    })] }))
+    await screen.findByRole('region', { name: 'Results for your review' })
+    const evidence = review().getByRole('list', { name: 'Evidence' })
+    expect(within(evidence).getByRole('button', { name: 'Artifact Artifact (no title) #3f2c1a9' })).toBeInTheDocument()
+    expect(evidence).not.toHaveTextContent('a1')
+  })
+
   it('never accepts a version whose read failed: the button stays disabled and says why', async () => {
     const { api } = mount(taskDetail({ evidence: [changed('b')] }), {
       readProjectContext: vi.fn().mockRejectedValue(new ApiError('internal', 'x', 500)),

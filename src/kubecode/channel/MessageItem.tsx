@@ -13,7 +13,7 @@ import { DeliveryStatus } from '../attention/DeliveryStatus'
 import { Identity } from '../members/Identity'
 import type { IdentityView, RecipientsView } from '../members/memberIdentity'
 import type { ReferenceLabel } from '../references/referenceLabels'
-import { ResourceReferenceChip } from '../resources/ResourceReferenceChip'
+import { ReferenceSources } from '../resources/ReferenceSources'
 import { intentLabel } from './channelLabels'
 import type { MessageDeliveryView } from './delivery'
 import { messageDate, shortTime } from './timeline'
@@ -115,6 +115,9 @@ export function MessageItem({
       ? [{ id: 'thread', label: t('kubecode.channel.legacyThread.action'), onSelect: on.openThread }]
       : []),
   ]
+  const taskChip = task && (
+    <ReferenceChip kind="task" kindLabel={t('kubecode.vocab.object.task')} title={task.title} onOpen={on.openTask} />
+  )
   const focusKey = `message:${message.id}`
   return (
     <Message
@@ -201,30 +204,17 @@ export function MessageItem({
         {proposal && message.task_id && onBoard && !onBoard(message.task_id) && (
           <p className="kubecode-research-muted">{t('kubecode.task.proposalHint')}</p>
         )}
-        {(task || references.length > 0) && (
+        {references.length > 0 ? (
+          // Named, versioned, and resolved against the server (ADR 0231 §5), as Sources (ADR 0236).
+          <ReferenceSources
+            leading={taskChip}
+            references={references}
+            t={t}
+            onOpen={on.openReference}
+          />
+        ) : task && (
           <ul aria-label={t('kubecode.channel.references')} className="kubecode-message-references">
-            {task && (
-              <li>
-                <ReferenceChip
-                  kind="task"
-                  kindLabel={t('kubecode.vocab.object.task')}
-                  title={task.title}
-                  onOpen={on.openTask}
-                />
-              </li>
-            )}
-            {references.map((reference) => (
-              <li key={`${reference.ref.kind}:${reference.ref.id}`}>
-                {/* Named, versioned, and resolved against the server (ADR 0231 §5). */}
-                <ResourceReferenceChip
-                  basis="cited"
-                  knownTitle={reference.title}
-                  reference={reference.ref}
-                  t={t}
-                  onOpen={() => on.openReference(reference.ref)}
-                />
-              </li>
-            ))}
+            <li>{taskChip}</li>
           </ul>
         )}
         {replies > 0 && on.openThread && (
