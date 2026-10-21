@@ -870,6 +870,13 @@ Workspace shell on fixture data and are built on the official parts:
 `#/controls` (the control matrix, with an official-components section) and
 `#/prototypes` (connected screen prototypes); see ADR 0233 and ADR 0241.
 
+Resources and Members are on the official parts (ADR 0244): `RecordPreview`
+shows code and text files in the AI Elements Code Block (one Shiki language
+per file, plain text when unknown) and Markdown files and written records
+through hardened streamdown; search results and member rows are Items; member
+forms use Field, Input and Select (`members/ProviderSelect.tsx`); the manager
+setup notice is an Alert.
+
 ## Agent sessions
 
 The server currently discovers Claude Code, Codex, and OpenCode.
