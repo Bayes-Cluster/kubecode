@@ -458,6 +458,11 @@ scope's member prompts (busy while their key is resolving), and failed turns
 with "Open {name} in Members" until dismissed (place memory); under 720 px it
 shows a one-line summary and caps and scrolls its body.
 General and the DM composer offer that Stop only when exactly one turn runs.
+General and the DM render messages with the AI Elements `Message` composition
+and dock the execution strip, the outbox rows and the Prompt Input card (reply
+and references, the shared `Composer`, recipients or the DM's privacy line)
+at the foot of the view (#232, ADR 0233 §7); `MessageList` keeps its own
+scroller for older messages and the reading position.
 `attention/useMessageDeliveries.ts` reads `GET …/deliveries` for the
 researcher's top-level messages on screen, again on `orchestration_updated`
 naming one of them (or `channel_updated` while one is saved or sending), and

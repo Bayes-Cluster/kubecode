@@ -115,6 +115,27 @@ tokens above — and ADR 0222 §1 for the composer's outer surface, which is the
 Prompt Input card when a view adopts it. The `Composer`'s behaviour,
 keyboard/IME contract, and the rest of both ADRs stand.
 
+### 7. Adoption notes: General and DMs (#232)
+
+General (`channel/MessageItem.tsx`, `MessageComposer.tsx`) and the DM
+(`dm/DmPane.tsx`) adopt `Message`/`MessageContent`/`MessageResponse` and the
+Prompt Input card. A message is `self` when the researcher wrote it; its
+`data-state` is `failed` for a failed or denied delivery and `pending` while
+it is queued or sending (ADR 0232 facts, else the routing note). Each DM side
+is its own `Message`, and the wait for a reply is a pending member message in
+`Shimmer`. The card's header holds the reply and the references (the
+`AddContextDialog` interface is unchanged), its body the `Composer`, its
+footer the recipients or the DM's privacy line and the hints. The execution
+strip, the outbox rows and the card share one dock at the foot of the view;
+a working member's state shimmers, a wait on the researcher does not.
+`Conversation` is not adopted there: `MessageList` keeps its own scroller for
+older-message loading, landing on a message, and the reading position (ADR
+0228 §4). `Tool`, `ChainOfThought`, `Task`, `Queue` and `Confirmation` are not
+used in these views: General carries no public tool calls or plans (a
+member's execution output stays private), and permission and input requests
+keep `PermissionPrompt`/`ElicitationPrompt`, which already answer from the
+ADR 0232 projection with their keyboard contract.
+
 ## Consequences
 
 Later slices build views from one set of compositions and tokens; a view that
