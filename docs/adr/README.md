@@ -79,3 +79,4 @@ ADRs are immutable after acceptance; a later decision supersedes an earlier one.
 | [0232](0232-pending-decisions-delivery-state-and-scoped-execution-controls.md) | Pending decisions, message delivery state, and scoped execution controls are server projections |
 | [0233](0233-ai-elements-foundation-and-workspace-prototypes.md) | AI Elements as the Workspace component foundation, a Harness-aligned token layer, and fixture prototypes (proposed) |
 | [0234](0234-needs-you-destination-and-one-shell-frame.md) | Needs you as a Workspace destination, one destination header, and a 360-pixel inspector (proposed) |
+| [0236](0236-one-presentation-of-cited-materials.md) | One presentation of cited materials: Sources in messages, readable evidence, and recovery from Resources (proposed) |

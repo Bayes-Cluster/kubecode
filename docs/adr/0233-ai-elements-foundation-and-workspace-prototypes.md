@@ -136,6 +136,17 @@ member's execution output stays private), and permission and input requests
 keep `PermissionPrompt`/`ElicitationPrompt`, which already answer from the
 ADR 0232 projection with their keyboard contract.
 
+The research Kanban, a Task's Overview/Results/Activity and Needs you (#234)
+follow the review prototype without new AI Elements: the board keeps four
+lanes and marks the cards that wait on the researcher; in the inspector the
+Task header carries only its title, facts and menu, while "Discuss in General"
+sits with what happens next; the review keeps its decision in one sticky group
+that says acceptance is at the versions shown, and every existing check
+(displayed-version acceptance, required send-back feedback, attention-store
+resolution) is unchanged. `Task`, `Queue` and `Plan` stay unused there: the
+research Task is the domain object, and its timeline is lifecycle, not
+execution activity.
+
 ## Consequences
 
 Later slices build views from one set of compositions and tokens; a view that

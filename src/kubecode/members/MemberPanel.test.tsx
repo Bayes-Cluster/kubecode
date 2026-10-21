@@ -39,6 +39,8 @@ describe('MemberPanel', () => {
       stack: [{ kind: 'member', id: 'm1' }],
     })
     expect(screen.getAllByText('Needs setup').length).toBeGreaterThan(0)
+    expect(screen.getByText('Membership')).toBeInTheDocument()
+    expect(screen.getByText('Idle')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Message Analyst privately' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Manage in Members' })).not.toBeInTheDocument()
   })
@@ -48,6 +50,19 @@ describe('MemberPanel', () => {
     renderInspector({ services: fakeServices({ roster: [long] }), stack: [{ kind: 'member', id: 'm1' }] })
     fireEvent.click(screen.getByRole('button', { name: 'Show more' }))
     expect(screen.getByRole('button', { name: 'Show less' })).toBeInTheDocument()
+  })
+
+  it('keeps what a member executes apart from membership, and shows the manager\'s locked restrictions', () => {
+    const general = member({ id: 'g', name: 'General', handle: 'general', role: 'general', template: 'general' })
+    renderInspector({
+      services: fakeServices({ roster: [general], sessionCatalog: [{ id: 's-g', latest_run_status: 'running' }] as never }),
+      stack: [{ kind: 'member', id: 'g' }],
+    })
+    expect(screen.getByText('Execution')).toBeInTheDocument()
+    expect(screen.getByText('Working')).toBeInTheDocument()
+    expect(screen.queryByText('Membership')).not.toBeInTheDocument()
+    const restrictions = screen.getByRole('region', { name: 'Runtime restrictions' })
+    expect(restrictions).toHaveTextContent('Read-only tools and a locked mode')
   })
 
   it('says a member who left the roster is no longer available', () => {

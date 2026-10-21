@@ -53,6 +53,11 @@ export function ResourcePanel({ entry, projectId }: InspectorPanelProps<Extract<
     push(previewEntryFor(item.ref), { from: `related:${item.ref.kind}:${item.ref.id}` })
   }, [push])
 
+  // Gone or unreadable here: Resources is where to look for it, or for what replaced it.
+  const recovery = navigation.location.place.view === 'resources' ? undefined : {
+    label: t('kubecode.resources.findInResources'),
+    run: () => navigation.openPlace({ view: 'resources' }, { inspector: 'keep' }),
+  }
   const title = shown?.title ?? fallbackTitle(entry.ref, t)
   const goTo = goToTargetFor(entry.ref, provenance)
   const version = shown ? formatVersion(kind, shown.revision, t) : undefined
@@ -101,6 +106,9 @@ export function ResourcePanel({ entry, projectId }: InspectorPanelProps<Extract<
           {version && <StatusBadge tone="muted">{version}</StatusBadge>}
         </>
       )}
+      recovery={recovery && (
+        <Button size="xs" type="button" variant="outline" onClick={recovery.run}>{recovery.label}</Button>
+      )}
       status={removed ? 'unavailable' : 'ready'}
       title={title}
     >
@@ -113,6 +121,7 @@ export function ResourcePanel({ entry, projectId }: InspectorPanelProps<Extract<
         events={events}
         key={`${kind}:${id}`}
         projectId={projectId}
+        recovery={recovery}
         t={t}
         target={{ kind, id }}
         onCleared={onCleared}

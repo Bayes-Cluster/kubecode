@@ -3,7 +3,7 @@ import { useState } from 'react'
 import type { Translator } from '@/lib/i18n'
 
 import type { KubecodeApi, ProjectContextKind, ProjectContextRef, WorkspaceEvent } from '../api'
-import { RecordPreview, type DisplayedRecord } from '../resources/RecordPreview'
+import { RecordPreview, type DisplayedRecord, type RecordPreviewProps } from '../resources/RecordPreview'
 
 /** A record a task cites or owns, as the reader needs to open it. */
 export type EvidenceTarget = {
@@ -35,6 +35,8 @@ export type EvidenceViewerProps = {
    * cited stays shown here. Without it, the related record replaces it.
    */
   onFollow?: (ref: { kind: string; id: string }) => void
+  /** Somewhere to look for the cited record again when it is gone or could not be read. */
+  recovery?: RecordPreviewProps['recovery']
 }
 
 /**
@@ -44,7 +46,7 @@ export type EvidenceViewerProps = {
  * Project file is read through the same context reader, a page at a time,
  * with the fingerprint evidence is pinned with.
  */
-export function EvidenceViewer({ api, events, onDisplayed, onFailed, onFollow, projectId, t, target }: EvidenceViewerProps) {
+export function EvidenceViewer({ api, events, onDisplayed, onFailed, onFollow, projectId, recovery, t, target }: EvidenceViewerProps) {
   // Following a related record replaces what is shown; it is never reported as the cited one.
   const [followed, setFollowed] = useState<Pick<ProjectContextRef, 'kind' | 'id'> | null>(null)
   if (followed) {
@@ -66,6 +68,7 @@ export function EvidenceViewer({ api, events, onDisplayed, onFailed, onFollow, p
       cited={target.revision ?? null}
       events={events}
       projectId={projectId}
+      recovery={recovery}
       t={t}
       target={{ kind: target.kind as ProjectContextKind, id: target.id }}
       onDisplayed={onDisplayed}
