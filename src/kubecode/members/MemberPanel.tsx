@@ -1,7 +1,9 @@
 import { useState } from 'react'
+import { Lock } from 'lucide-react'
 
 import { AiAgentIcon } from '@/components/AiAgentIcon'
 import { Button } from '@/components/ui/button'
+import { StatusBadge } from '@/components/workspace/StatusBadge'
 import { Icon } from '@/kubecode/icons'
 import { WORKSPACE_COMMAND_ICONS, WORKSPACE_DESTINATION_ICONS } from '@/kubecode/icons/workspaceIcons'
 
@@ -13,7 +15,7 @@ import { useWorkspaceNavigation } from '../app/location/WorkspaceNavigation'
 import { agentName } from '../session/sessionModel'
 import { Identity } from './Identity'
 import { memberView } from './memberIdentity'
-import { TEMPLATE_LABELS } from './memberModel'
+import { ACTIVITY_LABELS, memberActivity, STATE_LABELS, TEMPLATE_LABELS } from './memberModel'
 
 /** Instructions longer than this start collapsed. */
 const LONG_INSTRUCTIONS = 280
@@ -26,7 +28,7 @@ const LONG_INSTRUCTIONS = 280
  * Close kept.
  */
 export function MemberPanel({ entry }: InspectorPanelProps<Extract<InspectorEntry, { kind: 'member' }>>) {
-  const { roster, t } = useInspectorServices()
+  const { roster, sessionCatalog, t } = useInspectorServices()
   const navigation = useWorkspaceNavigation()
   const [expanded, setExpanded] = useState(false)
   const member = roster.find((item) => item.id === entry.id)
@@ -34,6 +36,7 @@ export function MemberPanel({ entry }: InspectorPanelProps<Extract<InspectorEntr
   const instructions = member.spec.instructions
   const long = instructions.length > LONG_INSTRUCTIONS
   const inMembers = navigation.location.place.view === 'members'
+  const activity = memberActivity(member, sessionCatalog)
   return (
     <InspectorPanel
       actions={member.state === 'active' ? (
@@ -53,8 +56,27 @@ export function MemberPanel({ entry }: InspectorPanelProps<Extract<InspectorEntr
           <dd>{t(TEMPLATE_LABELS[member.template])}</dd>
           <dt>{t('kubecode.members.provider')}</dt>
           <dd>{agentName(member.spec.agent_id)}</dd>
+          {/* An active membership is not a status (ADR 0229 §1); only one that needs the researcher is. */}
+          {member.state !== 'active' && (
+            <>
+              <dt>{t('kubecode.members.profile.membership')}</dt>
+              <dd><StatusBadge tone="warn">{t(STATE_LABELS[member.state])}</StatusBadge></dd>
+            </>
+          )}
+          <dt>{t('kubecode.members.profile.execution')}</dt>
+          <dd>
+            {activity
+              ? <StatusBadge tone={activity === 'running' ? 'info' : 'warn'}>{t(ACTIVITY_LABELS[activity])}</StatusBadge>
+              : t('kubecode.members.profile.idle')}
+          </dd>
         </dl>
-        {member.role === 'general' && <p className="kubecode-research-muted">{t('kubecode.members.managerNote')}</p>}
+        {member.role === 'general' && (
+          <section aria-label={t('kubecode.members.profile.restrictions')} className="kubecode-member-restrictions">
+            <h4><Lock aria-hidden size={12} />{t('kubecode.members.profile.restrictions')}</h4>
+            <p>{t('kubecode.members.profile.restrictionsBody')}</p>
+            <p className="kubecode-research-muted">{t('kubecode.members.managerNote')}</p>
+          </section>
+        )}
         {instructions && (
           <section className="kubecode-member-instructions">
             <h4>{t('kubecode.members.instructions')}</h4>

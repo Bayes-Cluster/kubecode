@@ -27,9 +27,6 @@ import {
 import { Switch } from '@/components/ui/switch'
 
 import { MemberDefaultsPanel } from '../members/MemberDefaultsPanel'
-import { MemberRoster } from '../members/MemberRoster'
-import type { Member, MemberDefaults } from '../api'
-import type { WorkspaceConnectionState } from '../useWorkspaceEventStream'
 
 import type { KubecodeAgentPreferences } from '../agentPreferences'
 import type { KubecodeAppearance, KubecodeTheme } from '../appearancePreferences'
@@ -65,11 +62,10 @@ export type SettingsDialogProps = {
   agents: AgentDescriptor[]
   agentsRefreshing: boolean
   appearance: KubecodeAppearance
-  /** The selected Workspace, whose members the Members section shows. */
+  /** The selected Workspace, whose Members destination Agent defaults links to. */
   activeProjectId?: string | null
-  /** Opens the researcher's private conversation with a member. */
-  onOpenMemberDm?: (member: Member) => void
-  connectionState?: WorkspaceConnectionState
+  /** Leaves Settings for the selected Workspace's Members destination. */
+  onOpenWorkspaceMembers?: () => void
   editorPreferences: KubecodeEditorPreferences
   notifications: KubecodeNotifications
   notificationPermission: BrowserNotificationPermission
@@ -98,8 +94,7 @@ export function SettingsDialog({
   agentsRefreshing,
   appearance,
   activeProjectId = null,
-  onOpenMemberDm,
-  connectionState = 'live',
+  onOpenWorkspaceMembers,
   editorPreferences,
   notifications,
   notificationPermission: browserPermission,
@@ -122,7 +117,6 @@ export function SettingsDialog({
 }: SettingsDialogProps) {
   const [section, setSection] = useState<SettingsSection>(requestedSection)
   const [diagnosticsCopied, setDiagnosticsCopied] = useState(false)
-  const [memberDefaults, setMemberDefaults] = useState<MemberDefaults | null>(null)
 
   const copyDiagnostics = async () => {
     const report = {
@@ -187,14 +181,14 @@ export function SettingsDialog({
           <strong>{t('kubecode.settings')}</strong>
           {(['general', 'notifications', 'agents', 'members', 'wechat', 'terminal', 'editor'] as const).map((item) => (
             <Button key={item} variant={section === item ? 'secondary' : 'ghost'} onClick={() => setSection(item)}>
-              {item === 'members' ? t('kubecode.members.title') : t(`kubecode.settings.${item}`)}
+              {item === 'members' ? t('kubecode.settings.memberDefaults') : t(`kubecode.settings.${item}`)}
             </Button>
           ))}
         </aside>
         <section className="kubecode-settings-content">
           <h2>{section === 'general'
             ? t('kubecode.appearance')
-            : section === 'members' ? t('kubecode.members.title') : t(`kubecode.settings.${section}`)}</h2>
+            : section === 'members' ? t('kubecode.settings.memberDefaults') : t(`kubecode.settings.${section}`)}</h2>
           {section === 'general' && (
             <div className="kubecode-settings-group">
               <div className="kubecode-setting-row">
@@ -470,21 +464,19 @@ export function SettingsDialog({
           )}
           {section === 'members' && (
             <div className="kubecode-settings-group">
-              {activeProjectId ? (
-                <MemberRoster
-                  agents={agents}
-                  api={api}
-                  connectionState={connectionState}
-                  defaults={memberDefaults}
-                  events={workspaceEvents}
-                  projectId={activeProjectId}
-                  t={t}
-                  onOpenDm={onOpenMemberDm}
-                />
-              ) : (
-                <p className="kubecode-research-muted">{t('kubecode.members.noProject')}</p>
-              )}
-              <MemberDefaultsPanel agents={agents} api={api} t={t} onLoaded={setMemberDefaults} />
+              {/* App-wide defaults live here; a Workspace's own members live in its Members destination (#235). */}
+              <div className="kubecode-setting-row">
+                <div>
+                  <strong>{t('kubecode.members.current.title')}</strong>
+                  <span>{activeProjectId ? t('kubecode.settings.memberDefaultsDescription') : t('kubecode.members.noProject')}</span>
+                </div>
+                {activeProjectId && onOpenWorkspaceMembers && (
+                  <Button size="sm" variant="outline" onClick={onOpenWorkspaceMembers}>
+                    {t('kubecode.settings.openWorkspaceMembers')}
+                  </Button>
+                )}
+              </div>
+              <MemberDefaultsPanel agents={agents} api={api} t={t} />
             </div>
           )}
           {section === 'wechat' && (

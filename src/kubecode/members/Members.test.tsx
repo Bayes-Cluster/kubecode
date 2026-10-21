@@ -307,11 +307,97 @@ describe('MemberDefaultsPanel', () => {
       t={t}
     />)
     expect(await screen.findByText('kubecode.members.defaults.boundary')).toBeInTheDocument()
+    // Nothing changed yet: nothing to save, and a blank option row is no change.
+    expect(screen.getByRole('button', { name: 'kubecode.members.save' })).toBeDisabled()
     fireEvent.click(screen.getByRole('button', { name: /kubecode.members.defaults.addConfig/ }))
+    expect(screen.getByRole('button', { name: 'kubecode.members.save' })).toBeDisabled()
+    fireEvent.change(screen.getByLabelText('kubecode.members.defaults.generalInstructions'), { target: { value: 'Plan.' } })
+    expect(screen.getByText('kubecode.members.defaults.unsaved')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'kubecode.members.save' }))
     await waitFor(() => expect(saveMemberDefaults).toHaveBeenCalled())
     expect(saveMemberDefaults.mock.calls[0][1].general.config).toEqual({ model: 'fast' })
     expect(await screen.findByText('kubecode.members.defaults.saved')).toBeInTheDocument()
+  })
+})
+
+describe('MemberDefaultsPanel and the locked manager (ADR 0226)', () => {
+  it('refuses a mode option for the project manager before it reaches the server', async () => {
+    const saveMemberDefaults = vi.fn()
+    render(<MemberDefaultsPanel
+      agents={agents}
+      api={{ memberDefaults: vi.fn().mockResolvedValue(defaults), saveMemberDefaults } as unknown as KubecodeApi}
+      t={t}
+    />)
+    fireEvent.change(await screen.findByLabelText('kubecode.members.defaults.configKey 1'), { target: { value: 'mode' } })
+    expect(screen.getByRole('alert')).toHaveTextContent('kubecode.members.defaults.modeLocked:{"key":"mode"}')
+    expect(screen.getByLabelText('kubecode.members.defaults.configKey 1')).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByRole('button', { name: 'kubecode.members.save' })).toBeDisabled()
+    // Discarding returns to what was saved.
+    fireEvent.click(screen.getByRole('button', { name: 'kubecode.members.cancel' }))
+    expect(screen.getByLabelText('kubecode.members.defaults.configKey 1')).toHaveValue('model')
+    expect(saveMemberDefaults).not.toHaveBeenCalled()
+  })
+})
+
+describe('MembersView', () => {
+  it('keeps current members and the defaults for new members apart', async () => {
+    const memberDefaults = vi.fn().mockResolvedValue(defaults)
+    const onDefaultsLoaded = vi.fn()
+    render(
+      <MembersView
+        agents={agents}
+        api={api({ memberDefaults })}
+        connectionState="live"
+        defaults={null}
+        events={[]}
+        projectId="p1"
+        t={t}
+        onDefaultsLoaded={onDefaultsLoaded}
+        onOpenDm={vi.fn()}
+        onOpenMember={vi.fn()}
+      />,
+    )
+    expect(await screen.findByRole('tab', { name: 'kubecode.members.tabs.current', selected: true })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'kubecode.members.current.title' })).toBeInTheDocument()
+    expect(screen.queryByLabelText('kubecode.members.defaults.generalInstructions')).not.toBeInTheDocument()
+    // The add form is pre-filled from the defaults even before their tab is opened.
+    await waitFor(() => expect(onDefaultsLoaded).toHaveBeenCalledWith(defaults))
+    const tab = screen.getByRole('tab', { name: 'kubecode.members.tabs.defaults' })
+    fireEvent.mouseDown(tab)
+    fireEvent.click(tab)
+    expect(await screen.findByLabelText('kubecode.members.defaults.generalInstructions')).toHaveValue('Manage the Workspace.')
+    expect(screen.queryByRole('heading', { name: 'kubecode.members.current.title' })).not.toBeInTheDocument()
+  })
+
+  it('shows what a member is executing apart from its membership, and opens the profile and edit in place', async () => {
+    const onOpenMember = vi.fn()
+    const analyst = member({ id: 'm2', role: 'specialist', template: 'analysis', name: 'Analyst', handle: 'analyst', public_conversation_id: 's2' })
+    render(
+      <MemberRoster
+        agents={agents}
+        api={api({ listMembers: vi.fn().mockResolvedValue({ members: [member(), analyst], general_id: 'm-general' }) })}
+        connectionState="live"
+        defaults={defaults}
+        events={[]}
+        projectId="p1"
+        sessions={[{ id: 's2', latest_run_status: 'running' }] as never}
+        t={t}
+        onOpenMember={onOpenMember}
+      />,
+    )
+    const row = (await screen.findByText('Analyst')).closest('li') as HTMLElement
+    expect(within(row).getByText('kubecode.members.activity.running')).toBeInTheDocument()
+    expect(within(row).queryByText(/kubecode\.members\.state\./)).not.toBeInTheDocument()
+    fireEvent.click(within(row).getByRole('button', { name: 'kubecode.members.openProfile:{"name":"Analyst"}' }))
+    expect(onOpenMember).toHaveBeenCalledWith(analyst)
+    fireEvent.click(within(row).getByRole('button', { name: 'kubecode.members.edit: Analyst' }))
+    expect(within(row).getByRole('form', { name: 'kubecode.members.edit' })).toBeInTheDocument()
+    // The project manager's responsibility and restrictions are shown locked.
+    const general = screen.getByText('General').closest('li') as HTMLElement
+    fireEvent.click(within(general).getByRole('button', { name: 'kubecode.members.edit: General' }))
+    expect(within(general).getByRole('note')).toHaveTextContent('kubecode.members.managerLocked')
+    expect(within(general).queryByLabelText('kubecode.members.role')).not.toBeInTheDocument()
+    expect(within(general).getByLabelText('kubecode.members.provider')).toBeDisabled()
   })
 })
 

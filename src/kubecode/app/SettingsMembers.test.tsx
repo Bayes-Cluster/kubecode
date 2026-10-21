@@ -50,25 +50,29 @@ function dialog(overrides: Partial<SettingsDialogProps> = {}, api: Partial<Recor
   return { client, ...render(<SettingsDialog {...props} />) }
 }
 
-describe('Settings > Members', () => {
-  it('shows the selected Workspace roster beside the server defaults', async () => {
-    const { client } = dialog({ activeProjectId: 'p1' })
-    expect(await screen.findByText('General')).toBeInTheDocument()
-    expect(client.listMembers).toHaveBeenCalledWith('p1', false)
+describe('Settings > Agent defaults', () => {
+  it('holds the defaults for new members only, and leads to the selected Workspace\'s members', async () => {
+    const onOpenWorkspaceMembers = vi.fn()
+    const { client } = dialog({ activeProjectId: 'p1', onOpenWorkspaceMembers })
+    expect(screen.getByRole('heading', { name: 'kubecode.settings.memberDefaults', level: 2 })).toBeInTheDocument()
     expect(await screen.findByLabelText('kubecode.members.defaults.generalInstructions')).toHaveValue('Manage.')
-    expect(screen.getByRole('button', { name: 'kubecode.members.title' })).toBeInTheDocument()
+    // Current members are not edited here, so the two are never confused.
+    expect(client.listMembers).not.toHaveBeenCalled()
+    expect(screen.queryByText('General')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'kubecode.settings.openWorkspaceMembers' }))
+    expect(onOpenWorkspaceMembers).toHaveBeenCalled()
   })
 
   it('asks for a Workspace when none is selected and still offers the defaults', async () => {
-    const { client } = dialog({ activeProjectId: null })
+    dialog({ activeProjectId: null, onOpenWorkspaceMembers: vi.fn() })
     expect(screen.getByText('kubecode.members.noProject')).toBeInTheDocument()
-    expect(client.listMembers).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: 'kubecode.settings.openWorkspaceMembers' })).not.toBeInTheDocument()
     expect(await screen.findByLabelText('kubecode.members.defaults.generalInstructions')).toBeInTheDocument()
   })
 
   it('is reachable from the settings navigation', async () => {
     dialog({ activeProjectId: 'p1', requestedSection: 'general' })
-    fireEvent.click(screen.getByRole('button', { name: 'kubecode.members.title' }))
-    expect(await screen.findByText('General')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'kubecode.settings.memberDefaults' }))
+    expect(await screen.findByLabelText('kubecode.members.defaults.generalInstructions')).toBeInTheDocument()
   })
 })

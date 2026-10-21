@@ -313,7 +313,15 @@ hands the old Session's rounds to the new one; a member's Session cannot be
 deleted through the Session API. `RuntimeSink` gives a member's Session its configuration values and
 role brief once per specification revision. `member_api.rs` serves the roster
 and defaults; the browser surface is `src/kubecode/members/` (`MemberRoster`,
-`MemberDefaultsPanel`, mounted in Settings > Members).
+`MemberDefaultsPanel`). The Members destination keeps the current roster and the
+defaults for new members on separate tabs; Settings > Agent defaults holds only
+the defaults and links to the selected Workspace's Members. A saved default never
+rewrites an existing member. A member row and profile show role, setup state and
+actions, with execution (from the member Session's latest run) apart from
+membership; the project manager's fixed responsibility, read-only tools and
+locked mode (ADR 0226) are shown locked, and a `mode` option is refused in its
+defaults before saving. When the manager is missing or needs setup, General
+shows `ManagerSetupNotice` (retry in place, or open the manager in Members).
 
 Tasks (ADR 0221): `server/src/task_store/` adds to the research, work, and
 member stores only the records of the researcher's authorization

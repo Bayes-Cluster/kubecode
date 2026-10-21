@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { KubecodeApp } from '../App'
 
 import type { ChannelMessage, ChannelThread, KubecodeApi, Member, TaskCard } from '../api'
-import { permissionItem, reviewItem, snapshot } from '../attention/attentionFixtures'
+import { permissionItem, reviewItem, setupItem, snapshot } from '../attention/attentionFixtures'
 
 const member = (overrides: Partial<Member>): Member => ({
   id: 'm-general', project_id: 'project-1', role: 'general', template: 'general', name: 'General',
@@ -335,6 +335,39 @@ describe('Workspace navigation and routes', () => {
     expect(await screen.findByRole('heading', { name: 'Private conversation with Analyst' })).toBeInTheDocument()
     expect(window.location.hash).toBe('#/p/project-1/dm/m-analyst')
     expect(client.openMemberDm).toHaveBeenCalledWith('project-1', 'm-analyst')
+  })
+
+  it('lands a Workspace whose manager needs setup in General with a recovery that opens the manager in Members', async () => {
+    window.history.replaceState(null, '', '/#/p/project-1/general')
+    const broken = member({ state: 'setup_required', setup_code: 'provider_unavailable' })
+    const client = api({
+      listMembers: vi.fn().mockResolvedValue({ members: [broken], general_id: 'm-general' }),
+      retryMemberSetup: vi.fn().mockResolvedValue(broken),
+    })
+    render(<KubecodeApp api={client} />)
+    const notice = (await screen.findByText('The project manager is not ready')).closest('[role="alert"]') as HTMLElement
+    expect(notice).toHaveTextContent('OpenCode is not installed or available on this server.')
+    fireEvent.click(screen.getByRole('button', { name: 'Retry setup' }))
+    await waitFor(() => expect(client.retryMemberSetup).toHaveBeenCalledWith('project-1', 'm-general'))
+    fireEvent.click(screen.getByRole('button', { name: 'Open Members' }))
+    expect(await screen.findByRole('heading', { name: 'Members', level: 2 })).toBeInTheDocument()
+    expect(await screen.findByRole('complementary', { name: 'General' })).toBeInTheDocument()
+  })
+
+  it('reads the roster again when a manager\'s setup fails after it was read', async () => {
+    window.history.replaceState(null, '', '/#/p/project-1/general')
+    const listMembers = vi.fn()
+      .mockResolvedValueOnce({ members: [member({})], general_id: 'm-general' })
+      .mockResolvedValue({ members: [member({ state: 'setup_required', setup_code: 'provider_unavailable' })], general_id: 'm-general' })
+    render(<KubecodeApp api={api({
+      listMembers,
+      attention: vi.fn().mockResolvedValue(snapshot({
+        project_id: 'project-1',
+        items: [setupItem({ project_id: 'project-1', member_id: 'm-general', setup_code: 'provider_unavailable' })],
+      })),
+    })} />)
+    expect(await screen.findByText('The project manager is not ready')).toBeInTheDocument()
+    expect(listMembers.mock.calls.length).toBeGreaterThan(1)
   })
 
   it('opens General for a Workspace with no Sessions, and a link still decides first', async () => {
