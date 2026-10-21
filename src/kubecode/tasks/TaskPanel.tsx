@@ -171,21 +171,20 @@ export function TaskPanel({ entry, projectId }: InspectorPanelProps<Extract<Insp
 
   return (
     <InspectorPanel
-      actions={(
-        <>
-          <Button size="sm" variant="outline" onClick={discuss}>
-            <Icon role="command" source={WORKSPACE_DESTINATION_ICONS.general.Icon} />
-            {t('kubecode.task.discuss')}
-          </Button>
-          {items.length > 0 && <MoreActions items={items} label={t('kubecode.task.moreActions')} />}
-        </>
-      )}
+      actions={items.length > 0 ? <MoreActions items={items} label={t('kubecode.task.moreActions')} /> : undefined}
       icon={<TaskIcon />}
       meta={<TaskStatusBadges archived={archived} draft={draft} t={t} task={detail} />}
       title={title}
     >
       <div className="kubecode-task-panel">
-        <p className="kubecode-task-next" data-tone={next.tone}>{nextStepText(t, next, detail)}</p>
+        {/* What happens next, and where it is said: the header keeps only the Task's own facts (360px inspector). */}
+        <div aria-label={t('kubecode.task.nextTitle')} className="kubecode-task-next-step" data-tone={next.tone} role="group">
+          <p className="kubecode-task-next" data-tone={next.tone}>{nextStepText(t, next, detail)}</p>
+          <Button size="sm" variant="outline" onClick={discuss}>
+            <Icon role="command" source={WORKSPACE_DESTINATION_ICONS.general.Icon} />
+            {t('kubecode.task.discuss')}
+          </Button>
+        </div>
         {error && <p className="kubecode-research-error" role="alert">{error}</p>}
         {detail && !archived && <TaskWork detail={detail} projectId={projectId} onChanged={changed} />}
         {archived && (

@@ -142,6 +142,14 @@ describe('TaskResults', () => {
     )
   })
 
+  it('keeps the decision together, saying acceptance is at the versions shown', async () => {
+    mount(taskDetail())
+    const decision = await screen.findByRole('group', { name: 'Your decision' })
+    expect(within(decision).getByText('Accepting accepts the evidence at the versions shown here.')).toBeInTheDocument()
+    expect(within(decision).getByRole('button', { name: 'Accept results' })).toBeInTheDocument()
+    expect(within(decision).getByRole('button', { name: 'Send back' })).toBeInTheDocument()
+  })
+
   it('says a decision was recorded but not posted when General could not be told', async () => {
     mount(taskDetail(), {
       reviewTask: vi.fn().mockResolvedValue({ id: 'v1', accepted: false, general_message_id: null }),

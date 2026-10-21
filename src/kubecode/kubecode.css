@@ -6046,3 +6046,81 @@ button.kubecode-reference-chip-open:focus-visible,
   /* The conversation keeps room to read: the strip's body scrolls sooner beside the card. */
   .kubecode-conversation-dock .kubecode-execution-body { max-height: min(28dvh, 16rem); }
 }
+
+/* -- The research Kanban, Task review and Needs you (#234) ------------------- */
+/* The board: four lanes, the cards that wait on the researcher marked. */
+.kubecode-task-column {
+  background: var(--ws-surface-quiet);
+  border-radius: var(--radius-md);
+  padding: var(--ws-space-2);
+}
+.kubecode-task-column h3 { color: var(--text-secondary); padding: 0 var(--ws-space-1); }
+.kubecode-task-column > .kubecode-research-muted { margin: 0; padding: var(--ws-space-1); }
+.kubecode-task-card { background: var(--surface-card); box-shadow: inset 3px 0 0 transparent; }
+.kubecode-task-card[data-needs-you='true'] { box-shadow: inset 3px 0 0 var(--feedback-info-text); }
+.kubecode-task-card:hover { border-color: var(--border-default); }
+.kubecode-task-card[aria-current='true'] { border-color: var(--text-primary); }
+@container (max-width: 640px) {
+  .kubecode-task-column { background: transparent; padding: 0; }
+}
+
+/* A Task in the 360px inspector: the header keeps the Task's facts; what happens next carries Discuss. */
+.kubecode-task-next-step {
+  align-items: center;
+  background: var(--ws-surface-quiet);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ws-space-2);
+  justify-content: space-between;
+  padding: var(--ws-space-2) var(--ws-space-3);
+}
+.kubecode-task-next-step[data-tone='warn'] { box-shadow: inset 3px 0 0 var(--feedback-warning-border); }
+.kubecode-task-next-step .kubecode-task-next { flex: 1 1 14rem; min-width: 0; }
+
+/* Results: evidence as chips, the outcome compact, the decision kept together at the bottom. */
+.kubecode-task-review { background: transparent; }
+.kubecode-task-evidence-row { align-items: flex-start; }
+.kubecode-task-outcome { gap: var(--ws-space-1); }
+.kubecode-task-outcome-choice small { margin-top: -6px; }
+.kubecode-task-decisions {
+  align-items: flex-start;
+  background: var(--surface-app);
+  border-top: 1px solid var(--border-subtle);
+  bottom: 0;
+  margin: 0 calc(-1 * var(--ws-space-3));
+  padding: var(--ws-space-2) var(--ws-space-3);
+  position: sticky;
+  z-index: 1;
+}
+.kubecode-task-decisions-note { color: var(--text-secondary); flex-basis: 100%; font: var(--ws-font-meta); margin: 0; }
+
+/* Activity: the lifecycle as one timeline, General's messages as left-aligned lines. */
+.kubecode-task-timeline { border-left: 1px solid var(--border-default); gap: var(--ws-space-3); margin-left: var(--ws-space-1); padding-left: var(--ws-space-3); }
+.kubecode-task-timeline > li { position: relative; }
+.kubecode-task-timeline > li::before {
+  background: var(--surface-app);
+  border: 2px solid var(--border-default);
+  border-radius: 50%;
+  content: '';
+  height: 9px;
+  left: calc(-1 * var(--ws-space-3) - 5px);
+  position: absolute;
+  top: 6px;
+  width: 9px;
+}
+.kubecode-task-timeline > li:first-child::before { border-color: var(--text-primary); }
+.kubecode-task-recent .kubecode-task-recent-message { display: block; justify-content: flex-start; text-align: start; }
+
+/* Needs you: each decision a row that reads as one thing to open. */
+.kubecode-needs-you-view .kubecode-needs-you-list { max-width: var(--ws-reading-width); }
+.kubecode-needs-you-view .kubecode-research-nav-list { gap: var(--ws-space-1); }
+.kubecode-needs-you-view .kubecode-needs-you-row {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--ws-space-2) var(--ws-space-3);
+}
+.kubecode-needs-you-view .kubecode-needs-you-row:hover { border-color: var(--border-default); }
+.kubecode-task-decisions { flex-wrap: wrap; row-gap: var(--ws-space-1); }
+.kubecode-task-decisions > .kubecode-decision { flex: 1 1 8rem; min-width: 0; }
+.kubecode-task-decisions > .kubecode-decision > button { width: 100%; }

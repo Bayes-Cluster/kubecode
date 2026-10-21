@@ -2,7 +2,7 @@ import { MemberAvatar } from '@/components/workspace/MemberIdentity'
 import type { Translator } from '@/lib/i18n'
 
 import type { TaskCard, TaskEventNote } from '../api'
-import { progressOf } from './taskLifecycle'
+import { progressOf, requiredActionOf } from './taskLifecycle'
 import { taskTime } from './taskLabels'
 import { TaskStatusBadges } from './TaskStatusBadges'
 
@@ -42,6 +42,7 @@ export function TaskCardView({ card, locale, onOpen, selected, t }: {
       aria-current={selected ? 'true' : undefined}
       className="kubecode-task-card"
       data-focus-key={`card:${card.id}`}
+      data-needs-you={requiredActionOf(card) !== null || undefined}
       data-scroll-anchor={`card:${card.id}`}
       data-testid={`task-card-${card.id}`}
       type="button"
