@@ -81,3 +81,4 @@ ADRs are immutable after acceptance; a later decision supersedes an earlier one.
 | [0234](0234-needs-you-destination-and-one-shell-frame.md) | Needs you as a Workspace destination, one destination header, and a 360-pixel inspector |
 | [0236](0236-one-presentation-of-cited-materials.md) | One presentation of cited materials: Sources in messages, readable evidence, and recovery from Resources |
 | [0237](0237-manager-permission-authority.md) | The manager runs with full native permissions and reviews specialists' permission requests |
+| [0238](0238-one-stop-per-task-and-a-centered-conversation-dock.md) | One Stop per Task, a folded running list, and one centered conversation column |

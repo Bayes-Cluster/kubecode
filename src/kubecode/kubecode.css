@@ -3880,6 +3880,9 @@
   gap: 2px;
   min-height: 120px;
   overflow-y: auto;
+  /* The scrollbar stays at the pane's edge; what it scrolls is one centered
+     column, as wide as the composer below it. */
+  padding-inline: max(var(--ws-space-3), calc((100% - var(--ws-composer-width)) / 2 + var(--ws-space-3)));
 }
 
 .kubecode-channel-body {
@@ -5301,7 +5304,6 @@ button.kubecode-reference-chip-open:focus-visible,
   padding: var(--ws-space-2) var(--ws-space-3);
 }
 .kubecode-execution-body { display: flex; flex-direction: column; gap: var(--ws-space-2); min-height: 0; }
-.kubecode-execution-summary { color: var(--text-secondary); display: none; font: var(--ws-font-meta); margin: 0; }
 .kubecode-execution-rows { display: flex; flex-direction: column; gap: var(--ws-space-1); list-style: none; margin: 0; padding: 0; }
 .kubecode-execution-row {
   align-items: center;
@@ -5312,7 +5314,20 @@ button.kubecode-reference-chip-open:focus-visible,
 }
 .kubecode-execution-state { color: var(--text-secondary); flex: 1 1 12rem; font: var(--ws-font-meta); min-width: 0; overflow-wrap: anywhere; }
 .kubecode-execution-row[data-state='failed'] .kubecode-execution-state { color: var(--ws-danger-text); }
-.kubecode-execution-more summary { color: var(--text-secondary); cursor: pointer; font: var(--ws-font-meta); min-height: var(--ws-touch-target); }
+.kubecode-execution-runs { display: flex; flex: 1 1 14rem; flex-direction: column; min-width: 0; }
+.kubecode-execution-who { align-items: center; display: flex; flex-wrap: wrap; gap: var(--ws-space-2); min-height: var(--ws-touch-target); min-width: 0; }
+.kubecode-execution-pill { align-self: flex-start; border-radius: 999px; gap: var(--ws-space-1); }
+.kubecode-execution-popover {
+  background: var(--surface-popover);
+  border: 0.5px solid var(--ws-hairline-strong);
+  border-radius: var(--ws-radius-md);
+  box-shadow: var(--ws-elevation-soft);
+  max-height: min(50dvh, 24rem);
+  overflow-y: auto;
+  padding: var(--ws-space-1) var(--ws-space-2);
+  width: min(28rem, calc(100vw - 32px));
+  z-index: 50;
+}
 .kubecode-execution-strip .kubecode-permission-dock,
 .kubecode-execution-strip .kubecode-elicitation-dock { margin: 0; }
 .kubecode-permission-actions .kubecode-decision,
@@ -5347,12 +5362,10 @@ button.kubecode-reference-chip-open:focus-visible,
 .kubecode-task-waiting li,
 .kubecode-task-delivery-issues li { align-items: center; display: flex; flex-wrap: wrap; gap: var(--ws-space-2); }
 .kubecode-task-work .kubecode-execution-strip { border-top: 0; padding: 0; }
-/* On a phone the strip never pushes the composer off screen: its body is
-   capped and scrolls under a one-line summary. */
+/* On a phone the strip never pushes the composer off screen: what waits on
+   the researcher is capped and scrolls. */
 @media (max-width: 720px) {
-  .kubecode-execution-summary { display: block; }
   .kubecode-execution-body { max-height: min(40dvh, 22rem); overflow-y: auto; overscroll-behavior: contain; }
-  .kubecode-task-work .kubecode-execution-summary { display: none; }
   .kubecode-task-work .kubecode-execution-body { max-height: none; overflow: visible; }
 }
 @media (pointer: coarse) {
@@ -6000,7 +6013,7 @@ button.kubecode-reference-chip-open:focus-visible,
   margin-inline-start: calc(var(--ws-avatar-sm) + var(--ws-space-2));
   padding-inline-start: var(--ws-space-3);
 }
-.kubecode-channel-messages > .kubecode-ai-message { max-width: var(--ws-reading-width); padding-inline: var(--ws-space-2); }
+.kubecode-channel-messages > .kubecode-ai-message { padding-inline: var(--ws-space-2); }
 .kubecode-dm-waiting { align-items: center; color: var(--text-secondary); display: flex; font: var(--ws-font-meta); gap: var(--ws-space-2); margin: 0; }
 .kubecode-ai-response.kubecode-message-body .ai-markdown > :first-child { margin-top: 0; }
 .kubecode-ai-response.kubecode-message-body .ai-markdown > :last-child { margin-bottom: 0; }
@@ -6010,8 +6023,10 @@ button.kubecode-reference-chip-open:focus-visible,
   flex: 0 0 auto;
   flex-direction: column;
   gap: var(--ws-space-2);
-  /* Aligned with the messages it follows, which read from the start edge. */
+  /* One centered column with the messages above it (prototype conversation content). */
+  margin-inline: auto;
   max-width: var(--ws-composer-width);
+  padding-inline: var(--ws-space-3);
   position: relative;
   width: 100%;
   z-index: 1;
@@ -6020,10 +6035,14 @@ button.kubecode-reference-chip-open:focus-visible,
 .kubecode-ai-response.kubecode-message-body table { display: block; max-width: 100%; overflow-wrap: normal; overflow-x: auto; }
 .kubecode-ai-response.kubecode-message-body ul { list-style: disc; }
 .kubecode-ai-response.kubecode-message-body ol { list-style: decimal; }
-.kubecode-conversation-dock .kubecode-execution-strip {
+.kubecode-channel-messages > .kubecode-research-muted:only-child { margin-block: auto; text-align: center; }
+/* The dock's work sits on the composer's top edge: one compact row or a count. */
+.kubecode-conversation-dock .kubecode-execution-strip { background: transparent; border: 0; padding: 0; }
+.kubecode-conversation-dock .kubecode-execution-rows > .kubecode-execution-row {
   background: color-mix(in srgb, var(--text-primary) 4%, var(--surface-app));
   border: 0.5px solid var(--ws-hairline-strong);
   border-radius: var(--ws-radius-md);
+  padding: 0 var(--ws-space-1) 0 var(--ws-space-3);
 }
 .kubecode-conversation-dock .kubecode-outbox { padding: 0; }
 .kubecode-conversation-dock .kubecode-outbox-row {

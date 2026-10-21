@@ -222,8 +222,10 @@ describe('DmPane while the member is at work (ADR 0232)', () => {
     const api = fakeApi({ cancelRun: vi.fn().mockResolvedValue(undefined) })
     render(context(<AttentionContext.Provider value={store as never}>{pane(api)}</AttentionContext.Provider>))
     await screen.findByText('is 0.91 enough?')
-    const stops = screen.getAllByRole('button', { name: "Stop Analyst's reply" })
-    expect(stops.length).toBeGreaterThan(0)
+    // One Stop per reply: the strip's, never a second beside Send.
+    const stops = screen.getAllByRole('button', { name: /^Stop/ })
+    expect(stops).toHaveLength(1)
+    expect(stops[0]).toHaveAccessibleName("Stop Analyst's reply")
     fireEvent.click(stops[0])
     await waitFor(() => expect(api.cancelRun).toHaveBeenCalledWith('run1'))
   })

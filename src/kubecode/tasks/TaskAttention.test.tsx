@@ -90,8 +90,8 @@ describe('TaskPanel and what waits on the researcher (ADR 0232)', () => {
     expect(screen.queryByTestId('permission-queue-card')).not.toBeInTheDocument()
     fireEvent.click(within(line.closest('.kubecode-task-waiting') as HTMLElement).getByRole('button', { name: "Show Analyst's request" }))
     expect(navigation.openPlace).toHaveBeenCalledWith({ view: 'general' }, { inspect: { kind: 'task', id: 'r1' }, focus: 'permission:q1' })
-    // Its work can be stopped from here, by name.
-    expect(panel().getByRole('button', { name: "Stop Analyst's current turn" })).toBeInTheDocument()
+    // Its work can be stopped from here: Stop names the whole Task.
+    expect(panel().getByRole('button', { name: 'Stop Pruning heads' })).toBeInTheDocument()
   })
 
   it('opens a Session\'s request in that Session, focused on the prompt', async () => {

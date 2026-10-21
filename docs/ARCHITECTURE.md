@@ -451,16 +451,19 @@ asks, never by what. `useNeedsYouAnnouncement` feeds the shell's always-mounted
 status region with what newly waits and what was resolved. `PermissionPrompt` and
 `ElicitationPrompt` are shared by `SessionComposer` and
 `attention/ExecutionStrip.tsx`, which lists `executions` for a scope (General's
-members, one DM, or a Task without prompts) with a `StopButton` named for the
-turn it ends (`DELETE /runs/{id}`, busy until the run leaves the snapshot), the
-scope's member prompts (busy while their key is resolving), and failed turns
-with "Open {name} in Members" until dismissed (place memory); under 720 px it
-shows a one-line summary and caps and scrolls its body.
-General and the DM composer offer that Stop only when exactly one turn runs.
+members, one DM, or a Task without prompts) grouped by Task (ADR 0238): one
+`StopButton` per Task ("Stop {task}": pause the Task's round policy, then
+`DELETE /runs/{id}` for each of its turns) or per reply tied to no Task, busy
+until its turns leave the snapshot and announced when done or failed. One entry
+is a compact row; more fold into a "{count} running" Popover. The scope's member
+prompts (busy while their key is resolving) are never folded and are capped and
+scroll under 720 px, and failed turns show "Open {name} in Members" until
+dismissed (place memory). The composers of General and the DM offer no Stop.
 General and the DM render messages with the AI Elements `Message` composition
 and dock the execution strip, the outbox rows and the Prompt Input card (reply
 and references, the shared `Composer`, recipients or the DM's privacy line)
-at the foot of the view (#232, ADR 0233 §7); `MessageList` keeps its own
+at the foot of the view (#232, ADR 0233 §7), the list and the dock in one
+column centered in the pane (ADR 0238); `MessageList` keeps its own
 scroller for older messages and the reading position.
 `attention/useMessageDeliveries.ts` reads `GET …/deliveries` for the
 researcher's top-level messages on screen, again on `orchestration_updated`

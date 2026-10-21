@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useRef, type ReactNode } from 'react'
+import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   Link,
   Plus,
@@ -80,7 +80,8 @@ interface AiPanelComposerProps {
   onChange: (value: string) => void
   onActiveSend?: (text: string, references: NoteReference[]) => void
   onSend: (text: string, references: NoteReference[]) => void
-  onStop: () => void
+  /** Ends the run; a returned promise keeps Stop busy until it settles. */
+  onStop: () => void | Promise<unknown>
   onUnsupportedAiPaste?: (message: string) => void
 }
 
@@ -174,14 +175,34 @@ function ComposerSendButton({
   )
 }
 
+/** Busy while its stop is in flight; a stop that failed is announced and can be tried again. */
 function ComposerStopButton({
+  failedLabel,
   label,
   onStop,
 }: {
+  failedLabel: string
   label: string
-  onStop: () => void
+  onStop: () => void | Promise<unknown>
 }) {
-  return <StopButton label={label} testId="agent-stop" onStop={onStop} />
+  const [busy, setBusy] = useState(false)
+  const [announcement, setAnnouncement] = useState('')
+  const stop = () => {
+    if (busy) return
+    setBusy(true)
+    setAnnouncement('')
+    new Promise((resolve) => resolve(onStop()))
+      .then(() => setBusy(false), () => {
+        setBusy(false)
+        setAnnouncement(failedLabel)
+      })
+  }
+  return (
+    <>
+      <StopButton busy={busy} label={label} testId="agent-stop" onStop={stop} />
+      <span className="sr-only" role="status">{announcement}</span>
+    </>
+  )
 }
 
 function permissionModeTooltip(
@@ -582,7 +603,11 @@ export function AiPanelComposer({
     ? (
         <div className="flex shrink-0 items-center gap-1">
           {/* Stopping the run is its own control, apart from sending (ADR 0227). */}
-          <ComposerStopButton label={t('kubecode.composer.stopTarget', { target: agentLabel })} onStop={onStop} />
+          <ComposerStopButton
+            failedLabel={t('kubecode.composer.stopFailed', { target: agentLabel })}
+            label={t('kubecode.composer.stopTarget', { target: agentLabel })}
+            onStop={onStop}
+          />
           {onActiveSend && (
             <ComposerSendButton
               canSend={canActiveSend}

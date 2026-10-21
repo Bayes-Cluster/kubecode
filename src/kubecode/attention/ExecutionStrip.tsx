@@ -1,12 +1,15 @@
+import { CaretDown } from '@phosphor-icons/react'
 import { useContext, useEffect, useRef, useState } from 'react'
 
 import { Shimmer } from '@/components/ai-elements'
 import { Button } from '@/components/ui/button'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { ICON_SIZES } from '@/kubecode/icons'
 import { MemberIdentity } from '@/components/workspace/MemberIdentity'
 import { StopButton } from '@/components/workspace/SendButton'
 import type { Translator } from '@/lib/i18n'
 
-import type { AgentEvent, AttentionItem, ExecutionFailure, ExecutionView, KubecodeApi } from '../api'
+import { ApiError, type AgentEvent, type AttentionItem, type AttentionTaskRef, type ExecutionFailure, type ExecutionView, type KubecodeApi } from '../api'
 import { placeKey, usePlaceState } from '../app/location/placeMemory'
 import { WorkspaceNavigationContext } from '../app/location/WorkspaceNavigation'
 import { elicitationFromEvent, type ElicitationAnswer } from '../session/conversationReducer'
@@ -16,7 +19,6 @@ import { useAttention, type ExecutionScope } from './attentionContext'
 import { ElicitationPrompt } from './ElicitationPrompt'
 import { PermissionPrompt } from './PermissionPrompt'
 
-const QUIET_ROWS = 2
 const STOP_FALLBACK_MS = 15_000
 
 export type ExecutionStripProps = {
@@ -102,16 +104,25 @@ function stateText(run: ExecutionView, t: Translator): string {
     : t('kubecode.execution.working', { name })
 }
 
-function RunRow({ dm, onStop, run, stopping, t }: {
-  dm: boolean
-  onStop: () => void
-  run: ExecutionView
-  stopping: boolean
-  t: Translator
-}) {
+/** One Stop per Task: every turn on it, or one reply that belongs to no Task. */
+type Entry = { key: string; runs: ExecutionView[]; task: AttentionTaskRef | null }
+
+function entriesOf(runs: ExecutionView[]): Entry[] {
+  const entries = new Map<string, Entry>()
+  for (const run of runs) {
+    const task = run.tasks[0] ?? null
+    const key = task ? `task:${task.id}` : `run:${run.run_id}`
+    const entry = entries.get(key)
+    if (entry) entry.runs.push(run)
+    else entries.set(key, { key, runs: [run], task })
+  }
+  return [...entries.values()]
+}
+
+function RunState({ run, t }: { run: ExecutionView; t: Translator }) {
   const name = nameOf(run, t)
   return (
-    <li className="kubecode-execution-row" data-run-id={run.run_id}>
+    <span className="kubecode-execution-who">
       {run.member
         ? <MemberIdentity handle={run.member.handle} name={run.member.name} role={run.member.role === 'general' ? 'manager' : 'specialist'} size="sm" />
         : <strong>{name}</strong>}
@@ -121,12 +132,32 @@ function RunRow({ dm, onStop, run, stopping, t }: {
           ? stateText(run, t)
           : <Shimmer>{stateText(run, t)}</Shimmer>}
         {run.queued > 0 && <> · {t('kubecode.execution.queued', { count: run.queued, plural: run.queued === 1 ? '' : 's' })}</>}
-        {stopping && <> · {t('kubecode.execution.stopping')}</>}
+      </span>
+    </span>
+  )
+}
+
+function EntryRow({ entry, onStop, stopping, t }: {
+  entry: Entry
+  onStop: () => void
+  stopping: boolean
+  t: Translator
+}) {
+  const name = nameOf(entry.runs[0], t)
+  return (
+    <li className="kubecode-execution-row" data-entry={entry.key}>
+      <span className="kubecode-execution-runs">
+        {entry.runs.map((run) => <RunState key={run.run_id} run={run} t={t} />)}
+        {stopping && <span className="kubecode-execution-state">{t('kubecode.execution.stopping')}</span>}
       </span>
       <StopButton
         busy={stopping}
-        description={t('kubecode.execution.stopHint', { name })}
-        label={t(dm ? 'kubecode.execution.stopReply' : 'kubecode.execution.stopTurn', { name })}
+        description={entry.task
+          ? t('kubecode.execution.stopTaskHint', { task: entry.task.title })
+          : t('kubecode.execution.stopReplyHint', { name })}
+        label={entry.task
+          ? t('kubecode.execution.stopTask', { task: entry.task.title })
+          : t('kubecode.execution.stopReply', { name })}
         shortLabel={t('kubecode.execution.stopShort')}
         onStop={onStop}
       />
@@ -156,14 +187,16 @@ function FailureRow({ failure, onDismiss, t }: { failure: ExecutionFailure; onDi
 }
 
 /**
- * Who is working now (ADR 0232): one row per member turn, with what it works
- * on, what is queued, and a Stop that names whose turn it ends; the
- * permission or input a member waits on, answered in place; and a member's
- * last failed turn, once, until dismissed. Nothing is posted to General.
+ * Who is working now (ADR 0238, superseding ADR 0232 §6's Stop): one
+ * Stop per Task — it pauses new work on the Task and ends its turns — or per
+ * reply that belongs to no Task; more than one folds into a count that opens
+ * the list. The permission or input a member waits on stays in view, answered
+ * in place, and a member's last failed turn shows once, until dismissed.
  */
 export function ExecutionStrip({ api, prompts = true, scope, t }: ExecutionStripProps) {
   const attention = useAttention()
   const runs = attention?.executions(scope) ?? []
+  const entries = entriesOf(runs)
   const items = prompts ? attention?.snapshot?.items.filter((item) => inScope(scope, item)) ?? [] : []
   const projectId = attention?.projectId ?? null
   const [dismissed, setDismissed] = usePlaceState<string[]>(
@@ -171,85 +204,117 @@ export function ExecutionStrip({ api, prompts = true, scope, t }: ExecutionStrip
     [],
   )
   const failures = (attention?.failures(scope) ?? []).filter((entry) => !dismissed.includes(entry.run_id))
-  const dm = 'binding' in scope && scope.binding === 'dm'
 
-  // A stop is busy until its run leaves the snapshot; then it is announced.
-  const [stopping, setStopping] = useState<ReadonlyMap<string, string>>(new Map())
+  // A stop is busy until its entry leaves the snapshot; then it is announced.
+  const [stopping, setStopping] = useState<ReadonlyMap<string, Entry>>(new Map())
   const [announcement, setAnnouncement] = useState('')
-  const running = new Set(runs.map((run) => run.run_id))
-  const stopped = [...stopping].filter(([runId]) => !running.has(runId))
+  const live = new Set(entries.map((entry) => entry.key))
+  const stopped = [...stopping.values()].filter((entry) => !live.has(entry.key))
   if (stopped.length > 0) {
     const next = new Map(stopping)
-    stopped.forEach(([runId]) => next.delete(runId))
+    stopped.forEach((entry) => next.delete(entry.key))
     setStopping(next)
-    setAnnouncement(t('kubecode.execution.stopped', { name: stopped[0][1] }))
+    const entry = stopped[0]
+    setAnnouncement(entry.task
+      ? t('kubecode.execution.stoppedTask', { task: entry.task.title })
+      : t('kubecode.execution.stopped', { name: nameOf(entry.runs[0], t) }))
   }
   const timers = useRef(new Set<number>())
   useEffect(() => {
     const pending = timers.current
     return () => pending.forEach((timer) => window.clearTimeout(timer))
   }, [])
-  const stop = (run: ExecutionView) => {
-    if (stopping.has(run.run_id)) return
-    const name = nameOf(run, t)
-    setStopping((current) => new Map(current).set(run.run_id, name))
-    api.cancelRun(run.run_id).then(() => {
+  const pauseTask = async (taskId: string) => {
+    if (!projectId) return
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const execution = (await api.taskDetail(projectId, taskId)).execution
+      if (!execution || execution.paused) return
+      try {
+        await api.setRoundExecutionPolicy(projectId, execution.round_id, execution.policy_revision, { paused: true })
+        return
+      } catch (cause) {
+        // Changed elsewhere meanwhile: read it again and pause what is there now.
+        if (!(cause instanceof ApiError && cause.code === 'policy_revision_conflict') || attempt > 0) throw cause
+      }
+    }
+  }
+  const stop = async (entry: Entry) => {
+    if (stopping.has(entry.key)) return
+    setAnnouncement('')
+    setStopping((current) => new Map(current).set(entry.key, entry))
+    try {
+      // Pause first, so nothing new is handed out while the turns end.
+      const tasks = new Set(entry.runs.flatMap((run) => run.tasks.map((task) => task.id)))
+      for (const taskId of tasks) await pauseTask(taskId)
+      await Promise.all(entry.runs.map((run) => api.cancelRun(run.run_id)))
       attention?.reload()
       const timer = window.setTimeout(() => {
         timers.current.delete(timer)
         attention?.reload()
       }, STOP_FALLBACK_MS)
       timers.current.add(timer)
-    }, () => {
+    } catch {
       setStopping((current) => {
         const next = new Map(current)
-        next.delete(run.run_id)
+        next.delete(entry.key)
         return next
       })
-      setAnnouncement(t('kubecode.execution.stopFailed', { name }))
-    })
+      setAnnouncement(entry.task
+        ? t('kubecode.execution.stopTaskFailed', { task: entry.task.title })
+        : t('kubecode.execution.stopFailed', { name: nameOf(entry.runs[0], t) }))
+      attention?.reload()
+    }
   }
 
-  if (runs.length === 0 && items.length === 0 && failures.length === 0 && !announcement) return null
-  const waiting = runs.filter((run) => run.status === 'waiting_permission' || run.waiting_keys.length > 0)
-  const quiet = runs.filter((run) => !waiting.includes(run))
-  const row = (run: ExecutionView) => (
-    <RunRow dm={dm} key={run.run_id} run={run} stopping={stopping.has(run.run_id)} t={t} onStop={() => stop(run)} />
+  if (entries.length === 0 && items.length === 0 && failures.length === 0 && !announcement) return null
+  const row = (entry: Entry) => (
+    <EntryRow entry={entry} key={entry.key} stopping={stopping.has(entry.key)} t={t} onStop={() => void stop(entry)} />
   )
-
-  // On a phone the body is capped and scrolls, under a one-line summary, so
-  // prompts never push the composer off screen.
-  const summary = runs.length + items.length > 1
-    ? t('kubecode.execution.summary', { working: runs.length, waiting: items.length })
-    : null
+  const busy = stopping.size > 0
   return (
     <section aria-label={t('kubecode.execution.workingNow')} className="kubecode-execution-strip">
-      {summary && <p aria-hidden className="kubecode-execution-summary">{summary}</p>}
-      <div aria-label={t('kubecode.execution.workingNow')} className="kubecode-execution-body" role="group">
-        {(waiting.length > 0 || (quiet.length > 0 && quiet.length <= QUIET_ROWS) || failures.length > 0) && (
-          <ul className="kubecode-execution-rows">
-            {waiting.map(row)}
-            {quiet.length <= QUIET_ROWS && quiet.map(row)}
-            {failures.map((entry) => (
-              <FailureRow
-                failure={entry}
-                key={entry.run_id}
-                t={t}
-                onDismiss={() => setDismissed((current) => [...current, entry.run_id])}
-              />
-            ))}
-          </ul>
-        )}
-        {quiet.length > QUIET_ROWS && (
-          <details className="kubecode-execution-more">
-            <summary>{t('kubecode.execution.workingCount', { count: quiet.length })}</summary>
-            <ul className="kubecode-execution-rows">{quiet.map(row)}</ul>
-          </details>
-        )}
-        {items.map((item) => (item.kind === 'permission'
-          ? <PermissionRow api={api} item={item} key={item.key} t={t} />
-          : item.kind === 'input' ? <InputRow api={api} item={item} key={item.key} t={t} /> : null))}
-      </div>
+      {/* Decisions are never folded away; on a phone their body is capped and scrolls. */}
+      {items.length > 0 && (
+        <div aria-label={t('kubecode.execution.waitingForYou')} className="kubecode-execution-body" role="group">
+          {items.map((item) => (item.kind === 'permission'
+            ? <PermissionRow api={api} item={item} key={item.key} t={t} />
+            : item.kind === 'input' ? <InputRow api={api} item={item} key={item.key} t={t} /> : null))}
+        </div>
+      )}
+      {entries.length === 1 && <ul className="kubecode-execution-rows">{entries.map(row)}</ul>}
+      {entries.length > 1 && (
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button aria-busy={busy || undefined} className="kubecode-execution-pill" size="sm" type="button" variant="outline">
+              <Shimmer>{t('kubecode.execution.runningCount', { count: entries.length })}</Shimmer>
+              <CaretDown aria-hidden size={ICON_SIZES.status} />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="start" aria-label={t('kubecode.execution.workingNow')} className="kubecode-execution-popover"
+            side="top"
+            tabIndex={-1}
+            // Focus lands on the list, not its first Stop: no tooltip opens and Escape closes it.
+            onOpenAutoFocus={(event) => {
+              event.preventDefault()
+              ;(event.currentTarget as HTMLElement).focus()
+            }}
+          >
+            <ul className="kubecode-execution-rows">{entries.map(row)}</ul>
+          </PopoverContent>
+        </Popover>
+      )}
+      {failures.length > 0 && (
+        <ul className="kubecode-execution-rows">
+          {failures.map((entry) => (
+            <FailureRow
+              failure={entry}
+              key={entry.run_id}
+              t={t}
+              onDismiss={() => setDismissed((current) => [...current, entry.run_id])}
+            />
+          ))}
+        </ul>
+      )}
       <span className="sr-only" role="status">{announcement}</span>
     </section>
   )

@@ -9,7 +9,7 @@ import { seedTaskInReview } from './taskFixtures'
  * one pending decision is one Needs-you row, however many records refer to
  * it; the row opens the context that holds it, and answering it there clears
  * Needs you, the bell and the prompt once the server acknowledges it. Sending
- * stays possible while a member waits; Stop names the turn it ends; delivery
+ * stays possible while a member waits; each Task or reply has one Stop; delivery
  * lines say only what the server proved; a failed send keeps its words and is
  * sent once. The member asking permission is the deterministic fixture
  * provider (`[smoke:permission]`); no real agent runs.
@@ -150,16 +150,17 @@ test.describe('on a desktop', () => {
       await expect(prompt).toHaveCount(0)
       await expect(page.getByRole('button', { name: 'Needs you: 1' })).toBeVisible()
 
-      // 4. Stop names the one turn it ends; stopping it ends its request too.
+      // 4. One Stop per reply, in the strip, never a second beside Send; stopping it ends its request too.
       await send(page, '@analyst [smoke:permission] once more')
       await escalateThroughManager(request, api, projectId, 1)
       await expect(needsYouPlace(page).locator('.kubecode-research-badge')).toHaveText('1', { timeout: 30_000 })
-      const stop = strip(page).getByRole('button', { name: "Stop Analyst's current turn" })
+      const stop = strip(page).getByRole('button', { name: "Stop Analyst's reply" })
       await expect(stop).toBeVisible()
+      await expect(page.getByRole('button', { name: /^Stop / })).toHaveCount(1)
       await stop.click()
       await nothingWaits(page)
       await expect(strip(page).getByRole('status')).toHaveText("Stopped Analyst's turn", { timeout: 20_000 })
-      await expect(page.getByRole('button', { name: "Stop Analyst's current turn" })).toHaveCount(0)
+      await expect(page.getByRole('button', { name: "Stop Analyst's reply" })).toHaveCount(0)
 
       // 5. The server saves a send but its answer is lost: the send stays as its own
       // row, the composer is free, and Send again replays the same message, never a second one.
@@ -251,8 +252,15 @@ test.describe('on a phone', () => {
       await expect(prompt).toBeFocused()
       await expect(page.getByRole('button', { name: 'Toggle navigation' })).toHaveAttribute('aria-pressed', 'false')
 
-      // The strip is capped and sums itself up; the composer is still on screen and usable.
-      await expect(strip(page).locator('.kubecode-execution-summary')).toHaveText('Working now: 2 · Waiting for you: 2')
+      // Both turns fold into one count that opens their list, each with its Stop; the
+      // prompts stay in view, capped; the composer is still on screen and usable.
+      const running = strip(page).getByRole('button', { name: '2 running' })
+      await expect(running).toBeVisible()
+      await running.click()
+      const list = page.getByRole('dialog', { name: 'Working now' })
+      await expect(list.getByRole('button', { name: /^Stop .*'s reply$/ })).toHaveCount(2)
+      await page.keyboard.press('Escape')
+      await expect(list).toHaveCount(0)
       const stripBox = await strip(page).boundingBox()
       expect(stripBox!.height).toBeLessThanOrEqual(844 * 0.6)
       await expect(composer(page)).toBeInViewport()
