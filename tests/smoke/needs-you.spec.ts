@@ -265,7 +265,7 @@ test.describe('on a phone', () => {
       // On a 4K-wide pane (ADR 0240) the strip, its list and the card share one width, centred.
       await page.setViewportSize({ width: 2560, height: 1440 })
       {
-        const card = (await page.locator('.kubecode-conversation-dock .kubecode-ai-prompt-input').boundingBox())!
+        const card = (await page.locator('.kubecode-conversation-dock .kubecode-prompt-input').boundingBox())!
         const stripWide = (await strip(page).boundingBox())!
         const pane = (await page.locator('.kubecode-channel-main').boundingBox())!
         expect(Math.abs(card.width - stripWide.width)).toBeLessThanOrEqual(2)

@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react'
 
-import { Source, Sources, SourcesContent, SourcesTrigger } from '@/components/ai-elements'
+import { Sources, SourcesContent, SourcesTrigger } from '@/components/ai-elements/sources'
+import { Icon } from '@/kubecode/icons'
+import { WORKSPACE_COMMAND_ICONS } from '@/kubecode/icons/workspaceIcons'
 import type { Translator } from '@/lib/i18n'
 
 import type { ProjectContextRef } from '../api'
@@ -30,12 +32,17 @@ export function ReferenceSources<R extends CitedRef>({ leading, onOpen, referenc
   const count = t('kubecode.reference.sources', { count: references.length })
   const label = attention > 0 ? `${count} · ${t('kubecode.reference.sourcesAttention', { count: attention })}` : count
   return (
+    // The official Sources (ADR 0242); each source is a reference chip that opens in the Workspace, not a link.
     <Sources className="kubecode-reference-sources" defaultOpen>
-      <SourcesTrigger label={label} />
-      <SourcesContent listLabel={t('kubecode.channel.references')}>
-        {leading && <Source>{leading}</Source>}
+      <SourcesTrigger className="kubecode-reference-sources-trigger" count={references.length}>
+        <span>{label}</span>
+        <Icon className="kubecode-reference-sources-chevron" role="control" source={WORKSPACE_COMMAND_ICONS.expand.Icon} />
+      </SourcesTrigger>
+      <SourcesContent>
+        <ul aria-label={t('kubecode.channel.references')} className="kubecode-reference-sources-list">
+        {leading && <li>{leading}</li>}
         {references.map((reference) => (
-          <Source key={`${reference.ref.kind}:${reference.ref.id}`}>
+          <li key={`${reference.ref.kind}:${reference.ref.id}`}>
             <ResourceReferenceChip
               basis="cited"
               knownTitle={reference.title}
@@ -43,8 +50,9 @@ export function ReferenceSources<R extends CitedRef>({ leading, onOpen, referenc
               t={t}
               onOpen={() => onOpen(reference.ref)}
             />
-          </Source>
+          </li>
         ))}
+        </ul>
       </SourcesContent>
     </Sources>
   )

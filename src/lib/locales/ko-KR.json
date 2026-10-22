@@ -2898,5 +2898,16 @@
   "kubecode.proto.review.olderVersion": "이전 버전",
   "kubecode.resources.findInResources": "리소스에서 찾기",
   "kubecode.reference.sources": "출처({count})",
-  "kubecode.reference.sourcesAttention": "{count}개 변경 또는 삭제됨"
+  "kubecode.reference.sourcesAttention": "{count}개 변경 또는 삭제됨",
+  "kubecode.markdown.copied": "복사됨",
+  "kubecode.markdown.copyCode": "코드 복사",
+  "kubecode.markdown.copyTable": "표 복사",
+  "kubecode.markdown.copyTableAsCsv": "표를 CSV로 복사",
+  "kubecode.markdown.copyTableAsMarkdown": "표를 Markdown으로 복사",
+  "kubecode.markdown.copyTableAsTsv": "표를 TSV로 복사",
+  "kubecode.markdown.formatCsv": "CSV",
+  "kubecode.markdown.formatMarkdown": "Markdown",
+  "kubecode.markdown.formatTsv": "TSV",
+  "kubecode.markdown.imageNotAvailable": "이미지를 사용할 수 없음",
+  "kubecode.composer.attachFromWorkspace": "이 Workspace에서 첨부…"
 }

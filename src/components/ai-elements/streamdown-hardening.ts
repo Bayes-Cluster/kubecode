@@ -48,3 +48,27 @@ export const HARDENED_STREAMDOWN_PROPS = {
   // as titles only; they return with localized `translations` in S1.
   controls: false,
 } satisfies Partial<StreamdownProps>
+
+/**
+ * For previews of files and records the reader did not write (Resources, Add
+ * context): same hardening, but no image is ever fetched. A remote image would
+ * load on open, with no click, and could carry data out in its URL; it shows
+ * as its alt text instead.
+ */
+export const NO_IMAGE_STREAMDOWN_PROPS = {
+  ...HARDENED_STREAMDOWN_PROPS,
+  rehypePlugins: [
+    defaultRehypePlugins.sanitize,
+    [
+      harden,
+      {
+        allowedImagePrefixes: [],
+        allowedLinkPrefixes: ['*'],
+        allowedProtocols: [...SAFE_LINK_PROTOCOLS],
+        allowDataImages: false,
+        defaultOrigin: undefined,
+        imageBlockPolicy: 'text-only',
+      },
+    ],
+  ] as NonNullable<StreamdownProps['rehypePlugins']>,
+} satisfies Partial<StreamdownProps>

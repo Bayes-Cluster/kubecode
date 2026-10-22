@@ -100,11 +100,11 @@ describe('DmPane', () => {
   it('reads as a conversation: each side its own message, the researcher\'s tinted, in one prompt card', async () => {
     setup({ memberDmTurns: vi.fn().mockResolvedValue([turn('run-1', 'is 0.91 enough?', 'It is **within** a point.'), turn('run-2', 'and now?', '')]) })
     const question = await screen.findByText('is 0.91 enough?')
-    expect(question.closest('.kubecode-ai-message')).toHaveAttribute('data-from', 'self')
-    expect(screen.getByText('within').closest('.kubecode-ai-message')).toHaveAttribute('data-from', 'member')
+    expect(question.closest('article')).toHaveAttribute('data-from', 'self')
+    expect(screen.getByText('within').closest('article')).toHaveAttribute('data-from', 'member')
     const waiting = screen.getByText("Waiting for Analyst's reply")
-    expect(waiting.closest('.kubecode-ai-message')).toHaveAttribute('data-state', 'pending')
-    const card = document.querySelector('.kubecode-ai-prompt-input') as HTMLElement
+    expect(waiting.closest('article')).toHaveAttribute('data-state', 'pending')
+    const card = document.querySelector('.kubecode-prompt-input') as HTMLElement
     expect(card).toContainElement(box())
     expect(card).not.toHaveTextContent('Only Analyst sees this message.')
     // Empty, the card is compact: two lines that grow with the text.

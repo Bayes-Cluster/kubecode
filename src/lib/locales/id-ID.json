@@ -2898,5 +2898,16 @@
   "kubecode.proto.review.olderVersion": "versi sebelumnya",
   "kubecode.resources.findInResources": "Cari di Sumber Daya",
   "kubecode.reference.sources": "Sumber ({count})",
-  "kubecode.reference.sourcesAttention": "{count} berubah atau dihapus"
+  "kubecode.reference.sourcesAttention": "{count} berubah atau dihapus",
+  "kubecode.markdown.copied": "Disalin",
+  "kubecode.markdown.copyCode": "Salin kode",
+  "kubecode.markdown.copyTable": "Salin tabel",
+  "kubecode.markdown.copyTableAsCsv": "Salin tabel sebagai CSV",
+  "kubecode.markdown.copyTableAsMarkdown": "Salin tabel sebagai Markdown",
+  "kubecode.markdown.copyTableAsTsv": "Salin tabel sebagai TSV",
+  "kubecode.markdown.formatCsv": "CSV",
+  "kubecode.markdown.formatMarkdown": "Markdown",
+  "kubecode.markdown.formatTsv": "TSV",
+  "kubecode.markdown.imageNotAvailable": "Gambar tidak tersedia",
+  "kubecode.composer.attachFromWorkspace": "Lampirkan dari Workspace ini…"
 }

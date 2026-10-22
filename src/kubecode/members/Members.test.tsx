@@ -19,6 +19,13 @@ const agents = [
   { id: 'codex', available: false },
 ] as unknown as AgentDescriptor[]
 
+/** Picks an option from a shadcn Select (Radix): the trigger is a combobox, the options a listbox. */
+function choose(trigger: HTMLElement, option: string) {
+  expect(trigger).toHaveAttribute('role', 'combobox')
+  fireEvent.click(trigger)
+  fireEvent.click(screen.getByRole('option', { name: option }))
+}
+
 function member(overrides: Partial<Member> = {}): Member {
   return {
     id: 'm-general', project_id: 'p1', role: 'general', template: 'general', name: 'General',
@@ -135,7 +142,7 @@ describe('MemberRoster', () => {
     fireEvent.click(await screen.findByRole('button', { name: /kubecode.members.add/ }))
     const form = screen.getByRole('form', { name: 'kubecode.members.add' })
     fireEvent.change(within(form).getByLabelText('kubecode.members.name'), { target: { value: 'Writer' } })
-    fireEvent.change(within(form).getByLabelText('kubecode.members.role'), { target: { value: 'writing' } })
+    choose(within(form).getByLabelText('kubecode.members.role'), 'kubecode.members.template.writing')
     expect(within(form).getByLabelText('kubecode.members.instructions')).toHaveValue('Write.')
     fireEvent.click(within(form).getByRole('button', { name: 'kubecode.members.save' }))
     await waitFor(() => expect(createMember).toHaveBeenCalledTimes(1))
@@ -257,10 +264,10 @@ describe('MemberRoster review regressions', () => {
     fireEvent.click(await screen.findByRole('button', { name: /kubecode.members.add/ }))
     const form = screen.getByRole('form', { name: 'kubecode.members.add' })
     const instructions = within(form).getByLabelText('kubecode.members.instructions')
-    fireEvent.change(within(form).getByLabelText('kubecode.members.role'), { target: { value: 'writing' } })
+    choose(within(form).getByLabelText('kubecode.members.role'), 'kubecode.members.template.writing')
     expect(instructions).toHaveValue('Write.')
     fireEvent.change(instructions, { target: { value: 'My own words' } })
-    fireEvent.change(within(form).getByLabelText('kubecode.members.role'), { target: { value: 'code_review' } })
+    choose(within(form).getByLabelText('kubecode.members.role'), 'kubecode.members.template.code_review')
     expect(instructions).toHaveValue('My own words')
   })
 
@@ -386,6 +393,8 @@ describe('MembersView', () => {
       />,
     )
     const row = (await screen.findByText('Analyst')).closest('li') as HTMLElement
+    // Each member is a shadcn Item (ADR 0244).
+    expect(row).toHaveAttribute('data-slot', 'item')
     expect(within(row).getByText('kubecode.members.activity.running')).toBeInTheDocument()
     expect(within(row).queryByText(/kubecode\.members\.state\./)).not.toBeInTheDocument()
     fireEvent.click(within(row).getByRole('button', { name: 'kubecode.members.openProfile:{"name":"Analyst"}' }))

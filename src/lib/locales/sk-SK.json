@@ -2898,5 +2898,16 @@
   "kubecode.proto.review.olderVersion": "staršia verzia",
   "kubecode.resources.findInResources": "Nájsť v Zdrojoch",
   "kubecode.reference.sources": "Zdroje ({count})",
-  "kubecode.reference.sourcesAttention": "Zmenené alebo odstránené: {count}"
+  "kubecode.reference.sourcesAttention": "Zmenené alebo odstránené: {count}",
+  "kubecode.markdown.copied": "Skopírované",
+  "kubecode.markdown.copyCode": "Kopírovať kód",
+  "kubecode.markdown.copyTable": "Kopírovať tabuľku",
+  "kubecode.markdown.copyTableAsCsv": "Kopírovať tabuľku ako CSV",
+  "kubecode.markdown.copyTableAsMarkdown": "Kopírovať tabuľku ako Markdown",
+  "kubecode.markdown.copyTableAsTsv": "Kopírovať tabuľku ako TSV",
+  "kubecode.markdown.formatCsv": "CSV",
+  "kubecode.markdown.formatMarkdown": "Markdown",
+  "kubecode.markdown.formatTsv": "TSV",
+  "kubecode.markdown.imageNotAvailable": "Obrázok nie je k dispozícii",
+  "kubecode.composer.attachFromWorkspace": "Priložiť z tohto Workspace…"
 }

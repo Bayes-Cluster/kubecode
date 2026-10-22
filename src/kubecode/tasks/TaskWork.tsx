@@ -1,5 +1,6 @@
 import { useContext, useState } from 'react'
 
+import { Task, TaskContent, TaskItem } from '@/components/ai-elements/task'
 import { Button } from '@/components/ui/button'
 import { Icon } from '@/kubecode/icons'
 import { WORKSPACE_COMMAND_ICONS } from '@/kubecode/icons/workspaceIcons'
@@ -83,39 +84,41 @@ export function TaskWork({ detail, onChanged, projectId }: { detail: TaskDetail;
         />
       )}
       {waiting.length > 0 && (
-        <ul className="kubecode-task-waiting">
-          {waiting.map((item) => {
-            const target = attentionTarget(item, navigation?.presentation ?? 'screen')
-            const name = askerName(item, t)
-            return (
-              <li key={item.key}>
-                <span>
-                  {t(item.kind === 'permission' ? 'kubecode.attention.waitingInTask' : 'kubecode.attention.waitingInputInTask', { name })}
-                </span>
-                {navigation && (
-                  <Button
-                    aria-label={t('kubecode.attention.showRequest', { name })}
-                    size="xs"
-                    variant="outline"
-                    onClick={() => {
-                      if (target.session) {
-                        navigation.openSession(target.session.conversationId, target.session.projectId, { focus: target.focus })
-                      }
-                      else if (target.place) {
-                        navigation.openPlace(target.place, {
-                          ...(target.inspect ? { inspect: target.inspect } : {}),
-                          focus: target.focus,
-                        })
-                      }
-                    }}
-                  >
-                    {t('kubecode.attention.show')}
-                  </Button>
-                )}
-              </li>
-            )
-          })}
-        </ul>
+        <Task className="kubecode-task-waiting" open>
+          <TaskContent role="list">
+            {waiting.map((item) => {
+              const target = attentionTarget(item, navigation?.presentation ?? 'screen')
+              const name = askerName(item, t)
+              return (
+                <TaskItem className="kubecode-task-waiting-item" key={item.key} role="listitem">
+                  <span>
+                    {t(item.kind === 'permission' ? 'kubecode.attention.waitingInTask' : 'kubecode.attention.waitingInputInTask', { name })}
+                  </span>
+                  {navigation && (
+                    <Button
+                      aria-label={t('kubecode.attention.showRequest', { name })}
+                      size="xs"
+                      variant="outline"
+                      onClick={() => {
+                        if (target.session) {
+                          navigation.openSession(target.session.conversationId, target.session.projectId, { focus: target.focus })
+                        }
+                        else if (target.place) {
+                          navigation.openPlace(target.place, {
+                            ...(target.inspect ? { inspect: target.inspect } : {}),
+                            focus: target.focus,
+                          })
+                        }
+                      }}
+                    >
+                      {t('kubecode.attention.show')}
+                    </Button>
+                  )}
+                </TaskItem>
+              )
+            })}
+          </TaskContent>
+        </Task>
       )}
       <ExecutionStrip api={api} prompts={false} scope={{ taskId: detail.id }} t={t} />
       {issues.length > 0 && (

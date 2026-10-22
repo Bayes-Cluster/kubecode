@@ -2898,5 +2898,16 @@
   "kubecode.proto.review.olderVersion": "более ранняя версия",
   "kubecode.resources.findInResources": "Найти в ресурсах",
   "kubecode.reference.sources": "Источники ({count})",
-  "kubecode.reference.sourcesAttention": "Изменено или удалено: {count}"
+  "kubecode.reference.sourcesAttention": "Изменено или удалено: {count}",
+  "kubecode.markdown.copied": "Скопировано",
+  "kubecode.markdown.copyCode": "Копировать код",
+  "kubecode.markdown.copyTable": "Копировать таблицу",
+  "kubecode.markdown.copyTableAsCsv": "Копировать таблицу как CSV",
+  "kubecode.markdown.copyTableAsMarkdown": "Копировать таблицу как Markdown",
+  "kubecode.markdown.copyTableAsTsv": "Копировать таблицу как TSV",
+  "kubecode.markdown.formatCsv": "CSV",
+  "kubecode.markdown.formatMarkdown": "Markdown",
+  "kubecode.markdown.formatTsv": "TSV",
+  "kubecode.markdown.imageNotAvailable": "Изображение недоступно",
+  "kubecode.composer.attachFromWorkspace": "Прикрепить из этого Workspace…"
 }

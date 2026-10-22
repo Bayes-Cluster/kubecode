@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState, type ReactNode, type Ref } from 're
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Item, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@/components/ui/item'
 import { Icon } from '@/kubecode/icons'
 import { WORKSPACE_COMMAND_ICONS, WORKSPACE_OBJECT_ICONS } from '@/kubecode/icons/workspaceIcons'
 import type { Translator } from '@/lib/i18n'
@@ -157,7 +158,7 @@ export function WorkspaceSearch({
   const input = useRef<HTMLInputElement>(null)
 
   return (
-    <div className={cn('kubecode-ws-search-host', `kubecode-ws-search-host-${mode}`)}>
+    <div className={cn('kubecode-ws-search-host', `kubecode-ws-search-host-${mode}`)} data-ws-components="official">
       <div className="kubecode-ws-search">
         <div className="kubecode-ws-search-field">
           <Icon role="command" size="secondary" source={WORKSPACE_COMMAND_ICONS.search.Icon} />
@@ -296,6 +297,7 @@ export function WorkspaceSearch({
             const { item } = result
             const focusKey = resourceFocusKey(item.ref)
             return (
+              <Item asChild key={result.key} size="sm">
               <li
                 aria-selected={result.key === selectedKey}
                 className="kubecode-resource-row"
@@ -304,7 +306,6 @@ export function WorkspaceSearch({
                 data-focus-key={focusKey}
                 data-scroll-anchor={focusKey}
                 id={optionId(result.key)}
-                key={result.key}
                 role="option"
                 tabIndex={-1}
                 onClick={() => choose(result)}
@@ -314,15 +315,18 @@ export function WorkspaceSearch({
                   input.current?.focus({ preventScroll: true })
                 }}
               >
-                <Icon role="identity" source={WORKSPACE_OBJECT_ICONS[objectKindOf(item.ref.kind)].Icon} />
-                <span className="kubecode-resource-row-body">
-                  <strong className="kubecode-resource-row-title">{item.title}</strong>
-                  <small className="kubecode-resource-row-meta">
+                <ItemMedia>
+                  <Icon role="identity" source={WORKSPACE_OBJECT_ICONS[objectKindOf(item.ref.kind)].Icon} />
+                </ItemMedia>
+                <ItemContent className="kubecode-resource-row-body">
+                  <ItemTitle className="kubecode-resource-row-title">{item.title}</ItemTitle>
+                  <ItemDescription className="kubecode-resource-row-meta">
                     {resultMeta(item, t, { locale, taskTitle }).join(' · ')}
-                  </small>
-                  {item.summary && <small className="kubecode-resource-row-summary">{item.summary}</small>}
-                </span>
+                  </ItemDescription>
+                  {item.summary && <ItemDescription className="kubecode-resource-row-summary">{item.summary}</ItemDescription>}
+                </ItemContent>
               </li>
+              </Item>
             )
           })}
         </ul>

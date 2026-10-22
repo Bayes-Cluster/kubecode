@@ -3,6 +3,7 @@ import { Lock } from 'lucide-react'
 
 import { AiAgentIcon } from '@/components/AiAgentIcon'
 import { Button } from '@/components/ui/button'
+import { Field, FieldGroup, FieldTitle } from '@/components/ui/field'
 import { StatusBadge } from '@/components/workspace/StatusBadge'
 import { Icon } from '@/kubecode/icons'
 import { WORKSPACE_COMMAND_ICONS, WORKSPACE_DESTINATION_ICONS } from '@/kubecode/icons/workspaceIcons'
@@ -48,28 +49,32 @@ export function MemberPanel({ entry }: InspectorPanelProps<Extract<InspectorEntr
       icon={<AiAgentIcon agent={member.spec.agent_id} size={18} />}
       title={member.name}
     >
-      <div className="kubecode-member-profile">
+      <div className="kubecode-member-profile" data-ws-components="official">
         {/* The profile is already open: the name is not a way into it. */}
         <Identity view={{ ...memberView(member, t), memberId: undefined }} />
-        <dl className="kubecode-detail-facts">
-          <dt>{t('kubecode.members.role')}</dt>
-          <dd>{t(TEMPLATE_LABELS[member.template])}</dd>
-          <dt>{t('kubecode.members.provider')}</dt>
-          <dd>{agentName(member.spec.agent_id)}</dd>
+        <FieldGroup className="kubecode-member-facts">
+          <Field orientation="horizontal">
+            <FieldTitle>{t('kubecode.members.role')}</FieldTitle>
+            <span>{t(TEMPLATE_LABELS[member.template])}</span>
+          </Field>
+          <Field orientation="horizontal">
+            <FieldTitle>{t('kubecode.members.provider')}</FieldTitle>
+            <span>{agentName(member.spec.agent_id)}</span>
+          </Field>
           {/* An active membership is not a status (ADR 0229 §1); only one that needs the researcher is. */}
           {member.state !== 'active' && (
-            <>
-              <dt>{t('kubecode.members.profile.membership')}</dt>
-              <dd><StatusBadge tone="warn">{t(STATE_LABELS[member.state])}</StatusBadge></dd>
-            </>
+            <Field orientation="horizontal">
+              <FieldTitle>{t('kubecode.members.profile.membership')}</FieldTitle>
+              <StatusBadge tone="warn">{t(STATE_LABELS[member.state])}</StatusBadge>
+            </Field>
           )}
-          <dt>{t('kubecode.members.profile.execution')}</dt>
-          <dd>
+          <Field orientation="horizontal">
+            <FieldTitle>{t('kubecode.members.profile.execution')}</FieldTitle>
             {activity
               ? <StatusBadge tone={activity === 'running' ? 'info' : 'warn'}>{t(ACTIVITY_LABELS[activity])}</StatusBadge>
-              : t('kubecode.members.profile.idle')}
-          </dd>
-        </dl>
+              : <span>{t('kubecode.members.profile.idle')}</span>}
+          </Field>
+        </FieldGroup>
         {member.role === 'general' && (
           <section aria-label={t('kubecode.members.profile.restrictions')} className="kubecode-member-restrictions">
             <h4><Lock aria-hidden size={12} />{t('kubecode.members.profile.restrictions')}</h4>

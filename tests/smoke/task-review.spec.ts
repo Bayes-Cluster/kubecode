@@ -24,7 +24,7 @@ async function expectContained(page: Page) {
   expect(viewport.scrollWidth).toBeLessThanOrEqual(viewport.clientWidth)
 }
 
-const stageGroup = (page: Page) => page.getByRole('group', { name: 'Stage' })
+const stageGroup = (page: Page) => page.getByRole('tablist', { name: 'Stage' })
 const column = (page: Page, stage: string) => page.getByRole('region', { name: stage, exact: true })
 
 test('@smoke a Task is reviewed at the version that was shown, sent back through General, and archived apart from accepting', async ({ page, request }) => {
@@ -57,7 +57,7 @@ test('@smoke a Task is reviewed at the version that was shown, sent back through
     await page.goto(`${workspaceUrl}/#/p/${projectId}/board`)
     await closeNavigationSheet(page)
     await expect(page.getByRole('heading', { name: 'Kanban', level: 2 })).toBeVisible()
-    await expect(stageGroup(page).getByRole('button', { name: 'Review · 1' })).toHaveAttribute('aria-pressed', 'true')
+    await expect(stageGroup(page).getByRole('tab', { name: 'Review · 1' })).toHaveAttribute('aria-selected', 'true')
     await expect(column(page, 'Ready')).toBeHidden()
     await expect(page.locator('[draggable="true"]')).toHaveCount(0)
     await expectContained(page)
@@ -100,7 +100,7 @@ test('@smoke a Task is reviewed at the version that was shown, sent back through
     await sendBack.click()
     await expect(task.getByText(/^Sent back\. The General Agent was told in General, with your feedback\./)).toBeVisible()
     await task.getByRole('button', { name: 'Back to Kanban' }).click()
-    await expect(stageGroup(page).getByRole('button', { name: 'In progress · 1' })).toHaveAttribute('aria-pressed', 'true')
+    await expect(stageGroup(page).getByRole('tab', { name: 'In progress · 1' })).toHaveAttribute('aria-selected', 'true')
     await expect(card).toBeFocused()
     await expectContained(page)
     const recent = await manager.call<Array<{ body: string; author: string }>>('general_recent', { limit: 10 })

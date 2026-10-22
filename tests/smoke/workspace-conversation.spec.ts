@@ -95,7 +95,7 @@ test.describe('on a desktop', () => {
       await expect(row(page, 'Should we prune the attention heads?').locator('.kubecode-message-recipients')).toContainText(manager.name)
       // One input surface (#232): the text and its controls in the Prompt Input card, whom it reaches in its footer;
       // the researcher's own message reads as theirs.
-      const promptCard = page.locator('.kubecode-ai-prompt-input')
+      const promptCard = page.locator('.kubecode-prompt-input')
       await expect(promptCard.getByRole('combobox', { name: 'Message the Workspace' })).toBeVisible()
       await expect(promptCard.getByRole('button', { name: 'Add context' })).toBeVisible()
       await expect(promptCard.locator('.kubecode-composer-to')).toHaveCount(0)
@@ -138,7 +138,7 @@ test.describe('on a desktop', () => {
         const dock = (await page.locator('.kubecode-conversation-dock').boundingBox())!
         expect(dock.width).toBeLessThanOrEqual(Math.max(pane.width * 0.5, 480) + 1)
         expect(Math.abs((dock.x - pane.x) - (pane.x + pane.width - dock.x - dock.width))).toBeLessThanOrEqual(2)
-        const threadWidth = await log(page).evaluate((element) => {
+        const threadWidth = await log(page).locator('.kubecode-channel-messages').evaluate((element) => {
           const style = getComputedStyle(element)
           return element.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)
         })
@@ -153,11 +153,11 @@ test.describe('on a desktop', () => {
         await page.setViewportSize({ width: 2560, height: 1440 })
         const widePane = (await page.locator('.kubecode-channel-main').boundingBox())!
         const wideDock = (await page.locator('.kubecode-conversation-dock').boundingBox())!
-        const card = (await page.locator('.kubecode-conversation-dock .kubecode-ai-prompt-input').boundingBox())!
+        const card = (await page.locator('.kubecode-conversation-dock .kubecode-prompt-input').boundingBox())!
         expect(card.width).toBeLessThanOrEqual(960)
         expect(Math.abs((card.x - widePane.x) - (widePane.x + widePane.width - card.x - card.width))).toBeLessThanOrEqual(2)
         expect(Math.abs((wideDock.x - widePane.x) - (widePane.x + widePane.width - wideDock.x - wideDock.width))).toBeLessThanOrEqual(2)
-        await log(page).evaluate((element) => { element.scrollTop = element.scrollHeight })
+        await log(page).locator('.kubecode-channel-messages').evaluate((element) => { element.scrollTop = element.scrollHeight })
         const last = (await page.locator('article[data-message-id]').last().boundingBox())!
         expect(last.y + last.height).toBeLessThanOrEqual(wideDock.y + 1)
         await page.setViewportSize({ width: 1440, height: 900 })
@@ -332,7 +332,37 @@ test.describe('on a phone', () => {
       await items.first().click()
       await expect(page.getByText(/Replying to You:/)).toBeVisible()
       // The reply heads the same card the text is in, on a phone too.
-      await expect(page.locator('.kubecode-ai-prompt-input-header')).toContainText('Replying to You:')
+      await expect(page.locator('.kubecode-composer-context')).toContainText('Replying to You:')
+      await expectContained(page)
+    } finally {
+      await request.delete(`${api}/projects/${projectId}`)
+    }
+  })
+
+  test('@smoke General on a phone: the own meta stays one line and Jump to latest covers no message', async ({ page, request }) => {
+    test.setTimeout(180_000)
+    const { api, workspaceUrl } = urls()
+    const projectId = await createProject(request, api, `kubecode-conversation-latest-${Date.now()}`)
+    try {
+      await page.goto(`${workspaceUrl}/#/p/${projectId}/general`)
+      await closeNavigationSheet(page)
+      for (let index = 1; index <= 10; index += 1) {
+        await composer(page).fill(`@general note ${index} that is long enough to wrap across the narrow phone thread`)
+        await page.getByRole('button', { name: 'Send', exact: true }).click()
+        await expect(row(page, `note ${index} that`)).toBeVisible()
+      }
+      // The researcher's own meta (recipient and time) is one line above the bubble (ADR 0239).
+      const header = row(page, 'note 10 that').locator('.kubecode-message-self-meta')
+      const time = await header.locator('time').boundingBox()
+      const recipient = await header.locator('.kubecode-message-recipients').boundingBox()
+      expect(Math.abs((time?.y ?? 0) - (recipient?.y ?? 100))).toBeLessThan(8)
+      // Scrolled back, Jump to latest sits below the thread, over no message.
+      await page.locator('.kubecode-channel-messages').evaluate((element) => { element.scrollTop = 0 })
+      const latest = page.getByRole('button', { name: 'Jump to latest' })
+      await expect(latest).toBeVisible()
+      const button = (await latest.boundingBox())!
+      const scroller = (await page.locator('.kubecode-channel-messages').boundingBox())!
+      expect(button.y).toBeGreaterThanOrEqual(scroller.y + scroller.height - 1)
       await expectContained(page)
     } finally {
       await request.delete(`${api}/projects/${projectId}`)

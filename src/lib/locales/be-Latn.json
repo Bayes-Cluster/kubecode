@@ -2898,5 +2898,16 @@
   "kubecode.proto.review.olderVersion": "papiaredniaja viersija",
   "kubecode.resources.findInResources": "Znajści ŭ resursach",
   "kubecode.reference.sources": "Krynicy ({count})",
-  "kubecode.reference.sourcesAttention": "Zmieniena abo vydaliena: {count}"
+  "kubecode.reference.sourcesAttention": "Zmieniena abo vydaliena: {count}",
+  "kubecode.markdown.copied": "Skapijavana",
+  "kubecode.markdown.copyCode": "Skapijavać kod",
+  "kubecode.markdown.copyTable": "Skapijavać tablicu",
+  "kubecode.markdown.copyTableAsCsv": "Skapijavać tablicu jak CSV",
+  "kubecode.markdown.copyTableAsMarkdown": "Skapijavać tablicu jak Markdown",
+  "kubecode.markdown.copyTableAsTsv": "Skapijavać tablicu jak TSV",
+  "kubecode.markdown.formatCsv": "CSV",
+  "kubecode.markdown.formatMarkdown": "Markdown",
+  "kubecode.markdown.formatTsv": "TSV",
+  "kubecode.markdown.imageNotAvailable": "Vidarys niedastupny",
+  "kubecode.composer.attachFromWorkspace": "Dałučyć z hetaj pracoŭnaj prastory…"
 }

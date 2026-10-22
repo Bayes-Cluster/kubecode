@@ -1,11 +1,15 @@
 import { Lock, MessageCircle, Plus, RotateCw, Trash2, UserRound } from 'lucide-react'
-import { useState } from 'react'
+import { useId, useState } from 'react'
 
 import { IconButton } from '@/components/workspace/IconButton'
 import { StatusBadge } from '@/components/workspace/StatusBadge'
 
 import { AiAgentIcon } from '@/components/AiAgentIcon'
 import { Button } from '@/components/ui/button'
+import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
+import { Item, ItemActions, ItemContent } from '@/components/ui/item'
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import type { Translator } from '@/lib/i18n'
 
@@ -30,6 +34,7 @@ import {
   TEMPLATE_LABELS,
 } from './memberModel'
 import { Identity } from './Identity'
+import { ProviderSelect } from './ProviderSelect'
 import { memberView } from './memberIdentity'
 import { useMembers } from './useMembers'
 
@@ -50,6 +55,7 @@ export type MemberRosterProps = {
 }
 
 const NO_SESSIONS: readonly Conversation[] = []
+
 
 type Draft = {
   id: string | null
@@ -75,6 +81,7 @@ export function MemberRoster({
   agents, api, connectionState, defaults, events, onOpenDm, onOpenMember, projectId, sessions = NO_SESSIONS, t,
 }: MemberRosterProps) {
   const { roster, status, refreshFailed, reload } = useMembers(api, projectId, events, connectionState)
+  const fieldId = useId()
   const [confirming, setConfirming] = useState<string | null>(null)
   const [replacing, setReplacing] = useState<{ id: string; agentId: AgentId } | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
@@ -166,16 +173,16 @@ export function MemberRoster({
             if (!busy) save()
           }}
         >
-          <label>
-            <span>{t('kubecode.members.name')}</span>
-            <input
-              className="kubecode-channel-select"
+          <Field>
+            <FieldLabel htmlFor={`${fieldId}-name`}>{t('kubecode.members.name')}</FieldLabel>
+            <Input
+              id={`${fieldId}-name`}
               maxLength={60}
               required
               value={draft.name}
               onChange={(event) => setDraft({ ...draft, name: event.target.value })}
             />
-          </label>
+          </Field>
           {draft.id !== null && roster.members.find((m) => m.id === draft.id)?.role === 'general' && (
             <p className="kubecode-member-locked" role="note">
               <Lock aria-hidden size={12} />
@@ -183,13 +190,12 @@ export function MemberRoster({
             </p>
           )}
           {(draft.id === null || roster.members.find((m) => m.id === draft.id)?.role === 'specialist') && (
-            <label>
-              <span>{t('kubecode.members.role')}</span>
-              <select
-                className="kubecode-channel-select"
+            <Field>
+              <FieldLabel htmlFor={`${fieldId}-role`}>{t('kubecode.members.role')}</FieldLabel>
+              <Select
                 value={draft.template}
-                onChange={(event) => {
-                  const template = event.target.value as MemberTemplate
+                onValueChange={(next) => {
+                  const template = next as MemberTemplate
                   // New instructions follow the template unless they were edited.
                   const follows = draft.id === null && draft.instructions === draft.filledFrom
                   const filled = defaults?.templates[template] ?? ''
@@ -201,41 +207,43 @@ export function MemberRoster({
                   })
                 }}
               >
-                {SPECIALIST_TEMPLATES.map((template) => (
-                  <option key={template} value={template}>{t(TEMPLATE_LABELS[template])}</option>
-                ))}
-              </select>
-            </label>
+                <SelectTrigger className="kubecode-member-select" id={`${fieldId}-role`}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {SPECIALIST_TEMPLATES.map((template) => (
+                      <SelectItem key={template} value={template}>{t(TEMPLATE_LABELS[template])}</SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </Field>
           )}
-          <label>
-            <span>{t('kubecode.members.provider')}</span>
-            <select
-              className="kubecode-channel-select"
-              aria-describedby={draft.providerLocked ? 'kubecode-member-provider-locked' : undefined}
+          <Field data-disabled={draft.providerLocked || undefined}>
+            <FieldLabel htmlFor={`${fieldId}-provider`}>{t('kubecode.members.provider')}</FieldLabel>
+            <ProviderSelect
+              agents={agents}
+              describedBy={draft.providerLocked ? `${fieldId}-provider-locked` : undefined}
               disabled={draft.providerLocked}
+              id={`${fieldId}-provider`}
+              t={t}
               value={draft.agentId}
-              onChange={(event) => setDraft({ ...draft, agentId: event.target.value as AgentId })}
-            >
-              {agents.map((agent) => (
-                <option disabled={!agent.available} key={agent.id} value={agent.id}>
-                  {agentName(agent.id)}{agent.available ? '' : ` — ${t('kubecode.unavailable')}`}
-                </option>
-              ))}
-            </select>
-          </label>
-          {draft.providerLocked && (
-            <small className="kubecode-research-muted" id="kubecode-member-provider-locked">
-              {t('kubecode.members.providerLocked')}
-            </small>
-          )}
-          <label>
-            <span>{t('kubecode.members.instructions')}</span>
+              onChange={(agentId) => setDraft({ ...draft, agentId })}
+            />
+            {draft.providerLocked && (
+              <FieldDescription id={`${fieldId}-provider-locked`}>{t('kubecode.members.providerLocked')}</FieldDescription>
+            )}
+          </Field>
+          <Field>
+            <FieldLabel htmlFor={`${fieldId}-instructions`}>{t('kubecode.members.instructions')}</FieldLabel>
             <Textarea
+              id={`${fieldId}-instructions`}
               rows={5}
               value={draft.instructions}
               onChange={(event) => setDraft({ ...draft, instructions: event.target.value })}
             />
-          </label>
+          </Field>
           <div className="kubecode-work-command-row">
             <Button disabled={busy || draft.name.trim() === ''} size="sm" type="submit">
               {t('kubecode.members.save')}
@@ -263,20 +271,16 @@ export function MemberRoster({
           }}
         >
           <p className="kubecode-research-muted">{t('kubecode.members.replaceHelp')}</p>
-          <label>
-            <span>{t('kubecode.members.provider')}</span>
-            <select
-              className="kubecode-channel-select"
+          <Field>
+            <FieldLabel htmlFor={`${fieldId}-replace-provider`}>{t('kubecode.members.provider')}</FieldLabel>
+            <ProviderSelect
+              agents={agents}
+              id={`${fieldId}-replace-provider`}
+              t={t}
               value={replacing.agentId}
-              onChange={(event) => setReplacing({ ...replacing, agentId: event.target.value as AgentId })}
-            >
-              {agents.map((agent) => (
-                <option disabled={!agent.available} key={agent.id} value={agent.id}>
-                  {agentName(agent.id)}{agent.available ? '' : ` — ${t('kubecode.unavailable')}`}
-                </option>
-              ))}
-            </select>
-          </label>
+              onChange={(agentId) => setReplacing({ ...replacing, agentId })}
+            />
+          </Field>
           <div className="kubecode-work-command-row">
             <Button disabled={busy} size="sm" type="submit">{t('kubecode.members.replaceConfirm')}</Button>
             <Button size="sm" type="button" variant="ghost" onClick={() => setReplacing(null)}>
@@ -287,7 +291,7 @@ export function MemberRoster({
   )
 
   return (
-    <section aria-label={t('kubecode.members.title')} className="kubecode-members">
+    <section aria-label={t('kubecode.members.title')} className="kubecode-members" data-ws-components="official">
       <header className="kubecode-members-header">
         <div>
           <h3>{t('kubecode.members.current.title')}</h3>
@@ -308,15 +312,15 @@ export function MemberRoster({
           const activity = memberActivity(member, sessions)
           const manager = member.role === 'general'
           return (
+          <Item asChild key={member.id} size="sm">
           <li
             className="kubecode-member-row"
             data-focus-key={`member:${member.id}`}
             data-role={member.role}
             data-scroll-anchor={`member:${member.id}`}
             data-state={member.state}
-            key={member.id}
           >
-            <div className="kubecode-member-main">
+            <ItemContent className="kubecode-member-main">
               <Identity
                 activity={activity ? (
                   <StatusBadge tone={activity === 'running' ? 'info' : 'warn'}>{t(ACTIVITY_LABELS[activity])}</StatusBadge>
@@ -347,8 +351,8 @@ export function MemberRoster({
                   {member.setup_error ? ` (${member.setup_error})` : ''}
                 </small>
               )}
-            </div>
-            <div className="kubecode-member-actions">
+            </ItemContent>
+            <ItemActions className="kubecode-member-actions">
             {member.state === 'setup_required' && (
               <Button
                 aria-label={`${t('kubecode.members.retrySetup')}: ${member.name}`}
@@ -425,10 +429,11 @@ export function MemberRoster({
                 onClick={() => setConfirming(member.id)}
               />
             ))}
-            </div>
+            </ItemActions>
             {draft?.id === member.id && draftForm}
             {replacing?.id === member.id && replacingForm}
           </li>
+          </Item>
           )
         })}
       </ul>

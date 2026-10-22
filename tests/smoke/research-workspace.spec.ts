@@ -132,7 +132,7 @@ test('@smoke research workspace carries a Task from discussion to an accepted ne
   await expect(proposalMessage.getByRole('button', { name: /add to|admit|approve|confirm|start/i })).toHaveCount(0)
   await workspaceNav(page).getByRole('button', { name: /^Kanban/ }).click()
   // With nothing on the board, the proposals are open above the stages.
-  await expect(page.locator('.kubecode-task-drafts')).toHaveJSProperty('open', true)
+  await expect(page.locator('.kubecode-task-drafts')).toHaveAttribute('data-state', 'open')
   await page.locator('.kubecode-task-drafts').getByRole('button', { name: /Structured pruning/ }).click()
   const draftDetail = page.getByRole('complementary', { name: 'Task details' })
   await expect(draftDetail.getByText(/This is a proposal and is not on the board/)).toBeVisible()
@@ -361,7 +361,7 @@ test('@smoke research workspace carries a Task from discussion to an accepted ne
   // The Task is a screen of its own over the parked board, with the way back to it.
   await closeNavigationSheet(page)
   // One stage at a time: the stage picker leads to the Task's column.
-  await page.getByRole('group', { name: 'Stage' }).getByRole('button', { name: 'In progress · 1' }).click()
+  await page.getByRole('tablist', { name: 'Stage' }).getByRole('tab', { name: 'In progress · 1' }).click()
   await page.getByTestId(`task-card-${taskId}`).click()
   const phoneTask = inspector(page, 'Task details')
   await expect(phoneTask).toBeVisible()

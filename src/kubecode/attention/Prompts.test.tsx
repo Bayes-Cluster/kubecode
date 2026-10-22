@@ -30,6 +30,9 @@ describe('PermissionPrompt', () => {
       />,
     )
     const card = screen.getByTestId('permission-queue-card')
+    // The official Confirmation (ADR 0242), kept a named group rather than an alert.
+    expect(card).toHaveAttribute('data-slot', 'alert')
+    expect(card).toHaveAttribute('role', 'group')
     expect(card).toHaveAttribute('data-focus-key', 'permission:q1')
     expect(card).toHaveTextContent('Analyst asks permission · For Structured pruning')
     expect(card).toHaveTextContent('pytest -q')
