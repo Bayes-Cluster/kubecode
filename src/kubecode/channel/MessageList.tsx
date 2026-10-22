@@ -101,6 +101,13 @@ async function copy(text: string): Promise<boolean> {
  * is (ADR 0229 §7): days apart, one author's messages together, routine notes
  * collapsed, and each message with its identity, recipients, and actions.
  */
+/** Moves the thread to its latest message and has the Conversation follow it again. */
+function toLatest(context: StickToBottomContext | null) {
+  const element = context?.scrollRef.current
+  if (element) element.scrollTop = element.scrollHeight
+  void context?.scrollToBottom({ animation: 'instant' })
+}
+
 export function MessageList({
   delivery = notesDelivery,
   directory,
@@ -230,6 +237,28 @@ export function MessageList({
     element.scrollTop = element.scrollHeight
     stuck.current = true
   }, [focusMissing, hasMessages])
+
+  // The researcher's own new message always brings the thread to the latest, wherever they were
+  // reading: sending is choosing the latest, and it renews the Conversation's lock on it.
+  const latest = feed.messages.at(-1)
+  const latestSeen = useRef<string | null>(null)
+  useLayoutEffect(() => {
+    const previous = latestSeen.current
+    latestSeen.current = latest?.id ?? null
+    if (!latest || previous === null || previous === latest.id || latest.author_kind !== 'researcher') return
+    toLatest(conversation.current)
+    stuck.current = true
+    releaseLanding.current()
+  }, [latest])
+
+  // A resize reflows the thread and moves its scroll position; a reader who was at the latest stays there.
+  useEffect(() => {
+    const onResize = () => {
+      if (stuck.current) toLatest(conversation.current)
+    }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
 
   const focusOnLandRef = useRef(focusOnLand)
   useEffect(() => { focusOnLandRef.current = focusOnLand })

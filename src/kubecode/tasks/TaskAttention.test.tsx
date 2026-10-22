@@ -68,6 +68,16 @@ describe('TaskPanel and what waits on the researcher (ADR 0232)', () => {
     expect(store.markResolving).toHaveBeenCalledWith('review:rq1', expect.any(Function))
   })
 
+  it('offers no running work, Stop or Pause on a Task whose results were accepted (#229)', async () => {
+    const item = permissionItem({ task: { id: 'r1', title: 'Pruning heads' } })
+    const store = attentionStore(snapshot({ items: [item], executions: [execution({ tasks: [{ id: 'r1', title: 'Pruning heads' }], waiting_keys: [item.key] })] }))
+    mount(taskDetail({ stage: 'done', outcome: 'supported', review_requested: false, review_requests: [], pending: [], execution: executing }), store)
+    await panel().findByRole('tablist')
+    expect(panel().queryByRole('button', { name: 'Pause new work on Pruning heads' })).not.toBeInTheDocument()
+    expect(panel().queryByText('Analyst is waiting for your permission')).not.toBeInTheDocument()
+    expect(panel().queryByRole('button', { name: /Stop/ })).not.toBeInTheDocument()
+  })
+
   it('pauses new work on the Task by name, and never re-sends when the limits changed elsewhere', async () => {
     const setRoundExecutionPolicy = vi.fn().mockRejectedValue(new ApiError('policy_revision_conflict', 'changed', 409))
     const { api } = mount(taskDetail({ stage: 'in_progress', review_requests: [], pending: [], execution: executing }), null, { setRoundExecutionPolicy })
