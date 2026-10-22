@@ -198,7 +198,7 @@ export function AgentsMain({ request, t }: Pick<ScreenProps, 'request' | 't'>) {
         <ConversationScrollButton aria-label={t('kubecode.vocab.command.latest')} />
       </Conversation>
       <div className="kubecode-proto-dock mx-auto w-full max-w-(--ws-composer-width)">
-        <PromptInput onSubmit={() => setDraft('')}>
+        <PromptInput uploadLabel={t('kubecode.vocab.command.attachFile')} onSubmit={() => setDraft('')}>
           <PromptInputBody>
             <PromptInputTextarea
               aria-label={t('kubecode.proto.composerLabel')}

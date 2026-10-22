@@ -7,7 +7,6 @@ import { MemberAvatar, MemberIdentity } from '@/components/workspace/MemberIdent
 import { MoreActions } from '@/components/workspace/MoreActions'
 import { ReferenceChip } from '@/components/workspace/ReferenceChip'
 import { PauseButton, StopButton } from '@/components/workspace/SendButton'
-import { Composer } from '@/components/workspace/Composer'
 import { ViewHeader } from '@/components/workspace/ViewHeader'
 import { WorkspaceNav } from '@/kubecode/app/WorkspaceNav'
 import { WORKSPACE_COMMAND_ICONS, WORKSPACE_DESTINATION_ICONS } from '@/kubecode/icons/workspaceIcons'
@@ -270,28 +269,5 @@ describe('what the controls draw (ADR 0227)', () => {
     for (const [label, entry] of Object.entries(expected)) {
       expect(renderedGlyph(screen.getByRole('button', { name: label }))).toBe(glyphClass(entry.Icon))
     }
-  })
-})
-
-describe('Composer stop placement (ADR 0227)', () => {
-  it('puts the named stop at the start of the row, before the controls and apart from send', () => {
-    render(
-      <Composer
-        controls={<button type="button">Attach</button>}
-        label="Message"
-        placeholder="Write"
-        sendLabel="Send"
-        stop={{ label: "Stop Analyst's run", shortLabel: 'Stop run', onStop: vi.fn() }}
-        value="draft"
-        onChange={vi.fn()}
-        onSend={vi.fn()}
-      />,
-    )
-    const stop = screen.getByRole('button', { name: "Stop Analyst's run" })
-    const attach = screen.getByRole('button', { name: 'Attach' })
-    const send = screen.getByRole('button', { name: 'Send' })
-    expect(stop.compareDocumentPosition(attach) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(attach.compareDocumentPosition(send) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(stop).toHaveTextContent('Stop run')
   })
 })

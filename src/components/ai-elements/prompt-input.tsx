@@ -514,6 +514,8 @@ export type PromptInputProps = Omit<
     message: PromptInputMessage,
     event: FormEvent<HTMLFormElement>
   ) => void | Promise<void>;
+  // Kubecode (ADR 0246): names the hidden file input in the caller's locale.
+  uploadLabel?: string;
 };
 
 export const PromptInput = ({
@@ -526,6 +528,7 @@ export const PromptInput = ({
   maxFileSize,
   onError,
   onSubmit,
+  uploadLabel = "Upload files",
   children,
   ...props
 }: PromptInputProps) => {
@@ -914,12 +917,12 @@ export const PromptInput = ({
     <>
       <input
         accept={accept}
-        aria-label="Upload files"
+        aria-label={uploadLabel}
         className="hidden"
         multiple={multiple}
         onChange={handleChange}
         ref={inputRef}
-        title="Upload files"
+        title={uploadLabel}
         type="file"
       />
       <form

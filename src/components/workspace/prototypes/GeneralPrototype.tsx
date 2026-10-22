@@ -234,6 +234,7 @@ export function GeneralMain({ request, t }: Pick<ScreenProps, 'request' | 't'>) 
           </div>
         )}
         <PromptInput
+          uploadLabel={t('kubecode.vocab.command.attachFile')}
           onSubmit={({ text }) => {
             if (!text.trim()) return
             setSent((previous) => [...previous, text])

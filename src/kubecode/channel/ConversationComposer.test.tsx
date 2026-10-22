@@ -19,6 +19,7 @@ function Harness(props: Partial<ConversationComposerProps> & { initial?: string 
       mentionLabel="Members"
       mentions={members}
       placeholder="Write"
+      attachLabel="Anhängen"
       sendLabel="Send"
       value={value}
       onChange={setValue}
@@ -31,6 +32,13 @@ function Harness(props: Partial<ConversationComposerProps> & { initial?: string 
 const box = () => screen.getByRole('combobox', { name: 'Message' }) as HTMLTextAreaElement
 
 describe('ConversationComposer (official Prompt Input, ADR 0242)', () => {
+  it('names the Prompt Input file input from the caller, not in English (ADR 0246)', () => {
+    render(<Harness />)
+    const upload = document.querySelector('input[type="file"]')
+    expect(upload).toHaveAttribute('aria-label', 'Anhängen')
+    expect(upload).toHaveAttribute('title', 'Anhängen')
+  })
+
   const originalMatchMedia = window.matchMedia
   afterEach(() => {
     window.matchMedia = originalMatchMedia

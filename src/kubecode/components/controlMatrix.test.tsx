@@ -39,15 +39,10 @@ describe('control matrix (ADR 0227)', () => {
     expect(screen.getAllByRole('button', { name: 'Pause new work on this Task' }).length).toBeGreaterThan(0)
   })
 
-  it('shows a composer whose recipients wrap and whose blocked send says why, in its longest language', () => {
+  it('shows the composer only as the official Prompt Input (ADR 0246)', () => {
     render(<ControlMatrix t={createTranslator('en')} />)
-    const sample = document.querySelector<HTMLElement>('.kubecode-control-matrix-narrow .kubecode-composer-to')
-    expect(sample).not.toBeNull()
-    expect(sample?.closest('[lang]')).not.toBeNull()
-    expect(sample?.querySelectorAll('.kubecode-recipient-remove').length).toBe(2)
-    const blocked = sample?.closest('.kubecode-composer')?.querySelector('.kubecode-send-button')
-    expect(blocked).toBeDisabled()
-    expect(blocked).toHaveAccessibleDescription()
+    expect(document.querySelector('.kubecode-composer, .kubecode-composer-to')).toBeNull()
+    expect(screen.getByTestId('official-components').querySelector('textarea')).not.toBeNull()
   })
 
   it('shows the official components themed through the Workspace tokens, labelled from the catalog (ADR 0241)', () => {
@@ -59,7 +54,7 @@ describe('control matrix (ADR 0227)', () => {
     for (const button of screen.getAllByRole('button')) {
       expect(button).toHaveAccessibleName()
     }
-    for (const english of ['Submit', 'Stop', 'Parameters', 'Result', 'Toggle plan', 'Thinking...', 'What would you like to know?', 'Loading']) {
+    for (const english of ['Submit', 'Stop', 'Parameters', 'Result', 'Toggle plan', 'Thinking...', 'What would you like to know?', 'Loading', 'Upload files']) {
       expect(official.textContent).not.toContain(english)
       expect(official.querySelector(`[aria-label="${english}"], [placeholder="${english}"]`)).toBeNull()
     }

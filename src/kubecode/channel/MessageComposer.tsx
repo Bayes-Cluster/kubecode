@@ -365,6 +365,7 @@ export function MessageComposer({
         placeholder={placeholder}
         sendDisabledReason={blocked ?? undefined}
         sendLabel={t('kubecode.channel.send')}
+        attachLabel={t('kubecode.vocab.command.attachFile')}
         stop={stop}
         textareaRef={setArea}
         tools={(

@@ -82,8 +82,8 @@ Relevant ownership points:
   [channelLabels](../../src/kubecode/channel/channelLabels.ts) own public identity
   presentation and the overlapping reply actions.
 - [MessageComposer](../../src/kubecode/channel/MessageComposer.tsx) owns message
-  intent and scope; [Composer](../../src/components/workspace/Composer.tsx),
-  [IconButton](../../src/components/workspace/IconButton.tsx), and
+  intent and scope through [ConversationComposer](../../src/kubecode/channel/ConversationComposer.tsx);
+  [IconButton](../../src/components/workspace/IconButton.tsx) and
   [SendButton](../../src/components/workspace/SendButton.tsx) already supply
   useful shared controls.
 

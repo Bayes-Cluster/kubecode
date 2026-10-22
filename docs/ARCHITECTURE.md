@@ -893,6 +893,14 @@ Queue, Context for usage, and Prompt Input parts on an InputGroup composer.
 Its history stays virtualised, with a jump-to-latest button wired to
 `autoFollowRef`. The view loads lazily from `AgentSessionWorkspace.tsx`.
 
+After the slices, ADR 0246 removed the hand-rolled composer and recipient row,
+the official files nothing rendered (with the `sonner`, `next-themes` and
+`@shadcn/react` dependencies), dead `kubecode-*` CSS and unused locale keys.
+Tailwind's `dark:` variant follows `data-theme` everywhere. Shimmer and
+conversation scrolling honour `prefers-reduced-motion` through
+`src/lib/reducedMotion.ts`. `PromptInput` names its hidden file input from
+the locale catalog (`uploadLabel`).
+
 ## Agent sessions
 
 The server currently discovers Claude Code, Codex, and OpenCode.

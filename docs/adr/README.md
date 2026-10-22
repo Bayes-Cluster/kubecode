@@ -89,3 +89,4 @@ ADRs are immutable after acceptance; a later decision supersedes an earlier one.
 | [0243](0243-official-components-for-task-inspector-kanban-and-needs-you.md) | Official components for the Task inspector, Kanban and Needs you |
 | [0244](0244-resources-and-members-on-official-components.md) | Resources and Members on official shadcn/ui and AI Elements components |
 | [0245](0245-session-view-on-official-ai-elements.md) | The Session view on official AI Elements |
+| [0246](0246-official-components-cleanup-and-acceptance.md) | Cleanup after the move to official components |

@@ -1,5 +1,6 @@
 "use client";
 
+import { usePrefersReducedMotion } from "@/lib/reducedMotion";
 import { cn } from "@/lib/utils";
 import type { MotionProps } from "motion/react";
 import { motion } from "motion/react";
@@ -34,6 +35,20 @@ const ShimmerComponent = ({
     () => (children?.length ?? 0) * spread,
     [children, spread]
   );
+  // Kubecode (ADR 0246): reduced motion shows still, muted text.
+  const reduceMotion = usePrefersReducedMotion();
+
+  if (reduceMotion) {
+    const Still = Component;
+    return (
+      <Still
+        className={cn("relative inline-block text-muted-foreground", className)}
+        data-reduced-motion="true"
+      >
+        {children}
+      </Still>
+    );
+  }
 
   return (
     <MotionComponent
