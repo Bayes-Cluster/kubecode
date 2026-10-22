@@ -688,8 +688,8 @@ share as General will show it before posting.
 
 Shared Workspace controls (ADR 0222): `src/components/workspace/` holds the
 vocabulary Workspace views are built from — `IconButton` (required label,
-tooltip, busy state, touch-sized hit area), `StatusBadge` (tone from the
-semantic feedback tokens, never the only signal), `SendButton`/`StopButton`
+tooltip, busy state, touch-sized hit area), `StatusBadge` (the official
+Badge; its tone picks a variant on the semantic tokens, never the only signal), `SendButton`/`StopButton`
 (arrow send; a stop that names its target), and `Composer` (text, `@mention`
 combobox, caller controls, send, optional stop; Enter sends, Shift+Enter breaks
 the line, nothing is sent while an input method composes). It knows nothing of
@@ -860,9 +860,12 @@ The component layer is the official shadcn/ui components in
 `src/components/ai-elements/`, installed and upgraded with the shadcn CLI
 (ADR 0241). Markdown in AI Elements renders through streamdown with Kubecode's
 hardening (`streamdown-hardening.ts`: no raw HTML, http/https/mailto links
-only, KaTeX math). A surface that has moved onto the official parts sets
-`data-ws-components="official"`, which maps the shadcn variables onto the
-`--ws-*` tokens in `kubecode.css`. General and DMs are built on the official
+only, KaTeX math). Official components own their base appearance (ADR 0247):
+`index.css` maps the shadcn variables onto the Kubecode brand once, on the
+root and any element with its own `data-theme`, so pages and portalled
+overlays share one theme; `pnpm lint` runs `scripts/check-css-ownership.mjs`,
+which rejects new `kubecode.css` rules that reach into official internals. The
+shared contract for every slice is `docs/design/ui-shared-contract.md`. General and DMs are built on the official
 parts (ADR 0242): Conversation, Message with `MessageResponse`, Prompt Input
 with its command list for `@mentions`, Queue, Confirmation, Sources, Avatar,
 HoverCard, Badge, Empty, Field and Select. The ADR 0233 adaptations and the
