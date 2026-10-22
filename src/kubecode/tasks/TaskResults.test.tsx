@@ -157,7 +157,6 @@ describe('TaskResults', () => {
     expect(within(decision).getByRole('button', { name: 'Send back' })).toBeInTheDocument()
     // The official Confirmation, kept a named group rather than an alert.
     expect(decision).toHaveAttribute('data-slot', 'alert')
-    expect(decision.closest('[data-ws-components="official"]')).not.toBeNull()
   })
 
   it('says a decision was recorded but not posted when General could not be told', async () => {

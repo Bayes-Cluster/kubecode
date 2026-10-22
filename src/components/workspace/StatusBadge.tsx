@@ -1,9 +1,17 @@
 import type { ReactNode } from 'react'
 
-import { cn } from '@/lib/utils'
+import { Badge } from '@/components/ui/badge'
 
 /** How a status reads at a glance. Colors come from semantic tokens, never from the view. */
 export type StatusTone = 'ok' | 'info' | 'warn' | 'danger' | 'muted'
+
+const VARIANT = {
+  ok: 'success',
+  info: 'info',
+  warn: 'warning',
+  danger: 'destructive',
+  muted: 'secondary',
+} as const satisfies Record<StatusTone, string>
 
 export type StatusBadgeProps = {
   children: ReactNode
@@ -15,17 +23,14 @@ export type StatusBadgeProps = {
 
 /**
  * One status label for every Workspace view (a Task stage, a member's setup
- * state, a source's availability). The text always carries the meaning; the
- * tone only adds emphasis, so it is never the only signal.
+ * state, a source's availability), on the official Badge (ADR 0247). The text
+ * always carries the meaning; the tone only picks a Badge variant, so it is
+ * never the only signal.
  */
 export function StatusBadge({ children, className, title, tone = 'muted' }: StatusBadgeProps) {
   return (
-    <span
-      className={cn('kubecode-research-badge', className)}
-      data-tone={tone}
-      title={title}
-    >
+    <Badge className={className} data-tone={tone} title={title} variant={VARIANT[tone]}>
       {children}
-    </span>
+    </Badge>
   )
 }

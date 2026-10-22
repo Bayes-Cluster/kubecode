@@ -34,7 +34,7 @@ describe('Workspace prototypes', () => {
 
   it('is built on the official components, themed through the Workspace tokens (ADR 0241)', () => {
     render(<WorkspacePrototypes request={base} />)
-    expect(screen.getByTestId('workspace-prototypes')).toHaveAttribute('data-ws-components', 'official')
+    expect(screen.getByTestId('workspace-prototypes')).not.toHaveAttribute('data-ws-components')
     expect(document.querySelector('[data-slot="attachment"]')).not.toBeNull()
     expect(document.querySelector('[data-slot="input-group"]')).not.toBeNull()
     expect(document.querySelector('[data-slot="avatar"]')).not.toBeNull()

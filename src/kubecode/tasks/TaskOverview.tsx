@@ -14,7 +14,7 @@ import { conditionLabel } from './taskLabels'
 import { hasOpenReview, progressOf } from './taskLifecycle'
 import { useGeneralFromTask } from './taskNavigation'
 import { TaskQuestions } from './TaskQuestions'
-import { ToneBadge } from './ToneBadge'
+import { StatusBadge } from '@/components/workspace/StatusBadge'
 
 export type TaskOverviewProps = {
   /** An admitted Task; null for a proposal, which shows only its goal. */
@@ -57,7 +57,7 @@ export function TaskOverview({
   const approval = detail !== null && detail.revision > detail.approved_revision
   const suggestions = detail?.pending?.some((item) => item.kind === 'suggestion') ?? false
   return (
-    <div className="kubecode-task-overview" data-ws-components="official">
+    <div className="kubecode-task-overview">
       {detail && (review || questions || approval || suggestions) && (
         <section aria-label={t('kubecode.task.waitingOnYou')} className="kubecode-task-waiting">
           <h4>{t('kubecode.task.waitingOnYou')}</h4>
@@ -227,8 +227,8 @@ function Progress({ detail, t }: { detail: TaskDetail; t: Translator }) {
               return (
                 <TaskItem className="kubecode-task-work-item" key={work.id} role="listitem">
                   <strong>{work.title}</strong>
-                  <ToneBadge>{t(`kubecode.work.stage.${work.stage}`)}</ToneBadge>
-                  {condition && <ToneBadge tone="warn">{condition}</ToneBadge>}
+                  <StatusBadge>{t(`kubecode.work.stage.${work.stage}`)}</StatusBadge>
+                  {condition && <StatusBadge tone="warn">{condition}</StatusBadge>}
                   {work.assignee && <small>@{work.assignee.handle}</small>}
                   <small className="kubecode-research-muted">
                     {t('kubecode.task.workCounts', { attempts: work.attempts, experiments: work.experiments })}

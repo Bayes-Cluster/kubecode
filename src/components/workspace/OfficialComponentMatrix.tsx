@@ -10,14 +10,6 @@ import {
   ConfirmationTitle,
 } from '@/components/ai-elements/confirmation'
 import { Message, MessageAction, MessageActions, MessageContent, MessageResponse } from '@/components/ai-elements/message'
-import {
-  PromptInput,
-  PromptInputBody,
-  PromptInputFooter,
-  PromptInputSubmit,
-  PromptInputTextarea,
-  PromptInputTools,
-} from '@/components/ai-elements/prompt-input'
 import { Plan, PlanContent, PlanDescription, PlanHeader, PlanTitle, PlanTrigger } from '@/components/ai-elements/plan'
 import {
   Queue,
@@ -54,6 +46,7 @@ import { Separator } from '@/components/ui/separator'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
+import { ConversationComposer } from '@/kubecode/channel/ConversationComposer'
 import { Icon } from '@/kubecode/icons'
 import { WORKSPACE_COMMAND_ICONS } from '@/kubecode/icons/workspaceIcons'
 import type { Translator } from '@/lib/i18n'
@@ -91,7 +84,7 @@ export function OfficialComponentMatrix({ t }: { t: Translator }) {
   const say = (key: Parameters<Translator>[0], values?: Parameters<Translator>[1]) => t(key, values)
 
   return (
-    <div className="flex flex-col gap-6" data-testid="official-components" data-ws-components="official">
+    <div className="flex flex-col gap-6" data-testid="official-components">
       <header className="flex flex-col gap-1">
         <h2 className="text-lg font-semibold">{say('kubecode.matrix.official.title')}</h2>
         <p className="text-muted-foreground text-sm">{say('kubecode.matrix.official.description')}</p>
@@ -278,32 +271,26 @@ export function OfficialComponentMatrix({ t }: { t: Translator }) {
               <Suggestion suggestion={say('kubecode.proto.suggest.ask')} onClick={setDraft} />
             </Suggestions>
           </div>
-          <PromptInput uploadLabel={say('kubecode.vocab.command.attachFile')} onSubmit={() => setDraft('')}>
-            <PromptInputBody>
-              <PromptInputTextarea
-                aria-label={say('kubecode.matrix.sample.composerLabel')}
-                placeholder={say('kubecode.matrix.sample.composerLabel')}
-                value={draft}
-                onChange={(event) => setDraft(event.currentTarget.value)}
-              />
-            </PromptInputBody>
-            <PromptInputFooter>
-              <PromptInputTools />
-              <PromptInputSubmit aria-label={say('kubecode.vocab.command.send')} disabled={!draft.trim()} />
-            </PromptInputFooter>
-          </PromptInput>
-          <PromptInput uploadLabel={say('kubecode.vocab.command.attachFile')} onSubmit={() => undefined}>
-            <PromptInputBody>
-              <PromptInputTextarea
-                aria-label={say('kubecode.matrix.sample.composerLabel')}
-                placeholder={say('kubecode.matrix.sample.composerLabel')}
-              />
-            </PromptInputBody>
-            <PromptInputFooter>
-              <PromptInputTools />
-              <PromptInputSubmit aria-label={say('kubecode.matrix.sample.stopAnalyst')} status="streaming" onStop={() => undefined} />
-            </PromptInputFooter>
-          </PromptInput>
+          {/* ADR 0247: the production composer, never a demo-only Prompt Input. */}
+          <ConversationComposer
+            attachLabel={say('kubecode.vocab.command.attachFile')}
+            label={say('kubecode.matrix.sample.composerLabel')}
+            placeholder={say('kubecode.matrix.sample.composerLabel')}
+            sendLabel={say('kubecode.vocab.command.send')}
+            value={draft}
+            onChange={setDraft}
+            onSend={() => setDraft('')}
+          />
+          <ConversationComposer
+            attachLabel={say('kubecode.vocab.command.attachFile')}
+            label={say('kubecode.matrix.sample.composerLabel')}
+            placeholder={say('kubecode.matrix.sample.composerLabel')}
+            sendLabel={say('kubecode.vocab.command.send')}
+            stop={{ label: say('kubecode.matrix.sample.stopAnalyst'), onStop: () => undefined }}
+            value=""
+            onChange={() => undefined}
+            onSend={() => undefined}
+          />
         </div>
       </Section>
 

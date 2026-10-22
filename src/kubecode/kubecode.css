@@ -81,13 +81,6 @@
   font-family: var(--kubecode-code-font, ui-monospace, SFMono-Regular, Menlo, monospace);
 }
 
-.kubecode-app [data-slot='button'][data-size='icon-xs'] > svg,
-.kubecode-app [data-slot='button'][data-size='icon-sm'] > svg,
-.kubecode-app [data-slot='button'][data-size='icon'] > svg {
-  height: 18px;
-  width: 18px;
-}
-
 .kubecode-app,
 .kubecode-app * {
   scrollbar-color: transparent transparent;
@@ -2267,12 +2260,6 @@
   grid-template-rows: 44px minmax(0, 1fr);
 }
 
-.kubecode-app [data-slot='button'],
-.kubecode-app [data-slot='input'],
-.kubecode-app [data-slot='select-trigger'] {
-  font-size: inherit;
-}
-
 .kubecode-topbar {
   background: var(--workbench-titlebar);
   flex: 0 0 44px;
@@ -3142,61 +3129,11 @@
   text-decoration: underline;
 }
 
-.kubecode-research-badge {
-  background: var(--surface-subtle);
-  border: 1px solid var(--border-subtle);
-  border-radius: 999px;
-  color: var(--text-secondary);
-  font-size: var(--kubecode-ui-font-tiny);
-  padding: 0 7px;
-  white-space: nowrap;
-}
 
-.kubecode-research-badge[data-tone='ok'] {
-  background: var(--feedback-success-bg);
-  color: var(--feedback-success-text);
-}
-.kubecode-research-badge[data-tone='info'] {
-  background: var(--feedback-info-bg);
-  color: var(--feedback-info-text);
-}
-.kubecode-research-badge[data-tone='warn'] {
-  background: var(--feedback-warning-bg);
-  color: var(--feedback-warning-text);
-}
-.kubecode-research-badge[data-tone='danger'] {
-  background: var(--feedback-error-bg);
-  color: var(--feedback-error-text);
-}
 
 /* Shared Workspace controls (ADR 0222): one icon button, one composer, one send. */
 .kubecode-icon-button { flex-shrink: 0; }
-.kubecode-send-button {
-  border-radius: 999px;
-  height: 32px;
-  width: 32px;
-}
-.kubecode-send-button {
-  background: var(--primary);
-  color: var(--primary-foreground);
-}
-.kubecode-send-button:hover:not(:disabled) { opacity: 0.9; }
-.kubecode-send-button:disabled,
-.kubecode-send-button[aria-busy='true'] {
-  background: var(--muted);
-  color: var(--muted-foreground);
-  cursor: not-allowed;
-}
 /* Stopping one named run: an outlined control apart from send, named in text on touch screens. */
-.kubecode-stop-button {
-  border-color: color-mix(in srgb, var(--feedback-error-text) 45%, var(--border-default));
-  border-radius: 999px;
-  color: var(--ws-danger-text);
-  gap: var(--ws-space-1);
-  height: 32px;
-  min-width: 32px;
-  padding: 0 var(--ws-space-2);
-}
 .kubecode-stop-button-text { display: none; }
 @media (pointer: coarse) {
   .kubecode-stop-button-text { display: inline; white-space: nowrap; }
@@ -4457,16 +4394,7 @@
   --ws-font-meta: 400 var(--kubecode-ui-font-small, 13px) / 1.4 var(--kubecode-ui-font, system-ui, sans-serif);
 }
 
-/* Every Workspace control: one visible focus ring, and a touch-sized target. */
-.kubecode-icon-button:focus-visible,
-.kubecode-send-button:focus-visible,
-.kubecode-stop-button:focus-visible,
-.kubecode-pause-button:focus-visible,
-.kubecode-decision-button:focus-visible {
-  box-shadow: var(--ws-focus-ring);
-  /* Forced-colors modes drop shadows; a transparent outline becomes visible there. */
-  outline: 2px solid transparent;
-}
+/* Every Workspace control: a touch-sized target (the official Button draws focus). */
 @media (pointer: coarse) {
   .kubecode-icon-button,
   .kubecode-send-button,
@@ -4476,22 +4404,6 @@
     min-height: var(--ws-touch-target);
     min-width: var(--ws-touch-target);
   }
-}
-.kubecode-pause-button {
-  border: 1px solid var(--border-default);
-  border-radius: 999px;
-  color: var(--text-secondary);
-  height: 32px;
-  width: 32px;
-}
-.kubecode-pause-button[aria-pressed='true'] {
-  background: var(--feedback-warning-bg);
-  color: var(--feedback-warning-text);
-}
-@media (pointer: coarse) {
-  .kubecode-pause-button { height: 44px; width: 44px; }
-  .kubecode-send-button { height: 44px; width: 44px; }
-  .kubecode-stop-button { height: 44px; }
 }
 
 /* A text-labelled research decision: it wraps a long translation instead of overflowing. */
@@ -4506,32 +4418,6 @@
   .kubecode-decision-button { min-height: var(--ws-touch-target); }
 }
 
-/* Identity: initials avatar toned by role, name, handle, role in words. */
-.kubecode-member-avatar {
-  align-items: center;
-  background: var(--accent-gray-light);
-  border-radius: 999px;
-  box-shadow: inset 0 0 0 1px var(--border-subtle);
-  color: var(--text-primary);
-  display: inline-flex;
-  flex: 0 0 auto;
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1;
-  height: var(--ws-avatar-md);
-  justify-content: center;
-  letter-spacing: 0.02em;
-  width: var(--ws-avatar-md);
-}
-.kubecode-member-avatar[data-size='sm'] {
-  font-size: 10px;
-  height: var(--ws-avatar-sm);
-  width: var(--ws-avatar-sm);
-}
-.kubecode-member-avatar[data-role='manager'] { background: var(--accent-blue-light); box-shadow: inset 0 0 0 1px var(--accent-blue); }
-.kubecode-member-avatar[data-role='specialist'] { background: var(--accent-teal-light); box-shadow: inset 0 0 0 1px var(--accent-teal); }
-.kubecode-member-avatar[data-role='researcher'] { background: var(--accent-purple-light); box-shadow: inset 0 0 0 1px var(--accent-purple); }
-.kubecode-member-avatar[data-role='system'] { background: var(--surface-button); }
 .kubecode-member-identity {
   align-items: center;
   display: inline-flex;
@@ -4545,11 +4431,7 @@
   gap: 0 var(--ws-space-2);
   min-width: 0;
 }
-.kubecode-member-identity-name {
-  color: var(--text-primary);
-  font-weight: 600;
-  overflow-wrap: anywhere;
-}
+.kubecode-member-identity-name { overflow-wrap: anywhere; }
 .kubecode-member-identity-handle,
 .kubecode-member-identity-role {
   color: var(--text-secondary);
@@ -4557,20 +4439,7 @@
   overflow-wrap: anywhere;
 }
 
-/* A named reference to a Workspace object. */
-.kubecode-reference-chip {
-  align-items: center;
-  background: var(--surface-card);
-  border: 1px solid var(--border-subtle);
-  border-radius: 999px;
-  color: var(--text-secondary);
-  display: inline-flex;
-  font: var(--ws-font-meta);
-  gap: var(--ws-space-1);
-  max-width: 100%;
-  min-height: 24px;
-  padding: 0 var(--ws-space-2);
-}
+/* A named reference to a Workspace object (on the official Badge, ADR 0247). */
 .kubecode-reference-chip-version { flex: 0 0 auto; }
 /* A long reference wraps instead of hiding its title or state behind a hover-only tooltip. */
 .kubecode-reference-chip-state { overflow-wrap: anywhere; }
@@ -4697,77 +4566,20 @@
   color: var(--text-secondary);
   font: var(--ws-font-meta);
 }
-.kubecode-member-identity-name {
-  background: none;
-  border: 0;
-  padding: 0;
-}
-button.kubecode-member-identity-name { cursor: pointer; }
-button.kubecode-member-identity-name:hover { text-decoration: underline; }
-button.kubecode-member-identity-name:focus-visible {
-  border-radius: 4px;
-  box-shadow: var(--ws-focus-ring);
-  outline: 2px solid transparent;
-}
 .kubecode-member-identity-activity,
 .kubecode-member-identity-meta {
   color: var(--text-secondary);
   font: var(--ws-font-meta);
 }
-.kubecode-reference-chip { padding: 0; }
-.kubecode-reference-chip-open {
-  align-items: center;
-  flex-wrap: wrap;
-  text-align: start;
-  background: none;
-  border: 0;
-  border-radius: 999px;
-  color: inherit;
-  display: inline-flex;
-  font: inherit;
-  gap: var(--ws-space-1);
-  max-width: 100%;
-  min-height: inherit;
-  min-width: 0;
-  padding: 0 var(--ws-space-2);
-}
-button.kubecode-reference-chip-open { cursor: pointer; }
-button.kubecode-reference-chip-open:hover { background: var(--state-hover); color: var(--text-primary); }
-button.kubecode-reference-chip-open:focus-visible,
-.kubecode-reference-chip-remove:focus-visible {
-  box-shadow: var(--ws-focus-ring);
-  outline: 2px solid transparent;
-}
-.kubecode-reference-chip-open > svg { flex: 0 0 auto; }
-.kubecode-reference-chip-remove {
-  align-items: center;
-  background: none;
-  border: 0;
-  border-radius: 999px;
-  color: var(--text-secondary);
-  cursor: pointer;
-  display: inline-flex;
-  justify-content: center;
-  margin-right: 2px;
-  min-height: 20px;
-  min-width: 20px;
-}
-.kubecode-reference-chip-remove:hover { background: var(--state-hover); color: var(--text-primary); }
 @media (pointer: coarse) {
   .kubecode-reference-chip-remove { min-height: var(--ws-touch-target); min-width: var(--ws-touch-target); }
 }
-.kubecode-reference-chip[data-state='unavailable'] { border-style: dashed; }
 .kubecode-reference-chip[data-state='unavailable'] .kubecode-reference-chip-state { color: var(--text-secondary); }
-@media (pointer: coarse) {
-  /* After the chip's base size, so touch screens get the full target. */
-  .kubecode-reference-chip { min-height: var(--ws-touch-target); }
-}
 
 /* Text in the danger color must read at 4.5:1; the bright error red is for icons and borders. */
 .kubecode-app { --ws-danger-text: #C53030; }
 :root.dark .kubecode-app,
 :root[data-theme='dark'] .kubecode-app { --ws-danger-text: var(--feedback-error-text); }
-.kubecode-reference-chip { border-radius: 12px; }
 
 /* -- Workspace search, previews, and versioned references (ADR 0231) ------ */
 .kubecode-ws-search-host { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; min-width: 0; }
@@ -5072,28 +4884,6 @@ button.kubecode-reference-chip-open:focus-visible,
   --ws-surface-composer: color-mix(in srgb, var(--text-primary) 5%, var(--surface-panel));
   --ws-surface-self: color-mix(in srgb, var(--primary) 10%, var(--surface-app));
 }
-/* ADR 0241: official shadcn/ui and AI Elements read the shadcn variables.
-   Inside a surface that has moved onto them, those variables resolve to the
-   Workspace tokens above, so both modes and every theme follow without a new
-   palette. Product surfaces opt in one slice at a time; until then they keep
-   the global aliases in index.css. */
-[data-ws-components='official'] {
-  --radius: var(--ws-radius-sm);
-  --background: var(--surface-app);
-  --card: var(--ws-surface-raised);
-  --card-foreground: var(--text-primary);
-  --popover: var(--surface-popover);
-  --popover-foreground: var(--text-primary);
-  --secondary: var(--ws-surface-quiet);
-  --secondary-foreground: var(--text-primary);
-  --muted: var(--ws-surface-quiet);
-  --muted-foreground: var(--text-secondary);
-  --accent: var(--ws-accent-soft);
-  --accent-foreground: var(--text-primary);
-  --border: var(--ws-hairline-strong);
-  --input: var(--ws-hairline-strong);
-  --ring: var(--state-focus-ring);
-}
 .kubecode-app {
   --ws-font-reading: 400 var(--kubecode-ui-font-size, 14px) / 1.715 var(--kubecode-ui-font, system-ui, sans-serif);
 }
@@ -5257,7 +5047,6 @@ button.kubecode-reference-chip-open:focus-visible,
   font-weight: 600;
 }
 .kubecode-workspace-nav .kubecode-research-nav-item:focus-visible { box-shadow: var(--ws-focus-ring); outline: 2px solid transparent; }
-.kubecode-workspace-nav .kubecode-research-nav-item .kubecode-research-badge { margin-inline-start: auto; }
 .kubecode-workspace-nav .kubecode-nav-heading,
 .kubecode-history-nav summary {
   color: var(--text-secondary);
@@ -5757,11 +5546,6 @@ button.kubecode-reference-chip-open:focus-visible,
 
 /* ==== S2 (ADR 0243): Task inspector, Kanban and Needs you on the official parts ==== */
 /* Status tones on the official Badge: the text carries the meaning, the tone only adds emphasis. */
-.kubecode-tone-badge { font: var(--ws-font-meta); font-weight: 500; }
-.kubecode-tone-badge[data-tone='ok'] { background: var(--feedback-success-bg); color: var(--feedback-success-text); }
-.kubecode-tone-badge[data-tone='info'] { background: var(--feedback-info-bg); color: var(--feedback-info-text); }
-.kubecode-tone-badge[data-tone='warn'] { background: var(--feedback-warning-bg); color: var(--feedback-warning-text); }
-.kubecode-tone-badge[data-tone='danger'] { background: var(--feedback-error-bg); color: var(--feedback-error-text); }
 
 /* Kanban: the Card is the frame, its one button the whole card. */
 .kubecode-task-card-frame {

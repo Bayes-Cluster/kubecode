@@ -158,7 +158,7 @@ export function WorkspaceSearch({
   const input = useRef<HTMLInputElement>(null)
 
   return (
-    <div className={cn('kubecode-ws-search-host', `kubecode-ws-search-host-${mode}`)} data-ws-components="official">
+    <div className={cn('kubecode-ws-search-host', `kubecode-ws-search-host-${mode}`)}>
       <div className="kubecode-ws-search">
         <div className="kubecode-ws-search-field">
           <Icon role="command" size="secondary" source={WORKSPACE_COMMAND_ICONS.search.Icon} />

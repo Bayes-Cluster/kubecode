@@ -64,7 +64,7 @@ export function WorkspacePrototypes({ request }: { request: PrototypeRequest }) 
   const generalPlace = request.screen === 'general' || (request.screen === 'agents') ? 'page' as const : undefined
 
   return (
-    <div className="kubecode-app kubecode-proto" data-ws-components="official" data-screen={request.screen} data-state={request.state} data-testid="workspace-prototypes">
+    <div className="kubecode-app kubecode-proto" data-screen={request.screen} data-state={request.state} data-testid="workspace-prototypes">
       <div className="kubecode-proto-bar">
         <p className="kubecode-proto-fixture" role="note">
           <Badge variant="outline">{t('kubecode.proto.fixture.badge')}</Badge>

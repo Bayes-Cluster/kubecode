@@ -16,6 +16,10 @@ const badgeVariants = cva(
         outline:
           "border-border text-foreground [a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
         ghost: "[a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
+        // ADR 0247: Kubecode status tones, on the semantic token layer.
+        success: "bg-success text-success-foreground",
+        info: "bg-info text-info-foreground",
+        warning: "bg-warning text-warning-foreground",
         link: "text-primary underline-offset-4 [a&]:hover:underline",
       },
     },

@@ -171,7 +171,7 @@ describe('MessageItem', () => {
     let row = view.article.querySelector('[data-delivery]')
     expect(row).toHaveAttribute('data-delivery', 'queued')
     expect(row).toHaveTextContent('Waiting to reach Analyst and Writer')
-    expect(row?.querySelector('.kubecode-research-badge')).toBeNull()
+    expect(row?.querySelector('[data-slot="badge"]')).toBeNull()
     cleanup()
     const delivered = item({ message, author: researcherView(t), task: null, delivery: { state: 'delivered', recipients: ['Analyst'] } })
     row = delivered.article.querySelector('[data-delivery]')

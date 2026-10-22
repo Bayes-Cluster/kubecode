@@ -1,3 +1,5 @@
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Icon } from '@/kubecode/icons'
 import { WORKSPACE_COMMAND_ICONS, WORKSPACE_OBJECT_ICONS, type WorkspaceObjectKind } from '@/kubecode/icons/workspaceIcons'
 import { cn } from '@/lib/utils'
@@ -43,7 +45,7 @@ export type ReferenceChipProps = Removal & {
  * One named reference to a Workspace object (ADR 0227): its kind glyph, its
  * title, the cited version, and — in words — whether it changed, is gone, or
  * cannot be read. Its accessible name is its visible text, preceded by the
- * kind.
+ * kind. It composes the official Badge and Buttons (ADR 0247).
  */
 export function ReferenceChip({
   className,
@@ -67,26 +69,29 @@ export function ReferenceChip({
     </>
   )
   return (
-    <span
-      className={cn('kubecode-reference-chip', className)}
+    <Badge
+      className={cn('kubecode-reference-chip h-auto max-w-full whitespace-normal', className)}
       data-kind={kind}
       data-state={state?.kind ?? 'current'}
+      variant="outline"
     >
       {onOpen && state?.kind !== 'unavailable' ? (
-        <button className="kubecode-reference-chip-open" type="button" onClick={onOpen}>{content}</button>
+        <Button className="kubecode-reference-chip-open h-auto min-w-0 px-0 py-0" size="xs" type="button" variant="ghost" onClick={onOpen}>{content}</Button>
       ) : (
-        <span className="kubecode-reference-chip-open">{content}</span>
+        <span className="kubecode-reference-chip-open inline-flex min-w-0 items-center gap-1">{content}</span>
       )}
       {onRemove && (
-        <button
+        <Button
           aria-label={removeLabel}
           className="kubecode-reference-chip-remove"
+          size="icon-xs"
           type="button"
+          variant="ghost"
           onClick={onRemove}
         >
           <Icon role="command" size="secondary" source={WORKSPACE_COMMAND_ICONS.close.Icon} />
-        </button>
+        </Button>
       )}
-    </span>
+    </Badge>
   )
 }

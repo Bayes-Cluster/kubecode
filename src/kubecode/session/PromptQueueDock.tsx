@@ -63,7 +63,7 @@ export function PromptQueueDock({
   }
 
   return (
-    <Queue className="kubecode-session-queue" data-testid="prompt-queue" data-ws-components="official">
+    <Queue className="kubecode-session-queue" data-testid="prompt-queue">
       <QueueSection>
         <QueueSectionTrigger>
           <QueueSectionLabel label={t('kubecode.queueTitle', { count: items.length })} />

@@ -33,11 +33,23 @@ describe('MemberIdentity (ADR 0227)', () => {
     expect(avatar).toHaveAttribute('data-role', 'specialist')
     // The avatar repeats the name, so it is hidden from assistive technology.
     expect(avatar).toHaveAttribute('aria-hidden', 'true')
+    // ADR 0247: the official Avatar with its fallback.
+    expect(avatar).toHaveAttribute('data-slot', 'avatar')
+    expect(avatar.querySelector('[data-slot="avatar-fallback"]')).toHaveTextContent('DA')
+  })
+
+  it('makes an openable name the official link Button', () => {
+    const onOpen = vi.fn()
+    render(<MemberIdentity name="Analyst" role="specialist" onOpen={onOpen} />)
+    const name = screen.getByRole('button', { name: 'Analyst' })
+    expect(name).toHaveAttribute('data-slot', 'button')
+    fireEvent.click(name)
+    expect(onOpen).toHaveBeenCalledTimes(1)
   })
 
   it('never shows an ordinary membership as a status, and shows one that needs attention in words', () => {
     const { container, rerender } = render(<MemberIdentity handle="general" name="General" role="manager" roleLabel="Project manager" />)
-    expect(container.querySelector('.kubecode-research-badge')).toBeNull()
+    expect(container.querySelector('[data-slot="badge"]')).toBeNull()
     expect(screen.queryByText(/active/i)).toBeNull()
     rerender(
       <MemberIdentity
@@ -89,6 +101,14 @@ describe('MemberIdentity (ADR 0227)', () => {
 })
 
 describe('ReferenceChip (ADR 0227)', () => {
+  it('composes the official Badge and Buttons (ADR 0247)', () => {
+    render(<ReferenceChip kind="file" kindLabel="File" removeLabel="Remove notes.md" title="notes.md" onOpen={vi.fn()} onRemove={vi.fn()} />)
+    const open = screen.getByRole('button', { name: 'File notes.md' })
+    expect(open).toHaveAttribute('data-slot', 'button')
+    expect(screen.getByRole('button', { name: 'Remove notes.md' })).toHaveAttribute('data-slot', 'button')
+    expect(open.closest('[data-slot="badge"]')).not.toBeNull()
+  })
+
   it('names the object, its kind, and its version, and opens it', () => {
     const onOpen = vi.fn()
     render(<ReferenceChip kind="evidence" kindLabel="Evidence" title="results.csv" version="v3" onOpen={onOpen} />)

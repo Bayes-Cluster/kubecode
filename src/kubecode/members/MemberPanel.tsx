@@ -49,7 +49,7 @@ export function MemberPanel({ entry }: InspectorPanelProps<Extract<InspectorEntr
       icon={<AiAgentIcon agent={member.spec.agent_id} size={18} />}
       title={member.name}
     >
-      <div className="kubecode-member-profile" data-ws-components="official">
+      <div className="kubecode-member-profile">
         {/* The profile is already open: the name is not a way into it. */}
         <Identity view={{ ...memberView(member, t), memberId: undefined }} />
         <FieldGroup className="kubecode-member-facts">

@@ -33,7 +33,7 @@ import { TaskOverview } from './TaskOverview'
 import { TaskResults } from './TaskResults'
 import { TaskStatusBadges } from './TaskStatusBadges'
 import { TaskWork } from './TaskWork'
-import { ToneBadge } from './ToneBadge'
+import { StatusBadge } from '@/components/workspace/StatusBadge'
 import { useTaskDetail } from './useTaskDetail'
 
 const RESULTS_PENDING = new Set(['review', 'evidence_changed', 'suggestion'])
@@ -177,7 +177,7 @@ export function TaskPanel({ entry, projectId }: InspectorPanelProps<Extract<Insp
       meta={<TaskStatusBadges archived={archived} draft={draft} t={t} task={detail} />}
       title={title}
     >
-      <div className="kubecode-task-panel" data-ws-components="official">
+      <div className="kubecode-task-panel">
         {/* What happens next, and where it is said: the header keeps only the Task's own facts (360px inspector). */}
         <div aria-label={t('kubecode.task.nextTitle')} className="kubecode-task-next-step" data-tone={next.tone} role="group">
           {nextText && <p className="kubecode-task-next" data-tone={next.tone}>{nextText}</p>}
@@ -199,7 +199,7 @@ export function TaskPanel({ entry, projectId }: InspectorPanelProps<Extract<Insp
               <TabsTrigger value="overview">{t('kubecode.task.tab.overview')}</TabsTrigger>
               <TabsTrigger value="results">
                 {t('kubecode.task.tab.results')}
-                {reviewCount > 0 && <ToneBadge tone="info">{reviewCount}</ToneBadge>}
+                {reviewCount > 0 && <StatusBadge tone="info">{reviewCount}</StatusBadge>}
               </TabsTrigger>
               <TabsTrigger value="activity">{t('kubecode.task.tab.activity')}</TabsTrigger>
             </TabsList>

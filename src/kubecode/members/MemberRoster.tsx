@@ -291,7 +291,7 @@ export function MemberRoster({
   )
 
   return (
-    <section aria-label={t('kubecode.members.title')} className="kubecode-members" data-ws-components="official">
+    <section aria-label={t('kubecode.members.title')} className="kubecode-members">
       <header className="kubecode-members-header">
         <div>
           <h3>{t('kubecode.members.current.title')}</h3>

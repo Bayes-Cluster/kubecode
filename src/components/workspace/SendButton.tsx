@@ -1,9 +1,9 @@
-import { Loader2 } from 'lucide-react'
 import { useId, type MouseEvent } from 'react'
 
 import { ActionTooltip } from '@/components/ui/action-tooltip'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { Button } from '@/components/ui/button'
+import { Spinner as OfficialSpinner } from '@/components/ui/spinner'
 import { ICON_SIZES } from '@/kubecode/icons'
 import { WORKSPACE_COMMAND_ICONS } from '@/kubecode/icons/workspaceIcons'
 
@@ -23,8 +23,9 @@ function unlessBusy(busy: boolean, action: () => void) {
   }
 }
 
+/** The official Spinner, silent here: the button's aria-busy already says it is working. */
 function Spinner() {
-  return <Loader2 aria-hidden className="animate-spin motion-reduce:animate-none" size={ICON_SIZES.default} />
+  return <OfficialSpinner aria-hidden aria-label={undefined} className="motion-reduce:animate-none" role={undefined} />
 }
 
 export type SendButtonProps = {
@@ -61,7 +62,7 @@ export function SendButton({ busy = false, canSend, disabledReason, label, onSen
           disabled={!canSend && !busy}
           size="icon-sm"
           type="button"
-          variant="ghost"
+          variant="default"
           onClick={unlessBusy(busy, onSend)}
         >
           {busy ? <Spinner /> : <Send aria-hidden size={ICON_SIZES.default} />}
@@ -152,7 +153,7 @@ export function PauseButton({ busy = false, label, onToggle, paused, testId }: P
           data-testid={testId}
           size="icon-sm"
           type="button"
-          variant="ghost"
+          variant={paused ? 'secondary' : 'outline'}
           onClick={unlessBusy(busy, onToggle)}
         >
           {busy ? <Spinner /> : paused ? <Resume aria-hidden size={ICON_SIZES.default} /> : <Pause aria-hidden size={ICON_SIZES.default} />}

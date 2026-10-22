@@ -14,7 +14,7 @@ import { DestinationHeader } from '../app/DestinationHeader'
 import type { TaskBoard, TaskDraft, TaskStage } from '../api'
 import { usePlaceState, useScrollMemory } from '../app/location/placeMemory'
 import { TaskCardView } from './TaskCardView'
-import { ToneBadge } from './ToneBadge'
+import { StatusBadge } from '@/components/workspace/StatusBadge'
 import { initialBoardStage, inspectedStage, requiredActionOf } from './taskLifecycle'
 import { outcomeLabel, stageLabel, TASK_STAGES } from './taskLabels'
 import type { TaskBoardStatus } from './useTaskBoard'
@@ -112,7 +112,7 @@ export function TaskBoardView({
   const nothingNeedsYou = needsYou && board !== null && board.cards.length > 0 && cards.length === 0
 
   return (
-    <section aria-label={t('kubecode.nav.board')} className="kubecode-task-board" data-ws-components="official" ref={scroller}>
+    <section aria-label={t('kubecode.nav.board')} className="kubecode-task-board" ref={scroller}>
       <DestinationHeader
         actions={(
           <span className="kubecode-task-needs-you">
@@ -164,7 +164,7 @@ export function TaskBoardView({
                   onClick={() => onOpenTask(draft.id)}
                 >
                   <span className="kubecode-research-nav-title">{draft.title}</span>
-                  <ToneBadge>{t('kubecode.task.revision', { revision: draft.revision })}</ToneBadge>
+                  <StatusBadge>{t('kubecode.task.revision', { revision: draft.revision })}</StatusBadge>
                 </button>
               </li>
             ))}
@@ -205,7 +205,7 @@ export function TaskBoardView({
                     >
                       <h3>
                         {stageLabel(t, value)}
-                        <ToneBadge>{column.length}</ToneBadge>
+                        <StatusBadge>{column.length}</StatusBadge>
                       </h3>
                       {column.length === 0 && <p className="kubecode-research-muted">{t('kubecode.task.columnEmpty')}</p>}
                       <ul>
@@ -248,10 +248,10 @@ export function TaskBoardView({
                     onClick={() => onOpenTask(item.id)}
                   >
                     <span className="kubecode-research-nav-title">{item.title}</span>
-                    <ToneBadge>
+                    <StatusBadge>
                       {item.stage ? stageLabel(t, item.stage) : t('kubecode.task.archivedProposal')}
-                    </ToneBadge>
-                    {outcome && <ToneBadge tone="ok">{outcome}</ToneBadge>}
+                    </StatusBadge>
+                    {outcome && <StatusBadge tone="ok">{outcome}</StatusBadge>}
                   </button>
                 </li>
               )

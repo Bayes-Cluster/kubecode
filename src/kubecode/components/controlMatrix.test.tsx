@@ -39,16 +39,19 @@ describe('control matrix (ADR 0227)', () => {
     expect(screen.getAllByRole('button', { name: 'Pause new work on this Task' }).length).toBeGreaterThan(0)
   })
 
-  it('shows the composer only as the official Prompt Input (ADR 0246)', () => {
+  it('shows the production composer, not a demo-only Prompt Input (ADR 0247)', () => {
     render(<ControlMatrix t={createTranslator('en')} />)
-    expect(document.querySelector('.kubecode-composer, .kubecode-composer-to')).toBeNull()
-    expect(screen.getByTestId('official-components').querySelector('textarea')).not.toBeNull()
+    const official = screen.getByTestId('official-components')
+    const composers = official.querySelectorAll('.kubecode-composer')
+    expect(composers).toHaveLength(2)
+    for (const composer of composers) expect(composer.querySelector('[data-slot="input-group"], form')).not.toBeNull()
+    expect(document.querySelector('.kubecode-composer-to')).toBeNull()
   })
 
   it('shows the official components themed through the Workspace tokens, labelled from the catalog (ADR 0241)', () => {
     render(<ControlMatrix t={createTranslator('de-DE')} />)
     const official = screen.getByTestId('official-components')
-    expect(official).toHaveAttribute('data-ws-components', 'official')
+    expect(official).not.toHaveAttribute('data-ws-components')
     expect(official.querySelectorAll('[data-slot="card"], [data-slot="item"], [data-slot="empty"], [data-slot="alert"]').length).toBeGreaterThan(3)
     expect(screen.getByRole('heading', { name: 'Offizielle Komponenten' })).toBeInTheDocument()
     for (const button of screen.getAllByRole('button')) {

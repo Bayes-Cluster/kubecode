@@ -8,7 +8,7 @@ import type { ManagerDecision } from '../api'
 
 import { DestinationHeader } from '../app/DestinationHeader'
 import type { NeedsYouEntry, NeedsYouTarget } from '../app/location/needsYou'
-import { ToneBadge } from '../tasks/ToneBadge'
+import { StatusBadge } from '@/components/workspace/StatusBadge'
 import { NeedsYouList } from './NeedsYouList'
 
 export type NeedsYouViewProps = {
@@ -63,9 +63,9 @@ function ManagerDecisions({ decisions, t }: { decisions: ManagerDecision[]; t: T
                 {t('kubecode.needsYou.managerDecisions.reason', { reason: reasonOf(decision, t) })}
               </ItemDescription>
             </ItemContent>
-            <ToneBadge tone={DECISION_TONE[decision.decision]}>
+            <StatusBadge tone={DECISION_TONE[decision.decision]}>
               {t(`kubecode.needsYou.managerDecisions.${decision.decision}`)}
-            </ToneBadge>
+            </StatusBadge>
           </Item>
         ))}
       </ItemGroup>
@@ -81,7 +81,7 @@ function ManagerDecisions({ decisions, t }: { decisions: ManagerDecision[]; t: T
  */
 export function NeedsYouView({ entries, incomplete, managerDecisions = [], onOpenTarget, onRetryLoad, status, t }: NeedsYouViewProps) {
   return (
-    <section aria-label={t('kubecode.nav.needsYou')} className="kubecode-needs-you-view" data-ws-components="official">
+    <section aria-label={t('kubecode.nav.needsYou')} className="kubecode-needs-you-view">
       <DestinationHeader description={t('kubecode.nav.needsYouDescription')} destination="needs-you" t={t} />
       <div className="kubecode-destination-body">
         <NeedsYouList

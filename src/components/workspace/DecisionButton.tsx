@@ -1,7 +1,7 @@
-import { Loader2 } from 'lucide-react'
 import { useId, type ReactNode } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { Spinner } from '@/components/ui/spinner'
 import { cn } from '@/lib/utils'
 
 export type DecisionButtonProps = {
@@ -60,7 +60,7 @@ export function DecisionButton({
           onDecide()
         }}
       >
-        {busy && <Loader2 aria-hidden className="animate-spin motion-reduce:animate-none" size={14} />}
+        {busy && <Spinner aria-hidden aria-label={undefined} className="motion-reduce:animate-none" data-icon="inline-start" role={undefined} />}
         {children}
       </Button>
       {disabledReason && <span className="kubecode-decision-reason" id={reasonId}>{disabledReason}</span>}
