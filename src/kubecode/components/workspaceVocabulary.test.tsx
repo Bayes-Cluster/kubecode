@@ -109,6 +109,12 @@ describe('ReferenceChip (ADR 0227)', () => {
     expect(open.closest('[data-slot="badge"]')).not.toBeNull()
   })
 
+  it('does not clip the focus ring of its Buttons', () => {
+    render(<ReferenceChip kind="file" kindLabel="File" removeLabel="Remove notes.md" title="notes.md" onOpen={vi.fn()} onRemove={vi.fn()} />)
+    const badge = screen.getByRole('button', { name: 'File notes.md' }).closest('[data-slot="badge"]')
+    expect(badge).toHaveClass('overflow-visible')
+  })
+
   it('names the object, its kind, and its version, and opens it', () => {
     const onOpen = vi.fn()
     render(<ReferenceChip kind="evidence" kindLabel="Evidence" title="results.csv" version="v3" onOpen={onOpen} />)

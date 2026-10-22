@@ -81,7 +81,11 @@ Nobody may:
 - use `!important`;
 - stack descendant selectors to beat a component's specificity.
 
-`pnpm lint` runs `scripts/check-css-ownership.mjs`. Existing violations are
+`pnpm lint` runs `scripts/check-css-ownership.mjs` over every `.css` file
+under `src/`. Entries are matched by file, enclosing selector and line text.
+Official components keep their own `rem` type scale on the 14px root (a
+default Button is `text-sm`, 12.25px); do not restore `font-size: inherit`.
+Existing violations are
 listed in `scripts/css-ownership-baseline.json` with an owner; each slice
 removes its entries (the check fails on stale entries, so delete the entry
 with the rule) and may not add new ones. Exceptions kept by ADR 0247: the

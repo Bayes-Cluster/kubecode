@@ -31,10 +31,10 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 
 | Owner | Rows |
 | --- | ---: |
-| #255 | 21 |
+| #255 | 20 |
 | #255 with #257-#262 | 1 |
 | #255/#263 | 1 |
-| #256 | 31 |
+| #256 | 32 |
 | #256-#262 | 1 |
 | #257 | 28 |
 | #258 | 19 |
@@ -49,7 +49,7 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | WorkbenchShell layout root (main.kubecode-app / .kubecode-workspace / main stack) | `src/kubecode/app/WorkbenchShell.tsx:1054,1098,1197` | handcrafted markup + kubecode.css | shadcn/ui Sidebar (SidebarProvider/SidebarInset) + Resizable | all workspace routes | #256 | handcrafted | — |
-| Panel resize handles | `src/components/ResizeHandle.tsx:9; src/kubecode/app/ProjectNavigator.tsx:790; WorkbenchShell.tsx:7` | handcrafted mouse-drag div | shadcn/ui Resizable (ResizablePanelGroup/ResizableHandle) | navigator, main stack, terminal | #255 | handcrafted | — |
+| Panel resize handles | `src/components/ResizeHandle.tsx:9; src/kubecode/app/ProjectNavigator.tsx:790; WorkbenchShell.tsx:7` | handcrafted mouse-drag div | shadcn/ui Resizable (ResizablePanelGroup/ResizableHandle) | navigator, main stack, terminal | #256 | handcrafted | Deferred from #255: shadcn Resizable needs `react-resizable-panels`, a new dependency that needs its own ADR. #256 writes that ADR with the shell layout migration; #262's terminal split follows it |
 
 ## Phone
 
@@ -468,7 +468,7 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 | Terminal navigator tree | `src/kubecode/TerminalWorkspace.tsx:440-588` | handcrafted ARIA tree | Sidebar menu / Item | terminal | #262 | handcrafted | — |
 | Inline rename editor | `src/kubecode/TerminalWorkspace.tsx:590-626` | official Input | shadcn Input | terminal | #262 | migrated | — |
 | New terminal profile menu | `src/kubecode/TerminalWorkspace.tsx:628-663` | official DropdownMenu | shadcn DropdownMenu | terminal | #262 | migrated | — |
-| Split layout and resize handles | `src/kubecode/TerminalWorkspace.tsx:666-771; src/components/ResizeHandle.tsx` | handcrafted layout + ResizeHandle | shadcn Resizable (not installed) | terminal | #262 | handcrafted | Shares the #255 Resizable decision |
+| Split layout and resize handles | `src/kubecode/TerminalWorkspace.tsx:666-771; src/components/ResizeHandle.tsx` | handcrafted layout + ResizeHandle | shadcn Resizable (not installed) | terminal | #262 | handcrafted | Follows the Resizable ADR written by #256 |
 
 ## Research
 

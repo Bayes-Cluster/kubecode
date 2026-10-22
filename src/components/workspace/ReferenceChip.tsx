@@ -70,7 +70,7 @@ export function ReferenceChip({
   )
   return (
     <Badge
-      className={cn('kubecode-reference-chip h-auto max-w-full whitespace-normal', className)}
+      className={cn('kubecode-reference-chip h-auto max-w-full overflow-visible whitespace-normal', className)}
       data-kind={kind}
       data-state={state?.kind ?? 'current'}
       variant="outline"

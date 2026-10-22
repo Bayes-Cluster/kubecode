@@ -81,13 +81,25 @@ Command, Tooltip, DropdownMenu) read the same values in both modes. The
 
 `Badge` gains `success`, `info` and `warning` variants on those tokens.
 
+The root font size stays 14px and official components keep their own type
+scale in `rem`: a default `Button` is `text-sm` (0.875rem, 12.25px) and an
+`xs` Button is `text-xs`. Product CSS no longer forces `font-size: inherit` on
+Buttons, so Button text is a step smaller than surrounding 14px body text.
+That is the intended scale, not a regression; a slice that needs another size
+picks a Button `size` or a text utility on the call site.
+
 ### 4. CSS ownership is enforced
 
-`scripts/check-css-ownership.mjs` runs with `pnpm lint`. `kubecode.css` may
+`scripts/check-css-ownership.mjs` runs with `pnpm lint` over every `.css` file
+under `src/` (`kubecode.css`, `index.css` and any new one). Product CSS may
 not select `[data-slot=…]`, `[cmdk-…]` or `[data-radix-…]` internals or use
 `!important`. Rules that predate this ADR are listed in
 `scripts/css-ownership-baseline.json` with the slice that removes them; the
-list only shrinks, and a stale entry fails too. Two kinds stay as
+list only shrinks, and a stale entry fails too. An entry is matched by file,
+enclosing selector and line text, so a listed declaration moved under another
+selector counts as new. Comments are removed before the check. The
+app-level rules in `index.css` (overlay zoom compensation on the popper
+wrapper and `user-select: none` on controls) are listed exceptions too. Two kinds stay as
 exceptions: the xterm viewport (specialist engine) and the
 `prefers-reduced-motion` block (accessibility).
 

@@ -32,4 +32,26 @@ describe('focusWhenShown', () => {
     expect(document.activeElement).toBe(button)
     button.remove()
   })
+  it('does not take focus back when the user moved it before the transition finished', async () => {
+    const button = document.createElement('button')
+    const other = document.createElement('button')
+    document.body.append(button, other)
+    const realFocus = button.focus.bind(button)
+    let calls = 0
+    button.focus = vi.fn((options?: FocusOptions) => {
+      calls += 1
+      if (calls > 1) realFocus(options)
+    })
+    let finish: () => void = () => undefined
+    const finished = new Promise<void>((resolve) => { finish = resolve })
+    button.getAnimations = () => [{ finished } as unknown as Animation]
+    focusWhenShown(button)
+    other.focus()
+    finish()
+    await finished
+    await Promise.resolve()
+    expect(document.activeElement).toBe(other)
+    button.remove()
+    other.remove()
+  })
 })
