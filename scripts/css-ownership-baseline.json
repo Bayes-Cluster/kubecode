@@ -1,0 +1,508 @@
+{
+  "entries": [
+    {
+      "text": ".kubecode-new-session-dialog > [data-slot='dialog-header'] {",
+      "kind": "official-internal",
+      "owner": "#261",
+      "context": ".kubecode-new-session-dialog > [data-slot='dialog-header'] {"
+    },
+    {
+      "text": ".kubecode-new-session-field [data-slot='select-trigger'],",
+      "kind": "official-internal",
+      "owner": "#261",
+      "context": ".kubecode-new-session-field {"
+    },
+    {
+      "text": ".kubecode-team-settings [data-slot='select-trigger'] { width: 72px; }",
+      "kind": "official-internal",
+      "owner": "#261",
+      "context": ".kubecode-team-settings [data-slot='select-trigger'] { width: 72px; }"
+    },
+    {
+      "text": "color: var(--text-secondary) !important;",
+      "kind": "important",
+      "owner": "#261",
+      "context": ".kubecode-team-mode-badge {"
+    },
+    {
+      "text": "color: var(--feedback-warning-text) !important;",
+      "kind": "important",
+      "owner": "#261",
+      "context": ".kubecode-team-mode-badge[data-mode='yolo'] {"
+    },
+    {
+      "text": ".kubecode-team-detail-tabs > [data-slot='tabs-list'] {",
+      "kind": "official-internal",
+      "owner": "#261",
+      "context": ".kubecode-team-detail-tabs > [data-slot='tabs-list'] {"
+    },
+    {
+      "text": ".kubecode-team-detail-tabs > [data-slot='tabs-list'] {",
+      "kind": "official-internal",
+      "owner": "#261",
+      "context": ".kubecode-team-detail-tabs > [data-slot='tabs-list'] {"
+    },
+    {
+      "text": ".kubecode-team-detail-tabs [data-slot='tabs-trigger'] { gap: 5px; }",
+      "kind": "official-internal",
+      "owner": "#261",
+      "context": ".kubecode-team-detail-tabs [data-slot='tabs-trigger'] { gap: 5px; }"
+    },
+    {
+      "text": ".kubecode-team-detail-tabs > [data-slot='tabs-content'] {",
+      "kind": "official-internal",
+      "owner": "#261",
+      "context": ".kubecode-team-detail-tabs > [data-slot='tabs-content'] {"
+    },
+    {
+      "text": ".kubecode-team-detail-tabs > [data-slot='tabs-content']::-webkit-scrollbar { display: none; }",
+      "kind": "official-internal",
+      "owner": "#261",
+      "context": ".kubecode-team-detail-tabs > [data-slot='tabs-content']::-webkit-scrollbar { display: none; }"
+    },
+    {
+      "text": "[data-slot='dialog-content'].kubecode-team-task-dialog {",
+      "kind": "official-internal",
+      "owner": "#261",
+      "context": "[data-slot='dialog-content'].kubecode-team-task-dialog {"
+    },
+    {
+      "text": "[data-slot='dialog-content'].kubecode-team-task-dialog > [data-slot='dialog-header'] {",
+      "kind": "official-internal",
+      "owner": "#261",
+      "context": "[data-slot='dialog-content'].kubecode-team-task-dialog > [data-slot='dialog-header'] {"
+    },
+    {
+      "text": "padding: 22px 18px !important;",
+      "kind": "important",
+      "owner": "#261",
+      "context": ".kubecode-session-timeline > div {"
+    },
+    {
+      "text": ".kubecode-context-tabbar [data-slot='tabs-trigger'] {",
+      "kind": "official-internal",
+      "owner": "#262",
+      "context": ".kubecode-context-tabbar [data-slot='tabs-trigger'] {"
+    },
+    {
+      "text": ".kubecode-context-tabbar [data-slot='tabs-trigger'][data-state='active'] {",
+      "kind": "official-internal",
+      "owner": "#262",
+      "context": ".kubecode-context-tabbar [data-slot='tabs-trigger'][data-state='active'] {"
+    },
+    {
+      "text": ".kubecode-terminal-view .xterm-viewport { background-color: var(--surface-editor) !important; }",
+      "kind": "important",
+      "owner": "#262 (specialist exception: xterm viewport)",
+      "context": ".kubecode-terminal-view .xterm-viewport { background-color: var(--surface-editor) !important; }"
+    },
+    {
+      "text": "flex-direction: row !important;",
+      "kind": "important",
+      "owner": "#260",
+      "context": ".kubecode-agent-doctor-actions {"
+    },
+    {
+      "text": "gap: 6px !important;",
+      "kind": "important",
+      "owner": "#260",
+      "context": ".kubecode-agent-doctor-actions {"
+    },
+    {
+      "text": ".kubecode-setting-row [data-slot='select-trigger'] { max-width: none; width: 100%; }",
+      "kind": "official-internal",
+      "owner": "#260",
+      "context": ".kubecode-setting-row [data-slot='select-trigger'] { max-width: none; width: 100%; }"
+    },
+    {
+      "text": ".kubecode-session-composer > div { padding: 0 !important; }",
+      "kind": "important",
+      "owner": "#261",
+      "context": ".kubecode-session-composer > div { padding: 0 !important; }"
+    },
+    {
+      "text": "padding: 22px 10px 12px !important;",
+      "kind": "important",
+      "owner": "#261",
+      "context": ".kubecode-session-timeline > div {"
+    },
+    {
+      "text": ".kubecode-context-tabbar [data-slot='tabs-trigger'] {",
+      "kind": "official-internal",
+      "owner": "#262",
+      "context": ".kubecode-context-tabbar [data-slot='tabs-trigger'] {"
+    },
+    {
+      "text": ".kubecode-context-tabbar [data-slot='tabs-trigger'][data-state='active'] {",
+      "kind": "official-internal",
+      "owner": "#262",
+      "context": ".kubecode-context-tabbar [data-slot='tabs-trigger'][data-state='active'] {"
+    },
+    {
+      "text": ".kubecode-path-picker-heading [data-slot='dialog-title'] { font-size: 15px; }",
+      "kind": "official-internal",
+      "owner": "#260",
+      "context": ".kubecode-path-picker-heading [data-slot='dialog-title'] { font-size: 15px; }"
+    },
+    {
+      "text": ".kubecode-path-picker-heading [data-slot='dialog-description'] { font-size: 12px; }",
+      "kind": "official-internal",
+      "owner": "#260",
+      "context": ".kubecode-path-picker-heading [data-slot='dialog-description'] { font-size: 12px; }"
+    },
+    {
+      "text": "scrollbar-color: transparent transparent !important;",
+      "kind": "important",
+      "owner": "#260",
+      "context": ".kubecode-path-picker-results {"
+    },
+    {
+      "text": "scrollbar-width: none !important;",
+      "kind": "important",
+      "owner": "#260",
+      "context": ".kubecode-path-picker-results {"
+    },
+    {
+      "text": "display: none !important;",
+      "kind": "important",
+      "owner": "#260",
+      "context": ".kubecode-path-picker-results::-webkit-scrollbar {"
+    },
+    {
+      "text": "height: 0 !important;",
+      "kind": "important",
+      "owner": "#260",
+      "context": ".kubecode-path-picker-results::-webkit-scrollbar {"
+    },
+    {
+      "text": "width: 0 !important;",
+      "kind": "important",
+      "owner": "#260",
+      "context": ".kubecode-path-picker-results::-webkit-scrollbar {"
+    },
+    {
+      "text": "animation-duration: 0.01ms !important;",
+      "kind": "important",
+      "owner": "#255 (accessibility exception: prefers-reduced-motion)",
+      "context": ".kubecode-app *::after {"
+    },
+    {
+      "text": "transition-duration: 0.01ms !important;",
+      "kind": "important",
+      "owner": "#255 (accessibility exception: prefers-reduced-motion)",
+      "context": ".kubecode-app *::after {"
+    },
+    {
+      "text": "[data-slot='dialog-content'].kubecode-settings-dialog {",
+      "kind": "official-internal",
+      "owner": "#260",
+      "context": "[data-slot='dialog-content'].kubecode-settings-dialog {"
+    },
+    {
+      "text": ".kubecode-research-row > [data-slot='select-trigger'] { flex: 1 1 140px; }",
+      "kind": "official-internal",
+      "owner": "#262",
+      "context": ".kubecode-research-row > [data-slot='select-trigger'] { flex: 1 1 140px; }"
+    },
+    {
+      "text": "flex-direction: row !important;",
+      "kind": "important",
+      "owner": "#262",
+      "context": ".kubecode-research-check {"
+    },
+    {
+      "text": "gap: 8px !important;",
+      "kind": "important",
+      "owner": "#262",
+      "context": ".kubecode-research-check {"
+    },
+    {
+      "text": "[data-slot='dialog-content'].kubecode-add-context-dialog {",
+      "kind": "official-internal",
+      "owner": "#258",
+      "context": "[data-slot='dialog-content'].kubecode-add-context-dialog {"
+    },
+    {
+      "text": "[data-slot='dialog-content'].kubecode-add-context-dialog { max-width: min(960px, calc(100vw - 32px)); }",
+      "kind": "official-internal",
+      "owner": "#258",
+      "context": "[data-slot='dialog-content'].kubecode-add-context-dialog { max-width: min(960px, calc(100vw - 32px)); }"
+    },
+    {
+      "text": "[data-slot='dialog-content'].kubecode-add-context-dialog {",
+      "kind": "official-internal",
+      "owner": "#258",
+      "context": "[data-slot='dialog-content'].kubecode-add-context-dialog {"
+    },
+    {
+      "text": ".kubecode-members-tabs [data-slot='tabs-list'] { max-width: 100%; overflow-x: auto; }",
+      "kind": "official-internal",
+      "owner": "#260",
+      "context": ".kubecode-members-tabs [data-slot='tabs-list'] { max-width: 100%; overflow-x: auto; }"
+    },
+    {
+      "text": "padding: 8px 12px !important;",
+      "kind": "important",
+      "owner": "#261",
+      "context": ".kubecode-session-prompt-content {"
+    },
+    {
+      "text": ".ai-action-card .ai-action-card-header [data-slot='badge'] { font-size: 10px; padding: 0 6px; }",
+      "kind": "official-internal",
+      "owner": "#261",
+      "context": ".ai-action-card .ai-action-card-header [data-slot='badge'] { font-size: 10px; padding: 0 6px; }"
+    },
+    {
+      "text": ".kubecode-session-plan[data-slot='plan'] { gap: 0; padding: 0; }",
+      "kind": "official-internal",
+      "owner": "#261",
+      "context": ".kubecode-session-plan[data-slot='plan'] { gap: 0; padding: 0; }"
+    },
+    {
+      "text": ".kubecode-session-usage-bar[data-level='ok'] [data-slot='progress-indicator'] { background: var(--accent-green); }",
+      "kind": "official-internal",
+      "owner": "#261",
+      "context": ".kubecode-session-usage-bar[data-level='ok'] [data-slot='progress-indicator'] { background: var(--accent-green); }"
+    },
+    {
+      "text": ".kubecode-session-usage-bar[data-level='warning'] [data-slot='progress-indicator'] { background: var(--feedback-warning-border); }",
+      "kind": "official-internal",
+      "owner": "#261",
+      "context": ".kubecode-session-usage-bar[data-level='warning'] [data-slot='progress-indicator'] { background: var(--feedback-warning-border); }"
+    },
+    {
+      "text": ".kubecode-session-usage-bar[data-level='danger'] [data-slot='progress-indicator'] { background: var(--accent-red); }",
+      "kind": "official-internal",
+      "owner": "#261",
+      "context": ".kubecode-session-usage-bar[data-level='danger'] [data-slot='progress-indicator'] { background: var(--accent-red); }"
+    },
+    {
+      "text": ".kubecode-session-prompt-input[data-slot='input-group'] { background: var(--surface-app); }",
+      "kind": "official-internal",
+      "owner": "#261",
+      "context": ".kubecode-session-prompt-input[data-slot='input-group'] { background: var(--surface-app); }"
+    },
+    {
+      "text": ".kubecode-task-board .kubecode-task-empty [data-slot='empty-content'] { align-items: flex-start; }",
+      "kind": "official-internal",
+      "owner": "#259",
+      "context": ".kubecode-task-board .kubecode-task-empty [data-slot='empty-content'] { align-items: flex-start; }"
+    },
+    {
+      "text": ".kubecode-task-plan [data-slot='plan-content'] { padding: 0 var(--ws-space-3); }",
+      "kind": "official-internal",
+      "owner": "#259",
+      "context": ".kubecode-task-plan [data-slot='plan-content'] { padding: 0 var(--ws-space-3); }"
+    },
+    {
+      "text": ".kubecode-task-evidence[data-slot='item-group'] { gap: var(--ws-space-1); }",
+      "kind": "official-internal",
+      "owner": "#259",
+      "context": ".kubecode-task-evidence[data-slot='item-group'] { gap: var(--ws-space-1); }"
+    },
+    {
+      "text": ".kubecode-task-evidence-row[data-slot='item'] { align-items: flex-start; flex-direction: column; gap: var(--ws-space-1); padding: 0; }",
+      "kind": "official-internal",
+      "owner": "#259",
+      "context": ".kubecode-task-evidence-row[data-slot='item'] { align-items: flex-start; flex-direction: column; gap: var(--ws-space-1); padding: 0; }"
+    },
+    {
+      "text": ".kubecode-task-version[data-slot='item-actions'] { align-items: flex-start; flex-wrap: wrap; }",
+      "kind": "official-internal",
+      "owner": "#259",
+      "context": ".kubecode-task-version[data-slot='item-actions'] { align-items: flex-start; flex-wrap: wrap; }"
+    },
+    {
+      "text": ".kubecode-task-decisions[data-slot='alert'] { border-radius: 0; border-width: 1px 0 0; color: var(--text-primary); }",
+      "kind": "official-internal",
+      "owner": "#259",
+      "context": ".kubecode-task-decisions[data-slot='alert'] { border-radius: 0; border-width: 1px 0 0; color: var(--text-primary); }"
+    },
+    {
+      "text": ".kubecode-needs-you-item[data-slot='item'] { padding: 0; }",
+      "kind": "official-internal",
+      "owner": "#259",
+      "context": ".kubecode-needs-you-item[data-slot='item'] { padding: 0; }"
+    },
+    {
+      "text": ".kubecode-needs-you-decision[data-slot='item'] { flex-wrap: nowrap; }",
+      "kind": "official-internal",
+      "owner": "#259",
+      "context": ".kubecode-needs-you-decision[data-slot='item'] { flex-wrap: nowrap; }"
+    },
+    {
+      "text": ".kubecode-needs-you-decision [data-slot='item-content'] { gap: 2px; }",
+      "kind": "official-internal",
+      "owner": "#259",
+      "context": ".kubecode-needs-you-decision [data-slot='item-content'] { gap: 2px; }"
+    },
+    {
+      "text": ".kubecode-conversation-avatar > [data-slot='avatar-fallback'] { color: var(--text-primary); font: 600 11px/1 var(--font-sans, inherit); }",
+      "kind": "official-internal",
+      "owner": "#257",
+      "context": ".kubecode-conversation-avatar > [data-slot='avatar-fallback'] { color: var(--text-primary); font: 600 11px/1 var(--font-sans, inherit); }"
+    },
+    {
+      "text": ".kubecode-conversation-avatar[data-role='manager'] > [data-slot='avatar-fallback'] { background: var(--accent-blue-light); box-shadow: inset 0 0 0 1px var(--accent-blue); }",
+      "kind": "official-internal",
+      "owner": "#257",
+      "context": ".kubecode-conversation-avatar[data-role='manager'] > [data-slot='avatar-fallback'] { background: var(--accent-blue-light); box-shadow: inset 0 0 0 1px var(--accent-blue); }"
+    },
+    {
+      "text": ".kubecode-conversation-avatar[data-role='specialist'] > [data-slot='avatar-fallback'] { background: var(--accent-teal-light); box-shadow: inset 0 0 0 1px var(--accent-teal); }",
+      "kind": "official-internal",
+      "owner": "#257",
+      "context": ".kubecode-conversation-avatar[data-role='specialist'] > [data-slot='avatar-fallback'] { background: var(--accent-teal-light); box-shadow: inset 0 0 0 1px var(--accent-teal); }"
+    },
+    {
+      "text": ".kubecode-conversation-avatar[data-role='researcher'] > [data-slot='avatar-fallback'] { background: var(--accent-purple-light); box-shadow: inset 0 0 0 1px var(--accent-purple); }",
+      "kind": "official-internal",
+      "owner": "#262",
+      "context": ".kubecode-conversation-avatar[data-role='researcher'] > [data-slot='avatar-fallback'] { background: var(--accent-purple-light); box-shadow: inset 0 0 0 1px var(--accent-purple); }"
+    },
+    {
+      "text": ".kubecode-conversation-avatar[data-role='system'] > [data-slot='avatar-fallback'] { background: var(--surface-button); }",
+      "kind": "official-internal",
+      "owner": "#257",
+      "context": ".kubecode-conversation-avatar[data-role='system'] > [data-slot='avatar-fallback'] { background: var(--surface-button); }"
+    },
+    {
+      "text": ".kubecode-prompt-input > [data-slot='input-group'] {",
+      "kind": "official-internal",
+      "owner": "#257",
+      "context": ".kubecode-prompt-input > [data-slot='input-group'] {"
+    },
+    {
+      "text": ".kubecode-prompt-input > [data-slot='input-group']:has(:focus-visible) {",
+      "kind": "official-internal",
+      "owner": "#257",
+      "context": ".kubecode-prompt-input > [data-slot='input-group']:has(:focus-visible) {"
+    },
+    {
+      "text": ".kubecode-mention-menu [cmdk-item] { gap: var(--ws-space-2); }",
+      "kind": "official-internal",
+      "owner": "#257",
+      "context": ".kubecode-mention-menu [cmdk-item] { gap: var(--ws-space-2); }"
+    },
+    {
+      "text": ".kubecode-mention-menu [cmdk-item] small { color: var(--text-secondary); margin-left: auto; }",
+      "kind": "official-internal",
+      "owner": "#257",
+      "context": ".kubecode-mention-menu [cmdk-item] small { color: var(--text-secondary); margin-left: auto; }"
+    },
+    {
+      "text": ".kubecode-mention-menu [cmdk-item][data-selected='true'] { box-shadow: inset 2px 0 0 var(--primary); }",
+      "kind": "official-internal",
+      "owner": "#257",
+      "context": ".kubecode-mention-menu [cmdk-item][data-selected='true'] { box-shadow: inset 2px 0 0 var(--primary); }"
+    },
+    {
+      "text": ".kubecode-mention-menu [cmdk-item] { min-height: 44px; }",
+      "kind": "official-internal",
+      "owner": "#257",
+      "context": ".kubecode-mention-menu [cmdk-item] { min-height: 44px; }"
+    },
+    {
+      "text": ".kubecode-elicitation-fields [data-slot='field'] { gap: var(--ws-space-1); }",
+      "kind": "official-internal",
+      "owner": "#259",
+      "context": ".kubecode-elicitation-fields [data-slot='field'] { gap: var(--ws-space-1); }"
+    },
+    {
+      "text": ".kubecode-record-code pre { background: transparent !important; font-size: var(--ws-font-size-meta, 12px); padding: 6px 8px; white-space: pre-wrap; overflow-wrap: anywhere; }",
+      "kind": "important",
+      "owner": "#258",
+      "context": ".kubecode-record-code pre { background: transparent !important; font-size: var(--ws-font-size-meta, 12px); padding: 6px 8px; white-space: pre-wrap; overflow-wrap: anywhere; }"
+    },
+    {
+      "text": ".kubecode-resource-row[data-slot='item'] { border-radius: var(--ws-radius-md); flex-wrap: nowrap; align-items: flex-start; }",
+      "kind": "official-internal",
+      "owner": "#258",
+      "context": ".kubecode-resource-row[data-slot='item'] { border-radius: var(--ws-radius-md); flex-wrap: nowrap; align-items: flex-start; }"
+    },
+    {
+      "text": ".kubecode-resource-row-body[data-slot='item-content'] { gap: 2px; }",
+      "kind": "official-internal",
+      "owner": "#258",
+      "context": ".kubecode-resource-row-body[data-slot='item-content'] { gap: 2px; }"
+    },
+    {
+      "text": ".kubecode-member-row[data-slot='item'] { align-items: flex-start; border: 0; border-radius: 0; }",
+      "kind": "official-internal",
+      "owner": "#260",
+      "context": ".kubecode-member-row[data-slot='item'] { align-items: flex-start; border: 0; border-radius: 0; }"
+    },
+    {
+      "text": ".kubecode-member-row[data-slot='item'] + .kubecode-member-row[data-slot='item'] { border-top: 1px solid var(--border-subtle); }",
+      "kind": "official-internal",
+      "owner": "#260",
+      "context": ".kubecode-member-row[data-slot='item'] + .kubecode-member-row[data-slot='item'] { border-top: 1px solid var(--border-subtle); }"
+    },
+    {
+      "text": ".kubecode-member-facts[data-slot='field-group'] { gap: var(--ws-space-2); }",
+      "kind": "official-internal",
+      "owner": "#260",
+      "context": ".kubecode-member-facts[data-slot='field-group'] { gap: var(--ws-space-2); }"
+    },
+    {
+      "text": ".kubecode-member-facts [data-slot='field'] { gap: var(--ws-space-3); justify-content: space-between; }",
+      "kind": "official-internal",
+      "owner": "#260",
+      "context": ".kubecode-member-facts [data-slot='field'] { gap: var(--ws-space-3); justify-content: space-between; }"
+    },
+    {
+      "text": ".kubecode-member-facts [data-slot='field-label'] { color: var(--text-secondary); font: var(--ws-font-meta); }",
+      "kind": "official-internal",
+      "owner": "#260",
+      "context": ".kubecode-member-facts [data-slot='field-label'] { color: var(--text-secondary); font: var(--ws-font-meta); }"
+    },
+    {
+      "text": ".kubecode-member-form [data-slot='field'] { gap: var(--ws-space-1); }",
+      "kind": "official-internal",
+      "owner": "#260",
+      "context": ".kubecode-member-form [data-slot='field'] { gap: var(--ws-space-1); }"
+    },
+    {
+      "text": ".kubecode-member-form [data-slot='field-label'] { flex-direction: row; font: var(--ws-font-meta); font-weight: 600; }",
+      "kind": "official-internal",
+      "owner": "#260",
+      "context": ".kubecode-member-form [data-slot='field-label'] { flex-direction: row; font: var(--ws-font-meta); font-weight: 600; }"
+    },
+    {
+      "text": ".kubecode-member-form [data-slot='field-set'] { border-top: 1px solid var(--border-subtle); gap: var(--ws-space-2); padding-top: var(--ws-space-3); }",
+      "kind": "official-internal",
+      "owner": "#260",
+      "context": ".kubecode-member-form [data-slot='field-set'] { border-top: 1px solid var(--border-subtle); gap: var(--ws-space-2); padding-top: var(--ws-space-3); }"
+    },
+    {
+      "text": ".kubecode-member-form [data-slot='field-set'] > button { align-self: flex-start; }",
+      "kind": "official-internal",
+      "owner": "#260",
+      "context": ".kubecode-member-form [data-slot='field-set'] > button { align-self: flex-start; }"
+    },
+    {
+      "text": ".kubecode-manager-setup[data-slot='alert'] { display: grid; background: var(--feedback-warning-bg); border-color: var(--feedback-warning-border); color: var(--text-primary); }",
+      "kind": "official-internal",
+      "owner": "#260",
+      "context": ".kubecode-manager-setup[data-slot='alert'] { display: grid; background: var(--feedback-warning-bg); border-color: var(--feedback-warning-border); color: var(--text-primary); }"
+    },
+    {
+      "text": ".kubecode-manager-setup[data-slot='alert'] > svg { color: var(--feedback-warning-text); }",
+      "kind": "official-internal",
+      "owner": "#260",
+      "context": ".kubecode-manager-setup[data-slot='alert'] > svg { color: var(--feedback-warning-text); }"
+    },
+    {
+      "text": ".kubecode-manager-setup [data-slot='alert-description'] p { color: var(--text-secondary); margin: 0; }",
+      "kind": "official-internal",
+      "owner": "#260",
+      "context": ".kubecode-manager-setup [data-slot='alert-description'] p { color: var(--text-secondary); margin: 0; }"
+    },
+    {
+      "text": ".kubecode-manager-setup[data-slot='alert'] > .kubecode-manager-setup-actions { grid-column: 2; margin-top: var(--ws-space-2); }",
+      "kind": "official-internal",
+      "owner": "#260",
+      "context": ".kubecode-manager-setup[data-slot='alert'] > .kubecode-manager-setup-actions { grid-column: 2; margin-top: var(--ws-space-2); }"
+    }
+  ]
+}
