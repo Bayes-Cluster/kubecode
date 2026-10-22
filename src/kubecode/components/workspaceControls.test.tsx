@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { IconButton } from '@/components/workspace/IconButton'
@@ -9,7 +9,7 @@ import {
   mentionQueryAt,
   type MentionOption,
 } from '@/components/workspace/mentions'
-import { SendButton, StopButton } from '@/components/workspace/SendButton'
+import { PauseButton, SendButton, StopButton } from '@/components/workspace/SendButton'
 import { StatusBadge } from '@/components/workspace/StatusBadge'
 
 const members: MentionOption[] = [
@@ -66,6 +66,20 @@ describe('IconButton and StatusBadge', () => {
     const badge = screen.getByText('Needs setup')
     expect(badge).toHaveAttribute('data-tone', 'warn')
     expect(badge).toHaveAttribute('title', 'Needs attention')
+    // ADR 0247: the official Badge owns its appearance; the tone picks a variant.
+    expect(badge).toHaveAttribute('data-slot', 'badge')
+    expect(badge).toHaveAttribute('data-variant', 'warning')
+  })
+
+  it.each([
+    ['ok', 'success'],
+    ['info', 'info'],
+    ['warn', 'warning'],
+    ['danger', 'destructive'],
+    ['muted', 'secondary'],
+  ] as const)('maps the %s tone onto the official %s Badge variant', (tone, variant) => {
+    render(<StatusBadge tone={tone}>State</StatusBadge>)
+    expect(screen.getByText('State')).toHaveAttribute('data-variant', variant)
   })
 })
 
@@ -108,6 +122,16 @@ describe('SendButton and StopButton', () => {
     fireEvent.click(screen.getByTestId('stop'))
     expect(onStop).toHaveBeenCalledTimes(1)
     expect(screen.getByRole('button', { name: 'Stop Analyst' })).toHaveAttribute('type', 'button')
+  })
+
+  it('uses the official Button variants instead of redrawn colours (ADR 0247)', () => {
+    render(<SendButton canSend label="Send" onSend={vi.fn()} />)
+    expect(screen.getByRole('button', { name: 'Send' })).toHaveAttribute('data-variant', 'default')
+    cleanup()
+    const { rerender } = render(<PauseButton label="Pause new work" paused={false} onToggle={vi.fn()} />)
+    expect(screen.getByRole('button', { name: 'Pause new work' })).toHaveAttribute('data-variant', 'outline')
+    rerender(<PauseButton label="Pause new work" paused onToggle={vi.fn()} />)
+    expect(screen.getByRole('button', { name: 'Pause new work' })).toHaveAttribute('data-variant', 'secondary')
   })
 })
 

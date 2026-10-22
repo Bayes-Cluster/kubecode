@@ -40,7 +40,7 @@ export function SubagentBubble({
       className="kubecode-session-subagent"
       data-status={entry.status}
       data-testid="subagent-bubble"
-      data-ws-components="official"
+     
       open={open}
       onOpenChange={setUserToggled}
     >

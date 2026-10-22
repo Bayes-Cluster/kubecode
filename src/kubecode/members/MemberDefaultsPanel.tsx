@@ -119,7 +119,7 @@ export function MemberDefaultsPanel({ agents, api, onLoaded, t }: MemberDefaults
   }
 
   return (
-    <section aria-label={t('kubecode.members.defaults.title')} className="kubecode-member-defaults" data-ws-components="official">
+    <section aria-label={t('kubecode.members.defaults.title')} className="kubecode-member-defaults">
       <header className="kubecode-members-header">
         <div>
           <h3>{t('kubecode.members.defaults.title')}</h3>

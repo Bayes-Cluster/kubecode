@@ -9,7 +9,7 @@ import { InspectorPanel } from '../app/inspector/InspectorPanel'
 import type { InspectorPanelProps } from '../app/inspector/inspectorPanels'
 import { isRoutableRecordKind, type InspectorEntry } from '../app/location/inspector'
 import { useWorkspaceNavigation } from '../app/location/WorkspaceNavigation'
-import { ToneBadge } from '../tasks/ToneBadge'
+import { StatusBadge } from '@/components/workspace/StatusBadge'
 import { fallbackTitle, formatVersion, kindLabelKey } from '../resources/referenceKinds'
 import { EvidenceViewer, type DisplayedEvidence, type EvidenceTarget } from './EvidenceViewer'
 
@@ -59,14 +59,14 @@ export function EvidencePanel({ entry, parentTask, projectId }: InspectorPanelPr
       icon={<Icon role="navigation" source={WORKSPACE_OBJECT_ICONS.evidence.Icon} />}
       meta={(
         <>
-          {routable && <ToneBadge tone="muted">{t(kindLabelKey(kind))}</ToneBadge>}
-          {shownVersion && <ToneBadge tone="muted">{t('kubecode.task.evidence.shownVersion', { revision: shownVersion })}</ToneBadge>}
+          {routable && <StatusBadge tone="muted">{t(kindLabelKey(kind))}</StatusBadge>}
+          {shownVersion && <StatusBadge tone="muted">{t('kubecode.task.evidence.shownVersion', { revision: shownVersion })}</StatusBadge>}
         </>
       )}
       title={title}
     >
       {failed && parentTask && (
-        <Alert className="kubecode-evidence-cannot-accept" data-ws-components="official" role="status">
+        <Alert className="kubecode-evidence-cannot-accept" role="status">
           <AlertDescription>{t('kubecode.task.evidence.cannotAccept')}</AlertDescription>
         </Alert>
       )}

@@ -64,7 +64,7 @@ async function wrapsDecision(page: Page): Promise<boolean> {
   })
 }
 
-/** Every shared control, focused by keyboard, shows the Workspace focus ring. */
+/** Every shared control, focused by keyboard, shows the official focus ring in the ring token (ADR 0247). */
 async function controlsWithoutFocusRing(page: Page): Promise<string[]> {
   await page.keyboard.press('Tab')
   const count = await page.locator(CONTROLS).count()
@@ -76,15 +76,24 @@ async function controlsWithoutFocusRing(page: Page): Promise<string[]> {
     const result = await control.evaluate(async (element) => {
       // Buttons transition their shadow; read it once the transition settles.
       await Promise.all(element.getAnimations().map((animation) => animation.finished))
-      const probe = document.createElement('span')
-      probe.style.color = 'var(--state-focus-ring)'
-      element.parentElement?.appendChild(probe)
-      const ring = getComputedStyle(probe).color
-      probe.remove()
+      // The official Button draws `ring-ring/50`, and a destructive one its own
+      // `ring-destructive/20` (`/40` in dark): read each through a probe.
+      const rings = [
+        'color-mix(in oklab, var(--ring) 50%, transparent)',
+        'color-mix(in oklab, var(--destructive) 20%, transparent)',
+        'color-mix(in oklab, var(--destructive) 40%, transparent)',
+      ].map((color) => {
+        const probe = document.createElement('span')
+        probe.style.color = color
+        element.parentElement?.appendChild(probe)
+        const value = getComputedStyle(probe).color
+        probe.remove()
+        return value
+      })
       const style = getComputedStyle(element)
       return {
         focused: document.activeElement === element,
-        ring: style.boxShadow.includes(ring),
+        ring: rings.some((ring) => style.boxShadow.includes(ring)),
         name: element.getAttribute('aria-label') ?? element.textContent?.trim() ?? element.className,
       }
     })

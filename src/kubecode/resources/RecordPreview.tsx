@@ -174,7 +174,7 @@ export function RecordPreview({
     <div
       className={cn('kubecode-work-evidence kubecode-record-preview', compact && 'kubecode-record-preview-compact')}
       data-shown-revision={shownRevision ?? undefined}
-      data-ws-components="official"
+     
       data-testid="evidence-viewer"
     >
       <div className="kubecode-record-preview-meta">

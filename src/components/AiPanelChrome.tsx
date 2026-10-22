@@ -726,7 +726,6 @@ export function AiPanelComposer({
         )}
         data-layout={hasControls ? 'single-row' : undefined}
         data-testid="agent-composer-surface"
-        data-ws-components="official"
       >
         {hasControls && leadingControl && (
           <PromptInputTools className="shrink-0">{leadingControl}</PromptInputTools>

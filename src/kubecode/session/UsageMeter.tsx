@@ -65,7 +65,7 @@ export function UsageMeter({ locale, t, usage }: UsageMeterProps) {
           className="kubecode-session-usage-trigger"
           data-level={level}
           data-testid="usage-meter-trigger"
-          data-ws-components="official"
+         
           size="sm"
           title={openLabel}
           type="button"
@@ -83,7 +83,7 @@ export function UsageMeter({ locale, t, usage }: UsageMeterProps) {
         align="end"
         className="kubecode-session-usage"
         data-testid="usage-meter-popover"
-        data-ws-components="official"
+       
         sideOffset={6}
         onEscapeKeyDown={() => setOpen(false)}
         // The trigger toggles; a press on it is not a dismissal.

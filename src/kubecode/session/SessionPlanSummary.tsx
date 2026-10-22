@@ -30,7 +30,7 @@ export function SessionPlanSummary({
   totalEntries,
 }: SessionPlanSummaryProps) {
   return (
-    <Plan className="kubecode-session-plan" data-testid="session-plan-summary" data-ws-components="official">
+    <Plan className="kubecode-session-plan" data-testid="session-plan-summary">
       <PlanHeader className="kubecode-session-plan-header">
         <div className="kubecode-session-plan-heading">
           <ListChecks aria-hidden size={16} />

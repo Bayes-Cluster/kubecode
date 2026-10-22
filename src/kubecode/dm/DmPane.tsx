@@ -120,7 +120,7 @@ export function DmPane({
   }
 
   return (
-    <section aria-label={t('kubecode.dm.title', { name: member.name })} className="kubecode-channel-workspace" data-ws-components="official">
+    <section aria-label={t('kubecode.dm.title', { name: member.name })} className="kubecode-channel-workspace">
       <div className="kubecode-channel-main">
         <ViewHeader
           actions={(

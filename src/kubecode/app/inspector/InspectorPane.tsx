@@ -12,6 +12,7 @@ import {
   type InspectorEntryApi,
   type InspectorHeader,
 } from './inspectorContext'
+import { focusWhenShown } from './focusWhenShown'
 import type { InspectorPanels } from './inspectorPanels'
 import type { InspectorPresentation } from './useInspectorPresentation'
 
@@ -87,7 +88,7 @@ export function InspectorPane({
       const opener = openers.current[now.length - 1]
       openers.current = openers.current.slice(0, now.length - 1)
       if (opener?.element?.isConnected && section.contains(opener.element)) {
-        opener.element.focus({ preventScroll: true })
+        focusWhenShown(opener.element)
         return
       }
       const keyed = opener?.from
@@ -95,7 +96,7 @@ export function InspectorPane({
           .find((element) => element.dataset.focusKey === opener.from)
         : undefined
       if (keyed) {
-        keyed.focus({ preventScroll: true })
+        focusWhenShown(keyed)
         return
       }
     }

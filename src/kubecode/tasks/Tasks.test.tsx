@@ -83,7 +83,6 @@ describe('TaskBoardView', () => {
       drafts: [draft()],
     })
     expect(container.querySelectorAll('[draggable="true"]')).toHaveLength(0)
-    expect(container.querySelector('.kubecode-task-board')).toHaveAttribute('data-ws-components', 'official')
     for (const button of screen.getAllByTestId(/^task-card-/)) expect(button.closest('[data-slot="card"]')).not.toBeNull()
     for (const button of screen.getAllByTestId(/^task-card-/)) {
       expect(button.tagName).toBe('BUTTON')

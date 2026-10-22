@@ -219,35 +219,6 @@
   --shadow-overlay: var(--surface-overlay);
   --shadow-dialog: rgba(0, 0, 0, 0.15);
 
-  /* --- shadcn theme aliases (light mode) --- */
-  --radius: 0.5rem;
-  --background: var(--surface-app);
-  --foreground: var(--text-primary);
-  --card: var(--surface-card);
-  --card-foreground: var(--text-primary);
-  --popover: var(--surface-popover);
-  --popover-foreground: var(--text-primary);
-  --primary: var(--accent-blue);
-  --primary-foreground: var(--text-inverse);
-  --secondary: var(--state-hover);
-  --secondary-foreground: var(--text-primary);
-  --muted: var(--state-hover-subtle);
-  --muted-foreground: var(--text-secondary);
-  --accent: var(--state-hover);
-  --accent-foreground: var(--text-primary);
-  --destructive: var(--accent-red);
-  --destructive-foreground: var(--text-inverse);
-  --border: var(--border-default);
-  --input: var(--border-input);
-  --ring: var(--state-focus-ring);
-  --sidebar: var(--surface-sidebar);
-  --sidebar-foreground: var(--text-primary);
-  --sidebar-primary: var(--accent-blue);
-  --sidebar-primary-foreground: var(--text-inverse);
-  --sidebar-accent: var(--state-hover);
-  --sidebar-accent-foreground: var(--text-primary);
-  --sidebar-border: var(--border-default);
-  --sidebar-ring: var(--state-focus-ring);
 
   /* --- Compatibility aliases for existing product code --- */
   --bg-primary: var(--surface-app);
@@ -439,34 +410,6 @@
   --shadow-overlay: var(--surface-overlay);
   --shadow-dialog: rgba(0, 0, 0, 0.42);
 
-  /* --- shadcn theme aliases (dark mode) --- */
-  --background: var(--surface-app);
-  --foreground: var(--text-primary);
-  --card: var(--surface-card);
-  --card-foreground: var(--text-primary);
-  --popover: var(--surface-popover);
-  --popover-foreground: var(--text-primary);
-  --primary: var(--accent-blue);
-  --primary-foreground: var(--text-inverse);
-  --secondary: var(--state-hover);
-  --secondary-foreground: var(--text-primary);
-  --muted: var(--state-hover-subtle);
-  --muted-foreground: var(--text-secondary);
-  --accent: var(--state-hover);
-  --accent-foreground: var(--text-primary);
-  --destructive: var(--accent-red);
-  --destructive-foreground: var(--text-inverse);
-  --border: var(--border-default);
-  --input: var(--border-input);
-  --ring: var(--state-focus-ring);
-  --sidebar: var(--surface-sidebar);
-  --sidebar-foreground: var(--text-primary);
-  --sidebar-primary: var(--accent-blue);
-  --sidebar-primary-foreground: var(--text-inverse);
-  --sidebar-accent: var(--state-hover);
-  --sidebar-accent-foreground: var(--text-primary);
-  --sidebar-border: var(--border-default);
-  --sidebar-ring: var(--state-focus-ring);
 
   /* --- Compatibility aliases for existing product code --- */
   --bg-primary: var(--surface-app);
@@ -482,6 +425,57 @@
   --hover: var(--state-hover);
   --link-color: var(--accent-blue);
   --link-hover: var(--accent-blue-hover);
+}
+
+/* ============================================================
+   ADR 0247: the one semantic token layer. The shadcn/ui and AI Elements
+   variables resolve to the Kubecode brand primitives above, for both modes and
+   every app theme. They are declared on the root (and on any element carrying
+   its own data-theme), so normal pages and portalled overlays (Popover,
+   Dialog, Sheet, Select, HoverCard, Command, Tooltip, DropdownMenu) read the
+   same values. Views never redefine these per surface.
+   ============================================================ */
+:root,
+[data-theme] {
+  --radius: 0.5rem;
+  --background: var(--surface-app);
+  --foreground: var(--text-primary);
+  --card: var(--surface-panel);
+  --card-foreground: var(--text-primary);
+  --popover: var(--surface-popover);
+  --popover-foreground: var(--text-primary);
+  --primary: var(--accent-blue);
+  --primary-foreground: var(--text-inverse);
+  --secondary: color-mix(in srgb, var(--text-primary) 4%, transparent);
+  --secondary-foreground: var(--text-primary);
+  --muted: color-mix(in srgb, var(--text-primary) 4%, transparent);
+  --muted-foreground: var(--text-secondary);
+  --accent: color-mix(in srgb, var(--accent-blue) 12%, transparent);
+  --accent-foreground: var(--text-primary);
+  --destructive: var(--accent-red);
+  --destructive-foreground: var(--text-inverse);
+  --success: var(--feedback-success-bg);
+  --success-foreground: var(--feedback-success-text);
+  --info: var(--feedback-info-bg);
+  --info-foreground: var(--feedback-info-text);
+  --warning: var(--feedback-warning-bg);
+  --warning-foreground: var(--feedback-warning-text);
+  --border: color-mix(in srgb, var(--text-primary) 16%, transparent);
+  --input: color-mix(in srgb, var(--text-primary) 16%, transparent);
+  --ring: var(--state-focus-ring);
+  --chart-1: var(--accent-blue);
+  --chart-2: var(--accent-green);
+  --chart-3: var(--accent-orange);
+  --chart-4: var(--accent-purple);
+  --chart-5: var(--accent-teal);
+  --sidebar: var(--surface-sidebar);
+  --sidebar-foreground: var(--text-primary);
+  --sidebar-primary: var(--accent-blue);
+  --sidebar-primary-foreground: var(--text-inverse);
+  --sidebar-accent: color-mix(in srgb, var(--accent-blue) 12%, transparent);
+  --sidebar-accent-foreground: var(--text-primary);
+  --sidebar-border: color-mix(in srgb, var(--text-primary) 16%, transparent);
+  --sidebar-ring: var(--state-focus-ring);
 }
 
 /* --- Tailwind v4 theme inline: register colors + radii --- */
@@ -502,6 +496,17 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);

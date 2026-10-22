@@ -53,7 +53,7 @@ export function ManagerSetupNotice({ api, onOpenMembers, onReload, projectId, se
   }
 
   return (
-    <Alert className="kubecode-manager-setup" data-ws-components="official">
+    <Alert className="kubecode-manager-setup">
       <TriangleAlert aria-hidden />
       <AlertTitle>{t('kubecode.members.managerSetup.title')}</AlertTitle>
       <AlertDescription>

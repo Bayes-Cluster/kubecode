@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react'
 
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 import { initialsOf } from './memberInitials'
@@ -21,15 +23,15 @@ export type MemberAvatarProps = {
  */
 export function MemberAvatar({ className, name, role, size = 'md' }: MemberAvatarProps) {
   return (
-    <span
+    <Avatar
       aria-hidden="true"
       className={cn('kubecode-member-avatar', className)}
       data-role={role}
-      data-size={size}
       data-testid="member-avatar"
+      size={size === 'sm' ? 'sm' : 'default'}
     >
-      {initialsOf(name)}
-    </span>
+      <AvatarFallback>{initialsOf(name)}</AvatarFallback>
+    </Avatar>
   )
 }
 
@@ -61,7 +63,8 @@ export type MemberIdentityProps = {
 
 /**
  * One presentation of who someone is, shared by messages, the roster,
- * mentions, and profiles (ADR 0227): avatar, name, handle, and role in words.
+ * mentions, and profiles (ADR 0227): avatar, name, handle, and role in words, on the official
+ * Avatar, Button and Badge (ADR 0247).
  */
 export function MemberIdentity({
   activity,
@@ -80,7 +83,7 @@ export function MemberIdentity({
       <MemberAvatar name={name} role={role} size={size} />
       <span className="kubecode-member-identity-text">
         {onOpen ? (
-          <button className="kubecode-member-identity-name" type="button" onClick={onOpen}>{name}</button>
+          <Button className="kubecode-member-identity-name h-auto p-0" size="sm" type="button" variant="link" onClick={onOpen}>{name}</Button>
         ) : (
           <span className="kubecode-member-identity-name">{name}</span>
         )}

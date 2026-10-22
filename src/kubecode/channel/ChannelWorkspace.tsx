@@ -308,7 +308,7 @@ export function ChannelWorkspace({
       aria-label={t('kubecode.channel.title')}
       className="kubecode-channel-workspace"
       data-detail={detail !== null}
-      data-ws-components="official"
+     
       ref={root}
       onFocusCapture={(event) => noteFocus(event.target)}
     >

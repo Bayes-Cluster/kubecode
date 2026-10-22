@@ -73,8 +73,8 @@ async function send(page: Page, text: string) {
 
 /** Nothing waits: the navigation counts a quiet zero. */
 async function nothingWaits(page: Page) {
-  await expect(needsYouPlace(page).locator('.kubecode-research-badge')).toHaveText('0', { timeout: 20_000 })
-  await expect(needsYouPlace(page).locator('.kubecode-research-badge')).toHaveAttribute('data-tone', 'muted')
+  await expect(needsYouPlace(page).locator('[data-slot="badge"]')).toHaveText('0', { timeout: 20_000 })
+  await expect(needsYouPlace(page).locator('[data-slot="badge"]')).toHaveAttribute('data-tone', 'muted')
 }
 
 test.describe('on a desktop', () => {
@@ -115,7 +115,7 @@ test.describe('on a desktop', () => {
       await waitForPrompt(analyst.public_conversation_id!, (text) => text.includes('[smoke:permission]'))
       await escalateThroughManager(request, api, projectId, 1)
       await expect(strip(page)).toContainText('Waiting for your permission', { timeout: 30_000 })
-      await expect(needsYouPlace(page).locator('.kubecode-research-badge')).toHaveText('1')
+      await expect(needsYouPlace(page).locator('[data-slot="badge"]')).toHaveText('1')
       // The bell has this Workspace's request and the other Workspace's review.
       const bell = page.getByRole('button', { name: 'Needs you: 2' })
       await expect(bell).toBeVisible()
@@ -153,7 +153,7 @@ test.describe('on a desktop', () => {
       // 4. One Stop per reply, in the strip, never a second beside Send; stopping it ends its request too.
       await send(page, '@analyst [smoke:permission] once more')
       await escalateThroughManager(request, api, projectId, 1)
-      await expect(needsYouPlace(page).locator('.kubecode-research-badge')).toHaveText('1', { timeout: 30_000 })
+      await expect(needsYouPlace(page).locator('[data-slot="badge"]')).toHaveText('1', { timeout: 30_000 })
       const stop = strip(page).getByRole('button', { name: "Stop Analyst's reply" })
       await expect(stop).toBeVisible()
       await expect(page.getByRole('button', { name: /^Stop / })).toHaveCount(1)

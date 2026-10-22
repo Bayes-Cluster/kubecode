@@ -6,7 +6,7 @@ import { Empty, EmptyDescription } from '@/components/ui/empty'
 import { Item, ItemGroup } from '@/components/ui/item'
 import type { Translator } from '@/lib/i18n'
 
-import { ToneBadge } from '../tasks/ToneBadge'
+import { StatusBadge } from '@/components/workspace/StatusBadge'
 
 import type { NeedsYouEntry, NeedsYouTarget } from '../app/location/needsYou'
 
@@ -58,7 +58,7 @@ function Rows({ entries, label, onOpenTarget, t }: {
                 </span>
                 {resolving
                   ? <Loader2 aria-hidden className="animate-spin motion-reduce:animate-none" size={14} />
-                  : <ToneBadge tone={entry.reason.tone}>{entry.reason.label}</ToneBadge>}
+                  : <StatusBadge tone={entry.reason.tone}>{entry.reason.label}</StatusBadge>}
               </button>
             </Item>
           )
@@ -86,7 +86,7 @@ export function NeedsYouList({ entries, incomplete, onOpenTarget, onRetryLoad, s
 
 
   return (
-    <div className="kubecode-needs-you-list" data-ws-components="official">
+    <div className="kubecode-needs-you-list">
       {status === 'loading' && entries.length === 0 && (
         <p className="kubecode-research-nav-note">{t('kubecode.nav.needsYouLoading')}</p>
       )}

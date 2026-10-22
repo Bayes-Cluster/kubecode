@@ -26,7 +26,7 @@ import { ResearchFindingsPanel } from '../research/ResearchFindingsPanel'
 import type { ResearchBundle } from '../research/useResearch'
 import { evidenceKind, outcomeLabel, recordKindOf, taskTime } from './taskLabels'
 import { useShowInGeneral } from './taskNavigation'
-import { ToneBadge } from './ToneBadge'
+import { StatusBadge } from '@/components/workspace/StatusBadge'
 import { acceptBlocker, repinsFor, reviewEvidence, versionCheck, type VersionCheck } from './taskReview'
 
 const OUTCOMES: Exclude<WorkOutcome, 'unknown'>[] = ['supported', 'refuted', 'inconclusive']
@@ -69,7 +69,7 @@ export function TaskResults({ bundle = null, detail, onBundleChanged, onChanged,
   const acceptedEvidence = reviewEvidence(detail).accepted
 
   return (
-    <div className="kubecode-task-results" data-ws-components="official">
+    <div className="kubecode-task-results">
       {decided && !openRequest && (
         <p className="kubecode-task-decided" ref={status} role="status" tabIndex={-1}>
           {decided.messageId === null
@@ -163,10 +163,10 @@ function ReviewSummary({ locale, onShow, review, t }: {
   const outcome = review.accepted ? outcomeLabel(t, review.outcome) : null
   return (
     <div className="kubecode-task-review-summary">
-      <ToneBadge tone={review.accepted ? 'ok' : 'warn'}>
+      <StatusBadge tone={review.accepted ? 'ok' : 'warn'}>
         {review.accepted ? t('kubecode.task.accepted') : t('kubecode.task.returned')}
-      </ToneBadge>
-      {outcome && <ToneBadge tone="info">{outcome}</ToneBadge>}
+      </StatusBadge>
+      {outcome && <StatusBadge tone="info">{outcome}</StatusBadge>}
       <small className="kubecode-research-muted">{t('kubecode.task.decidedAt', { time: taskTime(review.created_at, locale) })}</small>
       {review.reason && <q>{review.reason}</q>}
       {review.general_message_id && (
