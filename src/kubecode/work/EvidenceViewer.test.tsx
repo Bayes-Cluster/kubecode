@@ -104,7 +104,7 @@ describe('EvidenceViewer', () => {
     expect(onFollow).toHaveBeenCalledWith({ kind: 'finding', id: 'f1' })
     expect(readProjectContext).toHaveBeenCalledTimes(1)
     expect(screen.getByText('acc 0.91')).toBeInTheDocument()
-    expect(onDisplayed).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(onDisplayed).toHaveBeenCalledTimes(1))
   })
 
   it('without a host to hand it to, follows a related record in place and never reports it as the cited one', async () => {
