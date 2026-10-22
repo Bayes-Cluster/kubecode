@@ -101,6 +101,9 @@ test.describe('on a desktop', () => {
       await expect(promptCard.locator('.kubecode-composer-to')).toHaveCount(0)
       await expect(promptCard).not.toContainText('never start work')
       await expect(row(page, 'Should we prune the attention heads?')).toHaveAttribute('data-from', 'self')
+      // Reached by keyboard, the card shows a focus ring (#229).
+      await composer(page).focus()
+      await expect(promptCard.locator("[data-slot='input-group']")).not.toHaveCSS('border-color', 'rgba(0, 0, 0, 0)')
       await waitForPrompt(manager.public_conversation_id!, (text) => text.includes('Should we prune the attention heads?'))
 
       // 2. Mentioning a member by @ shows them as the recipient, and only they are prompted.
@@ -128,6 +131,10 @@ test.describe('on a desktop', () => {
       await expect(row(page, 'Sweep sized: twelve runs.')).toHaveAttribute('aria-label', 'Analyst')
       await expect(row(page, 'Outline drafted.')).toHaveAttribute('aria-label', 'Writer')
       await expect(row(page, 'Noted, tracking both.')).toHaveAttribute('aria-label', manager.name)
+      // A member's next one-line message sits tight under the last (#229): no blank header row.
+      await new MemberAgent(request, manager.public_conversation_id!).call('general_post', { body: 'And one more.' })
+      await expect(row(page, 'And one more.')).toHaveAttribute('data-continued', 'true')
+      expect((await row(page, 'And one more.').boundingBox())!.height).toBeLessThanOrEqual(40)
       await expect(row(page, '@writer please draft the outline')).toContainText('Writer')
 
       // A chat at 1440px (ADR 0239): the thread is the middle three quarters, the composer card at most

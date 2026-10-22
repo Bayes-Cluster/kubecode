@@ -1,5 +1,5 @@
 import { ShieldAlert } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { type RefObject, useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 import {
   Confirmation,
@@ -40,6 +40,8 @@ export function PermissionPrompt({ deadlineMs, heading, onGone, onResolve, optio
   const [busy, setBusy] = useState<string | null>(null)
   const [outcome, setOutcome] = useState<'failed' | 'gone' | null>(null)
   const title = heading ?? t('kubecode.permissionRequired')
+  const rootRef = useRef<HTMLDivElement>(null)
+  useFocusHandoff(rootRef)
   const resolve = async (optionId: string) => {
     if (busy || resolving) return
     setBusy(optionId)
@@ -69,6 +71,7 @@ export function PermissionPrompt({ deadlineMs, heading, onGone, onResolve, optio
       role="group"
       state="approval-requested"
       tabIndex={0}
+      ref={rootRef}
       onKeyDown={(event) => {
         // 1–9 keyboard option select (#111).
         const digit = Number.parseInt(event.key, 10)
@@ -101,6 +104,26 @@ export function PermissionPrompt({ deadlineMs, heading, onGone, onResolve, optio
       {outcome === 'gone' && <p className="kubecode-research-muted" role="status">{t('kubecode.attention.answeredElsewhere')}</p>}
     </Confirmation>
   )
+}
+
+/**
+ * When the prompt holding focus goes (answered, timed out), focus moves to the
+ * next permission prompt, or else the composer, instead of falling to <body> (#229).
+ */
+function useFocusHandoff(rootRef: RefObject<HTMLDivElement | null>) {
+  useLayoutEffect(() => {
+    const root = rootRef.current
+    return () => {
+      if (!root || !root.contains(document.activeElement)) return
+      const doc = root.ownerDocument
+      window.setTimeout(() => {
+        if (doc.activeElement && doc.activeElement !== doc.body) return
+        const next = Array.from(doc.querySelectorAll<HTMLElement>('[data-focus-key^="permission:"]')).find((node) => node !== root && node.isConnected)
+        const target = next ?? doc.querySelector<HTMLElement>('.kubecode-composer-textarea')
+        target?.focus()
+      }, 0)
+    }
+  }, [rootRef])
 }
 
 function remainingSeconds(deadlineMs: number): number {

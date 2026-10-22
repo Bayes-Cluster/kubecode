@@ -29,7 +29,9 @@ async function unnamedControls(page: Page): Promise<string[]> {
 
 async function check(page: Page, { heading, inspector, screen }: (typeof SCREENS)[number], theme: 'light' | 'dark') {
   await page.goto(prototypesUrl(`?screen=${screen}&theme=${theme}`))
-  await expect(page.getByTestId('workspace-prototypes')).toBeVisible()
+  // The prototypes are a lazily loaded chunk: under a full parallel run its first
+  // load can outlast the default 5 s (#229 acceptance flake).
+  await expect(page.getByTestId('workspace-prototypes')).toBeVisible({ timeout: 20_000 })
   await expect(page.locator('html')).toHaveAttribute('data-theme', theme)
   await expect(page.getByRole('note')).toContainText('Sample data only')
   await expect(page.getByRole('heading', { level: 1, name: heading })).toBeVisible()

@@ -5299,7 +5299,7 @@ button.kubecode-reference-chip-open:focus-visible,
   min-width: 0;
   overflow-y: auto;
 }
-.kubecode-destination-body { max-width: var(--ws-conversation-width); padding: var(--ws-space-3) var(--ws-space-5); width: 100%; }
+.kubecode-destination-body { max-width: var(--ws-conversation-width); padding: var(--ws-space-3) var(--ws-space-4); width: 100%; }
 .kubecode-needs-you-view .kubecode-research-nav-list { display: flex; flex-direction: column; gap: 2px; padding: 0; }
 .kubecode-needs-you-view .kubecode-needs-you-row { border-radius: var(--ws-radius-sm); font: var(--ws-font-body); padding: var(--ws-space-2); }
 .kubecode-needs-you-view .kubecode-needs-you-row:hover { background: var(--ws-surface-quiet); }
@@ -5863,6 +5863,9 @@ button.kubecode-reference-chip-open:focus-visible,
 .kubecode-message { display: flex; flex-direction: column; max-width: none; min-width: 0; padding: var(--ws-space-2); }
 .kubecode-message[data-continued='true'] { padding-top: 0; }
 .kubecode-message > .kubecode-message-inner { gap: var(--ws-space-1); max-width: none; width: 100%; }
+/* A continued message has no author line: its toolbar floats, so one line of text is one row (#229). */
+.kubecode-message[data-continued='true'] { position: relative; }
+.kubecode-message[data-continued='true'] .kubecode-message-header { inset-block-start: calc(-1 * var(--ws-space-2)); inset-inline-end: var(--ws-space-2); position: absolute; z-index: 1; }
 .kubecode-message-header { align-items: center; display: flex; flex-wrap: wrap; gap: var(--ws-space-2); min-width: 0; }
 .kubecode-message .kubecode-message-content {
   font: var(--ws-font-reading);
@@ -5925,6 +5928,11 @@ button.kubecode-reference-chip-open:focus-visible,
   border-color: transparent;
   border-radius: var(--ws-radius-composer);
   box-shadow: var(--ws-elevation-soft);
+}
+/* Reached by keyboard, the card shows the ring the soft elevation above would hide (#229). */
+.kubecode-prompt-input > [data-slot='input-group']:has(:focus-visible) {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 50%, transparent), var(--ws-elevation-soft);
 }
 .kubecode-composer-textarea {
   field-sizing: content;
@@ -6036,3 +6044,8 @@ button.kubecode-reference-chip-open:focus-visible,
 .kubecode-manager-setup [data-slot='alert-description'] p { color: var(--text-secondary); margin: 0; }
 .kubecode-manager-setup[data-slot='alert'] > .kubecode-manager-setup-actions { grid-column: 2; margin-top: var(--ws-space-2); }
 /* ==== end S3 ==== */
+
+/* The inspector and its entries take focus only so keyboard reading starts there;
+   they are not controls, so they draw no ring around the whole panel (#229). */
+.kubecode-detail-pane[tabindex='-1']:focus,
+.kubecode-inspector-entry[tabindex='-1']:focus { outline: none; }
