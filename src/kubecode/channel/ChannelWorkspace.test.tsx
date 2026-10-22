@@ -778,6 +778,23 @@ describe('ChannelWorkspace keeps its place (ADR 0228 §4, ADR 0229 §6)', () => 
     expect(screen.getByText('message 60')).toBeInTheDocument()
   })
 
+  it('brings the thread to the latest when the researcher sends, even after scrolling up', async () => {
+    const s = server(Array.from({ length: 6 }, (_, index) => server().message(index + 1, `message ${index + 1}`, { author_kind: 'agent', author_ref: 's-a', author_member_id: 'a' })))
+    view(s)
+    await screen.findByText('message 6')
+    const log = screen.getByRole('log').querySelector('.kubecode-channel-messages') as HTMLElement
+    let top = 0
+    Object.defineProperty(log, 'scrollTop', { configurable: true, get: () => top, set: (value: number) => { top = value } })
+    Object.defineProperty(log, 'scrollHeight', { configurable: true, get: () => 900 })
+    Object.defineProperty(log, 'clientHeight', { configurable: true, get: () => 100 })
+    top = 0
+    fireEvent.scroll(log)
+    fireEvent.change(box(), { target: { value: 'my own words' } })
+    send()
+    await screen.findByText('my own words')
+    await waitFor(() => expect(top).toBeGreaterThanOrEqual(800))
+  })
+
   it('starts at the latest when a linked message never arrives', async () => {
     const s = server([server().message(1, 'a topic'), server().message(2, 'a reply')])
     s.calls.getChannelMessage.mockRejectedValue(new ApiError('not_found', 'gone', 404))

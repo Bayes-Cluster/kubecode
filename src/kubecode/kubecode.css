@@ -5683,7 +5683,9 @@
 .kubecode-message[data-state='failed'] .kubecode-message-inner > :not(.kubecode-message-header) { box-shadow: inset 2px 0 0 var(--feedback-error-text); }
 .kubecode-message[data-state='pending'] .kubecode-message-inner > :not(.kubecode-message-header) { opacity: 0.75; }
 .kubecode-message-body { color: var(--text-primary); font: var(--ws-font-reading); min-width: 0; overflow-wrap: anywhere; }
-.kubecode-message-body [data-streamdown='table-wrapper'] { max-width: 100%; }
+.kubecode-message-body [data-streamdown='table-wrapper'] { max-width: 100%; overflow-x: auto; }
+/* Cells keep words whole on a phone; the table scrolls inside its box instead (#229). */
+.kubecode-message-body :is(th, td) { overflow-wrap: normal; word-break: normal; }
 .kubecode-message-action { color: var(--text-secondary); }
 .kubecode-dm-turn { display: flex; flex-direction: column; width: 100%; }
 .kubecode-dm-waiting { align-items: center; color: var(--text-secondary); display: flex; font: var(--ws-font-meta); gap: var(--ws-space-2); margin: 0; }

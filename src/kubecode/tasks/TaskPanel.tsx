@@ -187,7 +187,8 @@ export function TaskPanel({ entry, projectId }: InspectorPanelProps<Extract<Insp
           </Button>
         </div>
         {error && <p className="kubecode-research-error" role="alert">{error}</p>}
-        {detail && !archived && <TaskWork detail={detail} projectId={projectId} onChanged={changed} />}
+        {/* An accepted (Done) Task has no work left to run, pause or stop (#229). */}
+        {detail && !archived && detail.stage !== 'done' && <TaskWork detail={detail} projectId={projectId} onChanged={changed} />}
         {archived && (
           <DecisionButton busy={busy} variant="secondary" onDecide={() => void setArchived(false)}>
             {t('kubecode.task.restore')}

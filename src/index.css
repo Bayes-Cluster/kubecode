@@ -814,6 +814,9 @@
   border: 1px solid var(--border);
   padding: 0.35em 0.6em;
   text-align: start;
+  /* Cells keep words whole; a wide table scrolls inside its box instead (#229). */
+  overflow-wrap: normal;
+  word-break: normal;
 }
 .ai-markdown th {
   background: var(--muted);
