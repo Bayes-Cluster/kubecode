@@ -1,10 +1,12 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
 
+import { Confirmation, ConfirmationActions, ConfirmationTitle } from '@/components/ai-elements/confirmation'
+import { Sources } from '@/components/ai-elements/sources'
 import { Button } from '@/components/ui/button'
+import { Item, ItemActions, ItemGroup } from '@/components/ui/item'
 import { Textarea } from '@/components/ui/textarea'
 import { DecisionButton } from '@/components/workspace/DecisionButton'
 import { ReferenceChip } from '@/components/workspace/ReferenceChip'
-import { StatusBadge } from '@/components/workspace/StatusBadge'
 import type { Translator } from '@/lib/i18n'
 
 import {
@@ -24,6 +26,7 @@ import { ResearchFindingsPanel } from '../research/ResearchFindingsPanel'
 import type { ResearchBundle } from '../research/useResearch'
 import { evidenceKind, outcomeLabel, recordKindOf, taskTime } from './taskLabels'
 import { useShowInGeneral } from './taskNavigation'
+import { ToneBadge } from './ToneBadge'
 import { acceptBlocker, repinsFor, reviewEvidence, versionCheck, type VersionCheck } from './taskReview'
 
 const OUTCOMES: Exclude<WorkOutcome, 'unknown'>[] = ['supported', 'refuted', 'inconclusive']
@@ -66,7 +69,7 @@ export function TaskResults({ bundle = null, detail, onBundleChanged, onChanged,
   const acceptedEvidence = reviewEvidence(detail).accepted
 
   return (
-    <div className="kubecode-task-results">
+    <div className="kubecode-task-results" data-ws-components="official">
       {decided && !openRequest && (
         <p className="kubecode-task-decided" ref={status} role="status" tabIndex={-1}>
           {decided.messageId === null
@@ -105,9 +108,13 @@ export function TaskResults({ bundle = null, detail, onBundleChanged, onChanged,
       {done && acceptedEvidence.length > 0 && (
         <>
           <h4>{t('kubecode.task.acceptedEvidence')}</h4>
-          <ul aria-label={t('kubecode.task.acceptedEvidence')} className="kubecode-task-evidence">
-            {acceptedEvidence.map((row) => <li key={row.key}><EvidenceChip evidence={row} /></li>)}
-          </ul>
+          <EvidenceSources label={t('kubecode.task.acceptedEvidence')}>
+            {acceptedEvidence.map((row) => (
+              <Item className="kubecode-task-evidence-row" key={row.key} role="listitem" size="sm">
+                <EvidenceChip evidence={row} />
+              </Item>
+            ))}
+          </EvidenceSources>
         </>
       )}
 
@@ -156,10 +163,10 @@ function ReviewSummary({ locale, onShow, review, t }: {
   const outcome = review.accepted ? outcomeLabel(t, review.outcome) : null
   return (
     <div className="kubecode-task-review-summary">
-      <StatusBadge tone={review.accepted ? 'ok' : 'warn'}>
+      <ToneBadge tone={review.accepted ? 'ok' : 'warn'}>
         {review.accepted ? t('kubecode.task.accepted') : t('kubecode.task.returned')}
-      </StatusBadge>
-      {outcome && <StatusBadge tone="info">{outcome}</StatusBadge>}
+      </ToneBadge>
+      {outcome && <ToneBadge tone="info">{outcome}</ToneBadge>}
       <small className="kubecode-research-muted">{t('kubecode.task.decidedAt', { time: taskTime(review.created_at, locale) })}</small>
       {review.reason && <q>{review.reason}</q>}
       {review.general_message_id && (
@@ -168,6 +175,16 @@ function ReviewSummary({ locale, onShow, review, t }: {
         </Button>
       )}
     </div>
+  )
+}
+
+/** Cited records as the official Sources, one Item row per record (ADR 0243). */
+function EvidenceSources({ children, label }: { children: ReactNode; label: string }) {
+  // The list is never folded, so Sources holds it without its trigger and content.
+  return (
+    <Sources className="kubecode-task-sources" data-ws-sources="">
+      <ItemGroup aria-label={label} className="kubecode-task-evidence">{children}</ItemGroup>
+    </Sources>
   )
 }
 
@@ -312,7 +329,7 @@ function OpenReview({ detail, onChanged, onDecided, projectId, request }: {
           : taskTime(request.created_at, locale)}
       </p>
       {rows.length > 0 && (
-        <ul aria-label={t('kubecode.task.evidence')} className="kubecode-task-evidence">
+        <EvidenceSources label={t('kubecode.task.evidence')}>
           {rows.map((row) => (
             <EvidenceRow
               busy={busy === row.key}
@@ -336,7 +353,7 @@ function OpenReview({ detail, onChanged, onDecided, projectId, request }: {
               })}
             />
           ))}
-        </ul>
+        </EvidenceSources>
       )}
       {removed && (
         <label className="kubecode-task-field">
@@ -370,25 +387,34 @@ function OpenReview({ detail, onChanged, onDecided, projectId, request }: {
       </label>
       <small className="kubecode-research-muted" id={hintId}>{t('kubecode.task.feedbackHint')}</small>
       {error && <p className="kubecode-research-error" role="alert">{error}</p>}
-      <div aria-label={t('kubecode.task.decisionTitle')} className="kubecode-task-decisions" role="group">
-        <p className="kubecode-task-decisions-note">{t('kubecode.task.acceptsShownVersions')}</p>
-        <DecisionButton
-          busy={busy === 'accept'}
-          disabledReason={acceptReason}
-          variant="primary"
-          onDecide={() => decide(true)}
-        >
-          {t('kubecode.task.acceptResults')}
-        </DecisionButton>
-        <DecisionButton
-          busy={busy === 'return'}
-          disabledReason={returnReason}
-          variant="secondary"
-          onDecide={() => decide(false)}
-        >
-          {t('kubecode.task.sendBack')}
-        </DecisionButton>
-      </div>
+      {/* The official Confirmation, kept a named group: nothing here is an alert (ADR 0243). */}
+      <Confirmation
+        approval={{ id: request.id }}
+        aria-label={t('kubecode.task.decisionTitle')}
+        className="kubecode-task-decisions"
+        role="group"
+        state="approval-requested"
+      >
+        <ConfirmationTitle className="kubecode-task-decisions-note">{t('kubecode.task.acceptsShownVersions')}</ConfirmationTitle>
+        <ConfirmationActions className="kubecode-task-decision-actions">
+          <DecisionButton
+            busy={busy === 'accept'}
+            disabledReason={acceptReason}
+            variant="primary"
+            onDecide={() => decide(true)}
+          >
+            {t('kubecode.task.acceptResults')}
+          </DecisionButton>
+          <DecisionButton
+            busy={busy === 'return'}
+            disabledReason={returnReason}
+            variant="secondary"
+            onDecide={() => decide(false)}
+          >
+            {t('kubecode.task.sendBack')}
+          </DecisionButton>
+        </ConfirmationActions>
+      </Confirmation>
     </section>
   )
 }
@@ -433,15 +459,15 @@ function EvidenceRow({ busy, check, evidence, onAccept, settle }: {
   const { t } = useInspectorServices()
   const open = useOpenEvidence(evidence)
   const changed = evidence.status === 'changed'
-  const row = useRef<HTMLLIElement>(null)
+  const row = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (settle && !changed) row.current?.querySelector<HTMLElement>('button')?.focus({ preventScroll: true })
   }, [changed, settle])
   return (
-    <li className="kubecode-task-evidence-row" data-status={evidence.status} ref={row}>
+    <Item className="kubecode-task-evidence-row" data-status={evidence.status} ref={row} role="listitem" size="sm">
       <EvidenceChip evidence={evidence} />
       {changed && (
-        <div className="kubecode-task-version">
+        <ItemActions className="kubecode-task-version">
           {open && (
             <Button data-focus-key={`evidence:${evidence.key}`} size="xs" variant="outline" onClick={open}>
               {t('kubecode.task.lookAtIt')}
@@ -460,9 +486,9 @@ function EvidenceRow({ busy, check, evidence, onAccept, settle }: {
           >
             {t('kubecode.task.acceptShown')}
           </DecisionButton>
-        </div>
+        </ItemActions>
       )}
-    </li>
+    </Item>
   )
 }
 

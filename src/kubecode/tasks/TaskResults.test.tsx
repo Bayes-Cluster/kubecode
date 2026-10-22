@@ -67,6 +67,9 @@ describe('TaskResults', () => {
     const evidence = review().getByRole('list', { name: 'Evidence' })
     expect(within(evidence).getByRole('button', { name: 'Artifact Artifact (no title) #3f2c1a9' })).toBeInTheDocument()
     expect(evidence).not.toHaveTextContent('a1')
+    // Sources of Item rows.
+    expect(evidence.closest('[data-ws-sources]')).not.toBeNull()
+    expect(within(evidence).getAllByRole('listitem')[0]).toHaveAttribute('data-slot', 'item')
   })
 
   it('never accepts a version whose read failed: the button stays disabled and says why', async () => {
@@ -152,6 +155,9 @@ describe('TaskResults', () => {
     expect(within(decision).getByText('Accepting accepts the evidence at the versions shown here.')).toBeInTheDocument()
     expect(within(decision).getByRole('button', { name: 'Accept results' })).toBeInTheDocument()
     expect(within(decision).getByRole('button', { name: 'Send back' })).toBeInTheDocument()
+    // The official Confirmation, kept a named group rather than an alert.
+    expect(decision).toHaveAttribute('data-slot', 'alert')
+    expect(decision.closest('[data-ws-components="official"]')).not.toBeNull()
   })
 
   it('says a decision was recorded but not posted when General could not be told', async () => {

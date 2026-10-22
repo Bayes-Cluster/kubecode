@@ -86,3 +86,4 @@ ADRs are immutable after acceptance; a later decision supersedes an earlier one.
 | [0240](0240-one-dock-width-and-a-two-line-running-item.md) | One dock width, a two-line running item, and a reading measure on wide panes |
 | [0241](0241-official-shadcn-ui-and-ai-elements-as-the-component-layer.md) | Official shadcn/ui and AI Elements as the component layer |
 | [0242](0242-general-and-dms-on-the-official-components.md) | General and DMs on the official components |
+| [0243](0243-official-components-for-task-inspector-kanban-and-needs-you.md) | Official components for the Task inspector, Kanban and Needs you |

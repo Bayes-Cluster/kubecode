@@ -1,3 +1,4 @@
+import { Card } from '@/components/ui/card'
 import { MemberAvatar } from '@/components/workspace/MemberIdentity'
 import type { Translator } from '@/lib/i18n'
 
@@ -24,7 +25,7 @@ function eventLabel(t: Translator, event: TaskEventNote, locale?: string): strin
 
 /**
  * One Task on the board: a single button that opens it, with no control
- * inside. It says what the Task asks of the researcher, its condition, who
+ * inside, framed by the official Card (ADR 0243). It says what the Task asks of the researcher, its condition, who
  * works on it, how far the work is, and what last happened.
  */
 export function TaskCardView({ card, locale, onOpen, selected, t }: {
@@ -38,30 +39,32 @@ export function TaskCardView({ card, locale, onOpen, selected, t }: {
   const progress = progressOf(card.work)
   const event = card.last_event ? eventLabel(t, card.last_event, locale) : null
   return (
-    <button
-      aria-current={selected ? 'true' : undefined}
-      className="kubecode-task-card"
-      data-focus-key={`card:${card.id}`}
-      data-needs-you={requiredActionOf(card) !== null || undefined}
-      data-scroll-anchor={`card:${card.id}`}
-      data-testid={`task-card-${card.id}`}
-      type="button"
-      onClick={onOpen}
-    >
-      <strong>{card.title}</strong>
-      <TaskStatusBadges compact t={t} task={card} />
-      {specialists.length > 0 && (
-        <span className="kubecode-task-card-people">
-          {specialists.map((member) => (
-            <span className="kubecode-task-card-person" key={member.member_id}>
-              <MemberAvatar name={member.name} role="specialist" size="sm" />
-              {member.name}
-            </span>
-          ))}
-        </span>
-      )}
-      <small>{progress ? t('kubecode.task.card.progress', progress) : t('kubecode.task.card.noWork')}</small>
-      {event && <small>{event}</small>}
-    </button>
+    <Card className="kubecode-task-card-frame">
+      <button
+        aria-current={selected ? 'true' : undefined}
+        className="kubecode-task-card"
+        data-focus-key={`card:${card.id}`}
+        data-needs-you={requiredActionOf(card) !== null || undefined}
+        data-scroll-anchor={`card:${card.id}`}
+        data-testid={`task-card-${card.id}`}
+        type="button"
+        onClick={onOpen}
+      >
+        <strong>{card.title}</strong>
+        <TaskStatusBadges compact t={t} task={card} />
+        {specialists.length > 0 && (
+          <span className="kubecode-task-card-people">
+            {specialists.map((member) => (
+              <span className="kubecode-task-card-person" key={member.member_id}>
+                <MemberAvatar name={member.name} role="specialist" size="sm" />
+                {member.name}
+              </span>
+            ))}
+          </span>
+        )}
+        <small>{progress ? t('kubecode.task.card.progress', progress) : t('kubecode.task.card.noWork')}</small>
+        {event && <small>{event}</small>}
+      </button>
+    </Card>
   )
 }

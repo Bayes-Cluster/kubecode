@@ -83,6 +83,8 @@ describe('TaskBoardView', () => {
       drafts: [draft()],
     })
     expect(container.querySelectorAll('[draggable="true"]')).toHaveLength(0)
+    expect(container.querySelector('.kubecode-task-board')).toHaveAttribute('data-ws-components', 'official')
+    for (const button of screen.getAllByTestId(/^task-card-/)) expect(button.closest('[data-slot="card"]')).not.toBeNull()
     for (const button of screen.getAllByTestId(/^task-card-/)) {
       expect(button.tagName).toBe('BUTTON')
       expect(button.querySelectorAll('button, a, input, select, textarea, [tabindex]')).toHaveLength(0)
@@ -92,11 +94,11 @@ describe('TaskBoardView', () => {
 
   it('lists proposals above the stages, apart from them, and opens one', () => {
     const { onOpenTask } = view({ board: board([card({ id: 'r1' })]), drafts: [draft()] })
-    const drafts = screen.getByText('Proposals not on the board (1)').closest('details') as HTMLElement
+    const drafts = screen.getByText('Proposals not on the board (1)').closest('[data-slot="collapsible"]') as HTMLElement
     const firstColumn = screen.getByRole('region', { name: 'Ready' })
     expect(drafts.compareDocumentPosition(firstColumn) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(drafts.closest('[data-stage]')).toBeNull()
-    expect(drafts).not.toHaveAttribute('open')
+    expect(drafts).toHaveAttribute('data-state', 'closed')
     fireEvent.click(screen.getByText('Proposals not on the board (1)'))
     fireEvent.click(within(drafts).getByRole('button', { name: /Quantize/ }))
     expect(onOpenTask).toHaveBeenCalledWith('d1')
@@ -105,19 +107,19 @@ describe('TaskBoardView', () => {
 
   it('opens the proposals when nothing is on the board yet', () => {
     view({ board: board([]), drafts: [draft()] })
-    expect(screen.getByText('Proposals not on the board (1)').closest('details')).toHaveAttribute('open')
+    expect(screen.getByText('Proposals not on the board (1)').closest('[data-slot="collapsible"]')).toHaveAttribute('data-state', 'open')
   })
 
   it('shows one stage at a time on a narrow board, following the Task being inspected until another stage is picked', () => {
     const cards = [card({ id: 'r1', stage: 'in_progress' }), card({ id: 'r2', stage: 'review', review_requested: true })]
     const rendered = view({ board: board(cards) })
-    const stages = within(screen.getByRole('group', { name: 'Stage' }))
+    const stages = within(screen.getByRole('tablist', { name: 'Stage' }))
     const selected = () => screen.getAllByRole('region')
       .filter((region) => region.getAttribute('data-selected') === 'true')
       .map((region) => region.getAttribute('data-stage'))
     expect(selected()).toEqual(['review'])
-    expect(stages.getByRole('button', { name: 'Review · 1' })).toHaveAttribute('aria-pressed', 'true')
-    fireEvent.click(stages.getByRole('button', { name: 'Ready · 0' }))
+    expect(stages.getByRole('tab', { name: 'Review · 1' })).toHaveAttribute('aria-selected', 'true')
+    fireEvent.mouseDown(stages.getByRole('tab', { name: 'Ready · 0' }))
     expect(selected()).toEqual(['ready'])
     expect(within(screen.getByRole('region', { name: 'Ready' })).getByText('Nothing here.')).toBeInTheDocument()
     rendered.rerender(<TaskBoardView board={board(cards)} drafts={[]} selectedId="r1" status="ready" t={t} onOpenGeneral={vi.fn()} onOpenTask={vi.fn()} onReload={vi.fn()} />)
@@ -126,7 +128,7 @@ describe('TaskBoardView', () => {
     const moved = [card({ id: 'r1', stage: 'review', review_requested: true }), cards[1]]
     rendered.rerender(<TaskBoardView board={board(moved)} drafts={[]} selectedId="r1" status="ready" t={t} onOpenGeneral={vi.fn()} onOpenTask={vi.fn()} onReload={vi.fn()} />)
     expect(selected()).toEqual(['review'])
-    fireEvent.click(stages.getByRole('button', { name: 'In progress · 0' }))
+    fireEvent.mouseDown(stages.getByRole('tab', { name: 'In progress · 0' }))
     expect(selected()).toEqual(['in_progress'])
     expect(screen.getByTestId('task-card-r1')).toHaveAttribute('aria-current', 'true')
   })
@@ -166,7 +168,7 @@ describe('TaskBoardView', () => {
     fireEvent.click(screen.getByRole('switch', { name: 'Needs you only' }))
     expect(screen.queryByText('Quiet')).not.toBeInTheDocument()
     expect(screen.getByText('Awaiting')).toBeInTheDocument()
-    expect(within(screen.getByRole('group', { name: 'Stage' })).getByRole('button', { name: 'Ready · 0' })).toBeInTheDocument()
+    expect(within(screen.getByRole('tablist', { name: 'Stage' })).getByRole('tab', { name: 'Ready · 0' })).toBeInTheDocument()
   })
 
   it('says once that nothing needs the researcher, instead of four empty columns', () => {
@@ -181,7 +183,7 @@ describe('TaskBoardView', () => {
 
   it('says how a Task gets here when there is none, and goes to General', () => {
     const { onOpenGeneral } = view({ board: board([]) })
-    expect(screen.getByText(/No Tasks yet/)).toBeInTheDocument()
+    expect(screen.getByText(/No Tasks yet/).closest('[data-slot="empty"]')).not.toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Go to General' }))
     expect(onOpenGeneral).toHaveBeenCalled()
   })
@@ -191,7 +193,7 @@ describe('TaskBoardView', () => {
       { id: 'r9', title: 'Old sweep', stage: 'done', outcome: 'supported', updated_at: '' },
       { id: 'd9', title: 'Old idea', stage: null, outcome: null, updated_at: '' },
     ]) })
-    const archived = screen.getByText('Archived (2)').closest('details') as HTMLElement
+    const archived = screen.getByText('Archived (2)').closest('[data-slot="collapsible"]') as HTMLElement
     expect(archived.closest('[data-stage]')).toBeNull()
     fireEvent.click(screen.getByText('Archived (2)'))
     expect(within(archived).getByRole('button', { name: /Old idea.*Proposal/ })).toBeInTheDocument()

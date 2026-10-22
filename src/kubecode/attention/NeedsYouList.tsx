@@ -2,8 +2,11 @@ import { Loader2 } from 'lucide-react'
 import { useId, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
-import { StatusBadge } from '@/components/workspace/StatusBadge'
+import { Empty, EmptyDescription } from '@/components/ui/empty'
+import { Item, ItemGroup } from '@/components/ui/item'
 import type { Translator } from '@/lib/i18n'
+
+import { ToneBadge } from '../tasks/ToneBadge'
 
 import type { NeedsYouEntry, NeedsYouTarget } from '../app/location/needsYou'
 
@@ -32,11 +35,11 @@ function Rows({ entries, label, onOpenTarget, t }: {
   return (
     <div className="kubecode-needs-you-group">
       <h3 className="kubecode-nav-heading" id={heading}>{label}</h3>
-      <ul aria-labelledby={heading} className="kubecode-research-nav-list">
+      <ItemGroup aria-labelledby={heading} className="kubecode-research-nav-list">
         {entries.map((entry) => {
           const resolving = entry.state === 'resolving'
           return (
-            <li key={entry.key}>
+            <Item className="kubecode-needs-you-item" key={entry.key} role="listitem" size="sm">
               <button
                 aria-busy={resolving || undefined}
                 className="kubecode-research-nav-item kubecode-needs-you-row"
@@ -55,12 +58,12 @@ function Rows({ entries, label, onOpenTarget, t }: {
                 </span>
                 {resolving
                   ? <Loader2 aria-hidden className="animate-spin motion-reduce:animate-none" size={14} />
-                  : <StatusBadge tone={entry.reason.tone}>{entry.reason.label}</StatusBadge>}
+                  : <ToneBadge tone={entry.reason.tone}>{entry.reason.label}</ToneBadge>}
               </button>
-            </li>
+            </Item>
           )
         })}
-      </ul>
+      </ItemGroup>
     </div>
   )
 }
@@ -83,12 +86,14 @@ export function NeedsYouList({ entries, incomplete, onOpenTarget, onRetryLoad, s
 
 
   return (
-    <div className="kubecode-needs-you-list">
+    <div className="kubecode-needs-you-list" data-ws-components="official">
       {status === 'loading' && entries.length === 0 && (
         <p className="kubecode-research-nav-note">{t('kubecode.nav.needsYouLoading')}</p>
       )}
       {status === 'ready' && !incomplete && entries.length === 0 && (
-        <p className="kubecode-research-nav-note">{t('kubecode.nav.needsYouNone')}</p>
+        <Empty className="kubecode-needs-you-empty">
+          <EmptyDescription>{t('kubecode.nav.needsYouNone')}</EmptyDescription>
+        </Empty>
       )}
       {failed && (
         <p className="kubecode-research-nav-note" data-tone="warn">

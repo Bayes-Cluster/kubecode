@@ -272,6 +272,7 @@ describe('TaskPanel', () => {
     expect(panel().getByText('Draft')).toBeInTheDocument()
     expect(panel().getByText(/This is a proposal and is not on the board/)).toBeInTheDocument()
     expect(await panel().findByText('Does int8 keep accuracy?')).toBeInTheDocument()
+    expect(panel().getByText('Does int8 keep accuracy?').closest('[data-slot="plan"]')).not.toBeNull()
     expect(panel().queryByRole('tab')).not.toBeInTheDocument()
     expect(panel().queryAllByRole('button').filter((button) => FORBIDDEN.test(button.textContent ?? ''))).toEqual([])
     await openMore()
