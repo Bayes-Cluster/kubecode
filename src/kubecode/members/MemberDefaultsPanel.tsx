@@ -1,15 +1,16 @@
 import { Lock, Plus, X } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 
 import { IconButton } from '@/components/workspace/IconButton'
 import { StatusBadge } from '@/components/workspace/StatusBadge'
 
 import { Button } from '@/components/ui/button'
+import { Field, FieldDescription, FieldLabel, FieldLegend, FieldSet } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import type { Translator } from '@/lib/i18n'
 
 import type { AgentDescriptor, AgentId, KubecodeApi, MemberDefaults, MemberTemplate } from '../api'
-import { agentName } from '../session/sessionModel'
 import {
   configFromRows,
   configRows,
@@ -19,6 +20,7 @@ import {
   SPECIALIST_TEMPLATES,
   TEMPLATE_LABELS,
 } from './memberModel'
+import { ProviderSelect } from './ProviderSelect'
 
 export type MemberDefaultsPanelProps = {
   agents: AgentDescriptor[]
@@ -42,6 +44,7 @@ export function MemberDefaultsPanel({ agents, api, onLoaded, t }: MemberDefaults
   const [loadFailed, setLoadFailed] = useState(false)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<{ tone: 'error' | 'ok'; text: string } | null>(null)
+  const fieldId = useId()
 
   const adopt = (defaults: MemberDefaults, keepEdits = false) => {
     setSaved(defaults)
@@ -116,7 +119,7 @@ export function MemberDefaultsPanel({ agents, api, onLoaded, t }: MemberDefaults
   }
 
   return (
-    <section aria-label={t('kubecode.members.defaults.title')} className="kubecode-member-defaults">
+    <section aria-label={t('kubecode.members.defaults.title')} className="kubecode-member-defaults" data-ws-components="official">
       <header className="kubecode-members-header">
         <div>
           <h3>{t('kubecode.members.defaults.title')}</h3>
@@ -131,35 +134,30 @@ export function MemberDefaultsPanel({ agents, api, onLoaded, t }: MemberDefaults
           if (!busy) void save()
         }}
       >
-        <label>
-          <span>{t('kubecode.members.provider')}</span>
-          <select
-            className="kubecode-channel-select"
+        <Field>
+          <FieldLabel htmlFor={`${fieldId}-provider`}>{t('kubecode.members.provider')}</FieldLabel>
+          <ProviderSelect
+            agents={agents}
+            id={`${fieldId}-provider`}
+            isSelectable={(agent) => agent.available || agent.id === agentId}
+            t={t}
             value={agentId}
-            onChange={(event) => setAgentId(event.target.value as AgentId)}
-          >
-            {agents.map((agent) => (
-              <option disabled={!agent.available && agent.id !== agentId} key={agent.id} value={agent.id}>
-                {agentName(agent.id)}{agent.available ? '' : ` — ${t('kubecode.unavailable')}`}
-              </option>
-            ))}
-          </select>
-        </label>
-        <fieldset>
-          <legend>{t('kubecode.members.defaults.config')}</legend>
-          <small className="kubecode-research-muted">{t('kubecode.members.defaults.configHint')}</small>
+            onChange={setAgentId}
+          />
+        </Field>
+        <FieldSet>
+          <FieldLegend variant="label">{t('kubecode.members.defaults.config')}</FieldLegend>
+          <FieldDescription>{t('kubecode.members.defaults.configHint')}</FieldDescription>
           {rows.map((row, index) => (
             <div className="kubecode-member-config-row" key={index}>
-              <input
+              <Input
                 aria-invalid={row.key === lockedKey || undefined}
                 aria-label={`${t('kubecode.members.defaults.configKey')} ${index + 1}`}
-                className="kubecode-channel-select"
                 value={row.key}
                 onChange={(event) => setRows(rows.map((r, i) => i === index ? { ...r, key: event.target.value } : r))}
               />
-              <input
+              <Input
                 aria-label={`${t('kubecode.members.defaults.configValue')} ${index + 1}`}
-                className="kubecode-channel-select"
                 value={row.value}
                 onChange={(event) => setRows(rows.map((r, i) => i === index ? { ...r, value: event.target.value } : r))}
               />
@@ -179,29 +177,37 @@ export function MemberDefaultsPanel({ agents, api, onLoaded, t }: MemberDefaults
             <Plus aria-hidden size={14} />
             {t('kubecode.members.defaults.addConfig')}
           </Button>
-        </fieldset>
-        <label>
-          <span>{t('kubecode.members.defaults.generalInstructions')}</span>
-          <Textarea rows={6} value={instructions} onChange={(event) => setInstructions(event.target.value)} />
-        </label>
+        </FieldSet>
+        <Field>
+          <FieldLabel htmlFor={`${fieldId}-instructions`}>{t('kubecode.members.defaults.generalInstructions')}</FieldLabel>
+          <Textarea
+            id={`${fieldId}-instructions`}
+            rows={6}
+            value={instructions}
+            onChange={(event) => setInstructions(event.target.value)}
+          />
+        </Field>
         <p className="kubecode-member-locked" role="note">
           <Lock aria-hidden size={12} />
           <span>{t('kubecode.members.defaults.boundary')}</span>
         </p>
-        <fieldset>
-          <legend>{t('kubecode.members.defaults.templates')}</legend>
-          <small className="kubecode-research-muted">{t('kubecode.members.defaults.templatesHint')}</small>
+        <FieldSet>
+          <FieldLegend variant="label">{t('kubecode.members.defaults.templates')}</FieldLegend>
+          <FieldDescription>{t('kubecode.members.defaults.templatesHint')}</FieldDescription>
           {SPECIALIST_TEMPLATES.filter((template) => template !== 'custom').map((template) => (
-            <label key={template}>
-              <span>{t('kubecode.members.defaults.templateInstructions', { role: t(TEMPLATE_LABELS[template]) })}</span>
+            <Field key={template}>
+              <FieldLabel htmlFor={`${fieldId}-template-${template}`}>
+                {t('kubecode.members.defaults.templateInstructions', { role: t(TEMPLATE_LABELS[template]) })}
+              </FieldLabel>
               <Textarea
+                id={`${fieldId}-template-${template}`}
                 rows={3}
                 value={templates[template] ?? ''}
                 onChange={(event) => setTemplates({ ...templates, [template]: event.target.value })}
               />
-            </label>
+            </Field>
           ))}
-        </fieldset>
+        </FieldSet>
         {message && (
           <p className={message.tone === 'error' ? 'kubecode-research-error' : 'kubecode-research-muted'} role={message.tone === 'error' ? 'alert' : 'status'}>
             {message.text}

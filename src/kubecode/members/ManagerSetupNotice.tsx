@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { RotateCw, TriangleAlert, Users } from 'lucide-react'
 
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import type { Translator } from '@/lib/i18n'
 
@@ -52,13 +53,13 @@ export function ManagerSetupNotice({ api, onOpenMembers, onReload, projectId, se
   }
 
   return (
-    <div className="kubecode-manager-setup" role="alert">
-      <TriangleAlert aria-hidden className="kubecode-manager-setup-icon" size={18} />
-      <div className="kubecode-manager-setup-body">
-        <strong>{t('kubecode.members.managerSetup.title')}</strong>
+    <Alert className="kubecode-manager-setup" data-ws-components="official">
+      <TriangleAlert aria-hidden />
+      <AlertTitle>{t('kubecode.members.managerSetup.title')}</AlertTitle>
+      <AlertDescription>
         <p>{reason}</p>
         {error && <p className="kubecode-research-error">{error}</p>}
-      </div>
+      </AlertDescription>
       <div className="kubecode-manager-setup-actions">
         {manager && (
           <Button disabled={busy} size="sm" variant="default" onClick={() => void retry()}>
@@ -71,6 +72,6 @@ export function ManagerSetupNotice({ api, onOpenMembers, onReload, projectId, se
           {t('kubecode.members.managerSetup.openMembers')}
         </Button>
       </div>
-    </div>
+    </Alert>
   )
 }

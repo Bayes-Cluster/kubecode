@@ -878,6 +878,13 @@ the board a Card per Task with Tabs for the narrow stage picker and
 Collapsibles for proposals and archived Tasks, and Needs you named Item
 groups with Empty.
 
+Resources and Members are on the official parts (ADR 0244): `RecordPreview`
+shows code and text files in the AI Elements Code Block (one Shiki language
+per file, plain text when unknown) and written records verbatim as text;
+Markdown files render through hardened streamdown with no images fetched; search results and member rows are Items; member
+forms use Field, Input and Select (`members/ProviderSelect.tsx`); the manager
+setup notice is an Alert.
+
 ## Agent sessions
 
 The server currently discovers Claude Code, Codex, and OpenCode.

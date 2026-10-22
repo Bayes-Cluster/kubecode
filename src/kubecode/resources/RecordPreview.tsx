@@ -1,5 +1,10 @@
 import { useEffect, useRef } from 'react'
 
+import { Streamdown } from 'streamdown'
+import type { BundledLanguage } from 'shiki'
+
+import { CodeBlock } from '@/components/ai-elements/code-block'
+import { NO_IMAGE_STREAMDOWN_PROPS } from '@/components/ai-elements/streamdown-hardening'
 import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/workspace/StatusBadge'
 import { Icon } from '@/kubecode/icons'
@@ -50,6 +55,30 @@ export type RecordPreviewProps = {
   compact?: boolean
   /** Somewhere to look for the material again, offered when it is gone or could not be read. */
   recovery?: { label: string; run: () => void }
+}
+
+/** File extensions whose text is highlighted, and the one Shiki language each loads (ADR 0244). */
+const CODE_LANGUAGES: Record<string, BundledLanguage> = {
+  c: 'c', cpp: 'cpp', css: 'css', go: 'go', h: 'c', html: 'html', ipynb: 'json', java: 'java',
+  jl: 'julia', js: 'javascript', json: 'json', jsx: 'jsx', mjs: 'javascript', py: 'python', r: 'r',
+  rs: 'rust', sh: 'shellscript', sql: 'sql', tex: 'latex', toml: 'toml', ts: 'typescript', tsx: 'tsx',
+  yaml: 'yaml', yml: 'yaml',
+}
+const MARKDOWN_EXTENSIONS = new Set(['md', 'markdown', 'mdx'])
+
+/**
+ * How a section's text is shown: a code or text file in the official Code
+ * Block (plain `text` when the language is not known, so nothing is
+ * guessed); a Markdown file as hardened streamdown with no images fetched.
+ * Written records (briefs, findings, threads, logs) are not known to be
+ * markdown, so they show verbatim as plain text, as they always have.
+ */
+function recordFormat(kind: string, id: string): { markdown: true } | { markdown: false; language: BundledLanguage } {
+  if (kind !== 'file') return { markdown: false, language: 'text' as BundledLanguage }
+  const name = id.split('/').pop() ?? id
+  const extension = name.includes('.') ? name.split('.').pop()!.toLowerCase() : ''
+  if (MARKDOWN_EXTENSIONS.has(extension)) return { markdown: true }
+  return { markdown: false, language: CODE_LANGUAGES[extension] ?? ('text' as BundledLanguage) }
 }
 
 /**
@@ -140,10 +169,12 @@ export function RecordPreview({
   const changed = cited !== null && shownRevision !== null && cited !== shownRevision
   const citedVersion = cited ? formatVersion(target.kind, cited, t) : undefined
   const showCurrent = onShowCurrent ?? state.reload
+  const format = recordFormat(target.kind, target.id)
   return (
     <div
       className={cn('kubecode-work-evidence kubecode-record-preview', compact && 'kubecode-record-preview-compact')}
       data-shown-revision={shownRevision ?? undefined}
+      data-ws-components="official"
       data-testid="evidence-viewer"
     >
       <div className="kubecode-record-preview-meta">
@@ -171,7 +202,20 @@ export function RecordPreview({
           {(index === 0 || section.heading !== doc.sections[index - 1].heading) && (
             <h5>{target.kind === 'file' ? t('kubecode.work.evidence.fileNote') : section.heading}</h5>
           )}
-          <pre className="kubecode-work-evidence-text" tabIndex={0}>{section.text}</pre>
+          {/* A truncated section can end inside a fence, so it shows as text. */}
+          {format.markdown && !section.truncated ? (
+            <div className="kubecode-record-markdown">
+              <Streamdown {...NO_IMAGE_STREAMDOWN_PROPS} mode="static">{section.text}</Streamdown>
+            </div>
+          ) : (
+            // The block scrolls as one region so a long file reads from the keyboard.
+            <CodeBlock
+              className="kubecode-record-code"
+              code={section.text}
+              language={format.markdown ? ('text' as BundledLanguage) : format.language}
+              tabIndex={0}
+            />
+          )}
           {section.truncated && (
             <small className="kubecode-research-muted">{t('kubecode.work.evidence.truncated')}</small>
           )}

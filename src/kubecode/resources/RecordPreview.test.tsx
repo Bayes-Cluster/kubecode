@@ -217,4 +217,74 @@ describe('RecordPreview', () => {
     await act(async () => resolveFirst(document()))
     expect(screen.queryByText('model,accuracy')).not.toBeInTheDocument()
   })
+
+  it('shows a code file in the official Code Block, highlighted for its own language only (ADR 0244)', async () => {
+    const readProjectContext = vi.fn().mockResolvedValue(document({
+      ref: { kind: 'file', id: 'src/train.py', revision: 'a1' }, title: 'src/train.py',
+      sections: [{ heading: 'Content', text: 'import torch', truncated: false }],
+    }))
+    const { container } = mount({ readProjectContext }, { target: { kind: 'file', id: 'src/train.py' } })
+    expect(await screen.findByText('import torch')).toBeInTheDocument()
+    const block = container.querySelector('[data-language]')
+    expect(block).toHaveAttribute('data-language', 'python')
+    // The reader can scroll a long file from the keyboard.
+    expect(container.querySelector('.kubecode-record-code')).toHaveAttribute('tabindex', '0')
+  })
+
+  it('shows plain text in the Code Block without guessing a language', async () => {
+    const { container } = mount({ readProjectContext: vi.fn().mockResolvedValue(document()) })
+    expect(await screen.findByText('model,accuracy')).toBeInTheDocument()
+    expect(container.querySelector('[data-language]')).toHaveAttribute('data-language', 'text')
+  })
+
+  it('shows a written record verbatim, never parsed as markdown (review S3)', async () => {
+    const text = 'returns Vec<String> from parse()\ncosts $5 and $10\nloss_avg_step 0.1'
+    const { container } = mount({
+      readProjectContext: vi.fn().mockResolvedValue(document({
+        ref: { kind: 'finding', id: 'f1', revision: '1' }, title: 'Heads',
+        sections: [{ heading: 'Summary', text, truncated: false }],
+      })),
+    }, { target: { kind: 'finding', id: 'f1' } })
+    await waitFor(() => expect(container.querySelector('.kubecode-record-code')).not.toBeNull())
+    expect(container.querySelector('.kubecode-record-code')!.textContent).toContain('returns Vec<String> from parse()')
+    expect(container.querySelector('.kubecode-record-code')!.textContent).toContain('costs $5 and $10')
+    expect(container.querySelector('.katex, em')).toBeNull()
+  })
+
+  it('shows a truncated Markdown file as text so a cut fence cannot swallow the rest (review S3)', async () => {
+    const { container } = mount({
+      readProjectContext: vi.fn().mockResolvedValue(document({
+        ref: { kind: 'file', id: 'README.md', revision: 'a1' }, title: 'README.md',
+        sections: [{ heading: 'Content', text: '# Title\n\n```py\nx = 1', truncated: true }],
+      })),
+    }, { target: { kind: 'file', id: 'README.md' } })
+    await waitFor(() => expect(container.querySelector('.kubecode-record-code')).not.toBeNull())
+    expect(container.querySelector('.kubecode-record-code')!.textContent).toContain('# Title')
+    expect(container.querySelector('.kubecode-record-markdown')).toBeNull()
+  })
+
+  it('never fetches a remote image from a Markdown file preview (review S3)', async () => {
+    const { container } = mount({
+      readProjectContext: vi.fn().mockResolvedValue(document({
+        ref: { kind: 'file', id: 'README.md', revision: 'a1' }, title: 'README.md',
+        sections: [{ heading: 'Content', text: '# Readme\n\n![logo](https://attacker.example/p.png?d=x)', truncated: false }],
+      })),
+    }, { target: { kind: 'file', id: 'README.md' } })
+    expect(await screen.findByRole('heading', { name: 'Readme' })).toBeInTheDocument()
+    expect(container.querySelector('img')).toBeNull()
+    expect(container.innerHTML).not.toContain('attacker.example')
+  })
+
+  it('renders a Markdown file through hardened streamdown, never raw HTML or unsafe links', async () => {
+    const markdown = '# Findings\n\nSee [docs](javascript:alert(1)) and <b>bold</b>.'
+    const readProjectContext = vi.fn().mockResolvedValue(document({
+      ref: { kind: 'file', id: 'notes/README.md', revision: 'a1' }, title: 'notes/README.md',
+      sections: [{ heading: 'Content', text: markdown, truncated: false }],
+    }))
+    const { container, unmount } = mount({ readProjectContext }, { target: { kind: 'file', id: 'notes/README.md' } })
+    expect(await screen.findByRole('heading', { name: 'Findings' })).toBeInTheDocument()
+    expect(container.querySelector('b')).toBeNull()
+    expect(container.querySelector('a[href^="javascript"]')).toBeNull()
+    unmount()
+  })
 })

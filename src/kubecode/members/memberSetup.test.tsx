@@ -70,6 +70,8 @@ describe('ManagerSetupNotice', () => {
       />,
     )
     const notice = screen.getByRole('alert')
+    // The official Alert (ADR 0244).
+    expect(notice).toHaveAttribute('data-slot', 'alert')
     expect(notice).toHaveTextContent('kubecode.members.managerSetup.title')
     expect(notice).toHaveTextContent('kubecode.members.setup.providerUnavailable:{"provider":"OpenCode"}')
     fireEvent.click(screen.getByRole('button', { name: 'kubecode.members.retrySetup' }))
