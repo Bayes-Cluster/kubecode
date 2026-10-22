@@ -1,4 +1,4 @@
-import { CaretDown } from '@phosphor-icons/react'
+import { ChevronDown } from 'lucide-react'
 import { useContext, useEffect, useRef, useState, type CSSProperties } from 'react'
 
 import {
@@ -263,7 +263,7 @@ export function ExecutionStrip({ api, prompts = true, scope, t }: ExecutionStrip
               onPointerDown={() => setOpenedBy('pointer')}
             >
               <Shimmer as="span" className="kubecode-shimmer">{t('kubecode.execution.runningCount', { count: entries.length })}</Shimmer>
-              <CaretDown aria-hidden size={ICON_SIZES.status} />
+              <ChevronDown aria-hidden size={ICON_SIZES.status} />
             </Button>
           </PopoverTrigger>
           <PopoverContent align="start" aria-label={t('kubecode.execution.workingNow')} className="kubecode-execution-popover"
