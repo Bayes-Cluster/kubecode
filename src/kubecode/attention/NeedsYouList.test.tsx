@@ -67,7 +67,7 @@ describe('NeedsYouList', () => {
     const { rerender, props } = list({ status: 'loading' })
     expect(screen.getByText('Checking what needs you…')).toBeInTheDocument()
     rerender(<NeedsYouList {...props} status="ready" />)
-    expect(screen.getByText('Nothing is waiting for you.')).toBeInTheDocument()
+    expect(screen.getByText('Nothing is waiting for you.').closest('[data-slot="empty"]')).not.toBeNull()
     rerender(<NeedsYouList {...props} entries={[entry('question:d1')]} status="error" />)
     expect(screen.queryByText('Nothing is waiting for you.')).not.toBeInTheDocument()
     expect(screen.getByText('Some waiting items could not be loaded.')).toBeInTheDocument()

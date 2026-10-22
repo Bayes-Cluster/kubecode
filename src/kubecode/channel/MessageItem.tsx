@@ -1,20 +1,20 @@
-import { Message, MessageContent, MessageResponse, type MessageProps } from '@/components/ai-elements'
-import { MarkdownContent } from '@/components/MarkdownContent'
-import { IconButton } from '@/components/workspace/IconButton'
+import { MessageAction, MessageActions, MessageContent } from '@/components/ai-elements/message'
+import { Badge } from '@/components/ui/badge'
 import { MoreActions, type MoreActionItem } from '@/components/workspace/MoreActions'
 import { ReferenceChip } from '@/components/workspace/ReferenceChip'
-import { StatusBadge } from '@/components/workspace/StatusBadge'
 import { Icon } from '@/kubecode/icons'
 import { WORKSPACE_COMMAND_ICONS, WORKSPACE_OBJECT_ICONS } from '@/kubecode/icons/workspaceIcons'
 import type { Translator } from '@/lib/i18n'
 
 import type { ChannelMessage, ChannelThread, ProjectContextRef } from '../api'
 import { DeliveryStatus } from '../attention/DeliveryStatus'
-import { Identity } from '../members/Identity'
+import { ConversationIdentity } from '../members/ConversationIdentity'
 import type { IdentityView, RecipientsView } from '../members/memberIdentity'
 import type { ReferenceLabel } from '../references/referenceLabels'
 import { ReferenceSources } from '../resources/ReferenceSources'
 import { intentLabel } from './channelLabels'
+import { ConversationMessage } from './ConversationMessage'
+import { ConversationResponse } from './ConversationResponse'
 import type { MessageDeliveryView } from './delivery'
 import { messageDate, shortTime } from './timeline'
 
@@ -64,7 +64,9 @@ function deliveryText(state: 'queued' | 'delivered', recipients: string[], local
 }
 
 /** How far the message got, as the conversation draws it: failed, still on its way, or settled. */
-function messageState(delivery: MessageDeliveryView | null): MessageProps['state'] {
+export type MessageState = 'default' | 'pending' | 'failed'
+
+function messageState(delivery: MessageDeliveryView | null): MessageState {
   if (!delivery) return 'default'
   if (delivery.state === 'failed') return 'failed'
   if (delivery.state === 'queued') return 'pending'
@@ -136,55 +138,17 @@ export function MessageItem({
         {recipients.kind === 'members' && recipients.handedOff ? t('kubecode.channel.handedOff') : t('kubecode.channel.to')}
       </span>
       {recipients.kind === 'members'
-        ? recipients.members.map((member) => <Identity from={focusKey} key={member.key} size="sm" view={member} />)
+        ? recipients.members.map((member) => <ConversationIdentity from={focusKey} key={member.key} size="sm" view={member} />)
         : recipients.manager
-          ? <Identity from={focusKey} size="sm" view={recipients.manager} />
+          ? <ConversationIdentity from={focusKey} size="sm" view={recipients.manager} />
           : <span>{t('kubecode.channel.toManager')}</span>}
     </span>
   )
+  const state = messageState(delivery)
   return (
-    <Message
+    // The official Message (ADR 0242): the researcher's own as the user's bubble on the right, members on the left.
+    <ConversationMessage
       aria-label={author.name}
-      author={(
-        <>
-          {own ? (
-            // The researcher's own message, on the right (ADR 0239): only the time shows.
-            <span className="kubecode-message-author kubecode-message-self-meta">
-              <span className="sr-only">{author.name}</span>
-              {recipientLine}
-              {time}
-            </span>
-          ) : (
-            <>
-              <Identity
-                className="kubecode-message-author"
-                from={focusKey}
-                meta={time}
-                size={continued ? 'sm' : 'md'}
-                view={author}
-              />
-              {recipientLine}
-            </>
-          )}
-          {message.intent !== 'say' && (
-            <StatusBadge tone="muted">
-              {intentLabel(t, message.intent)}
-              {message.intent_claimed_by ? ` · ${t('kubecode.channel.intent.claimed')}` : ''}
-            </StatusBadge>
-          )}
-          <div className="kubecode-message-toolbar" data-coarse={coarse}>
-            {!coarse && on.reply && (
-              <IconButton
-                icon={<Icon role="command" source={WORKSPACE_COMMAND_ICONS.reply.Icon} />}
-                label={t('kubecode.channel.replyTo', { author: author.name })}
-                onClick={on.reply}
-              />
-            )}
-            <MoreActions items={actions} label={t('kubecode.channel.messageActions', { author: author.name })} />
-          </div>
-        </>
-      )}
-      className="kubecode-message"
       data-author={message.author_kind}
       data-continued={continued}
       data-focus-key={focusKey}
@@ -194,8 +158,48 @@ export function MessageItem({
       data-testid={`message-${message.seq}`}
       from={own ? 'self' : 'member'}
       id={`message-${message.id}`}
-      state={messageState(delivery)}
+      state={state}
     >
+      <div className="kubecode-message-header">
+        {own ? (
+          // The researcher's own message, on the right (ADR 0239): only the time shows.
+          <span className="kubecode-message-author kubecode-message-self-meta">
+            <span className="sr-only">{author.name}</span>
+            {recipientLine}
+            {time}
+          </span>
+        ) : (
+          <>
+            <ConversationIdentity
+              className="kubecode-message-author"
+              from={focusKey}
+              meta={time}
+              size={continued ? 'sm' : 'md'}
+              view={author}
+            />
+            {recipientLine}
+          </>
+        )}
+        {message.intent !== 'say' && (
+          <Badge variant="outline">
+            {intentLabel(t, message.intent)}
+            {message.intent_claimed_by ? ` · ${t('kubecode.channel.intent.claimed')}` : ''}
+          </Badge>
+        )}
+        <MessageActions className="kubecode-message-toolbar" data-coarse={coarse}>
+          {!coarse && on.reply && (
+            <MessageAction
+              className="kubecode-message-action"
+              label={t('kubecode.channel.replyTo', { author: author.name })}
+              tooltip={t('kubecode.vocab.command.reply')}
+              onClick={on.reply}
+            >
+              <Icon role="command" source={WORKSPACE_COMMAND_ICONS.reply.Icon} />
+            </MessageAction>
+          )}
+          <MoreActions items={actions} label={t('kubecode.channel.messageActions', { author: author.name })} />
+        </MessageActions>
+      </div>
       <MessageContent className="kubecode-message-content">
         {cited && message.reply_to && (
           <button
@@ -211,17 +215,15 @@ export function MessageItem({
         )}
         {proposal && (
           <p className="kubecode-channel-proposal">
-            <StatusBadge tone="info">{t('kubecode.task.proposalBadge', { revision: Number(proposal[1]) })}</StatusBadge>
+            <Badge variant="secondary">{t('kubecode.task.proposalBadge', { revision: Number(proposal[1]) })}</Badge>
             {message.task_id && onBoard && (
-              <StatusBadge tone={onBoard(message.task_id) ? 'ok' : 'muted'}>
+              <Badge data-on-board={onBoard(message.task_id)} variant={onBoard(message.task_id) ? 'secondary' : 'outline'}>
                 {onBoard(message.task_id) ? t('kubecode.task.onBoard') : t('kubecode.task.notOnBoardYet')}
-              </StatusBadge>
+              </Badge>
             )}
           </p>
         )}
-        <MessageResponse className="kubecode-message-body">
-          <MarkdownContent content={message.body} images="text" />
-        </MessageResponse>
+        <ConversationResponse className="kubecode-message-body" t={t}>{message.body}</ConversationResponse>
         {references.length > 0 ? (
           // Named, versioned, and resolved against the server (ADR 0231 §5), as Sources (ADR 0236).
           <ReferenceSources
@@ -253,7 +255,7 @@ export function MessageItem({
         )}
         {delivery?.state === 'failed' && (
           <p className="kubecode-message-delivery" data-delivery="failed">
-            <StatusBadge tone="danger">{t('kubecode.channel.notDelivered')}</StatusBadge>
+            <Badge variant="destructive">{t('kubecode.channel.notDelivered')}</Badge>
             <span>{delivery.text}</span>
           </p>
         )}
@@ -263,6 +265,6 @@ export function MessageItem({
           </p>
         )}
       </MessageContent>
-    </Message>
+    </ConversationMessage>
   )
 }

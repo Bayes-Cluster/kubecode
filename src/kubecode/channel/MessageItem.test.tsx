@@ -97,7 +97,7 @@ describe('MessageItem', () => {
 
   it('folds whom a message was handed to into its author line, behind an arrow, keeping the words for screen readers', () => {
     const { article } = item()
-    const header = article.querySelector('.kubecode-ai-message-author') as HTMLElement
+    const header = article.querySelector('.kubecode-message-header') as HTMLElement
     const recipients = header.querySelector('.kubecode-message-recipients') as HTMLElement
     expect(recipients).not.toBeNull()
     expect(within(recipients).getByText('Handed to')).toHaveClass('sr-only')
@@ -213,7 +213,7 @@ describe('MessageItem as a conversation message (#232)', () => {
   it('tints the researcher\'s own message, reads a member\'s as a member\'s, and keeps the body as safe Markdown', () => {
     const { article } = item()
     expect(article).toHaveAttribute('data-from', 'member')
-    expect(article.querySelector('.kubecode-ai-response strong')).toHaveTextContent('prune')
+    expect(article.querySelector('.kubecode-message-body strong')).toHaveTextContent('prune')
     cleanup()
     const own = channelMessage(5, { author_kind: 'researcher', body: 'mine <script>x</script>', task_id: null })
     const { article: mine } = item({ message: own })

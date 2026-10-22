@@ -1040,7 +1040,8 @@ describe('The Workspaces navigation', () => {
 describe('Returning to a place (ADR 0228 §4)', () => {
   /** Six 40px messages in a 100px log; returns a setter for how far it is scrolled. */
   function readableLog() {
-    const log = screen.getByRole('log', { name: 'Messages' })
+    // The official Conversation's scroller sits inside the named log (ADR 0242).
+    const log = screen.getByRole('log', { name: 'Messages' }).querySelector('.kubecode-channel-messages') as HTMLElement
     let top = 0
     Object.defineProperty(log, 'scrollTop', { configurable: true, get: () => top, set: (value: number) => { top = value } })
     Object.defineProperty(log, 'scrollHeight', { configurable: true, get: () => 240 })

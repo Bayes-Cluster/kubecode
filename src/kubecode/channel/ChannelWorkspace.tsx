@@ -1,6 +1,7 @@
-import { useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ReferenceChip } from '@/components/workspace/ReferenceChip'
 import type { AppLocale, Translator } from '@/lib/i18n'
 
@@ -33,6 +34,9 @@ import { MessageComposer } from './MessageComposer'
 import { MessageList } from './MessageList'
 import { ThreadPane } from './ThreadPane'
 import { useChannelThreads, useDefaultChannel, useMessageFeed } from './useChannel'
+
+/** The filter's item for every message; never a Task id. */
+const ALL_TASKS = '__all__'
 
 export type ChannelWorkspaceProps = {
   api: KubecodeApi
@@ -119,6 +123,7 @@ export function ChannelWorkspace({
 }: ChannelWorkspaceProps) {
   const { channel, retry, status } = useDefaultChannel(api, projectId)
   const directory = useMemberDirectory()
+  const filterLabelId = useId()
   // With exactly one member at work, the composer also offers its Stop; with more it would be ambiguous.
   const navigation = useContext(WorkspaceNavigationContext)
   // Showing only what is about one Task is a view of the same conversation.
@@ -159,13 +164,15 @@ export function ChannelWorkspace({
   // A different scope (another filter) is a new feed: resolve the link again.
   useEffect(() => { resolved.current = null }, [taskFilter, channel?.id])
   const { loadAround, messages: loaded, status: feedStatus } = feed
+  const [unreachable, setUnreachable] = useState<string | null>(null)
   useEffect(() => {
     if (!focusMessageId || !channel || feedStatus !== 'ready' || resolved.current === focusMessageId) return
     resolved.current = focusMessageId
     if (loaded.some((message) => message.id === focusMessageId)) return
     api.getChannelMessage(projectId, channel.id, focusMessageId)
       .then((message) => loadAround(message.seq))
-      .catch(() => undefined)
+      // A linked message that is gone has nothing to land on: the reader starts at the latest.
+      .catch(() => setUnreachable(focusMessageId))
   }, [api, channel, feedStatus, focusMessageId, loadAround, loaded, projectId])
   // A citation of a message that is not loaded: load around it, then land there.
   const [jumpTarget, setJumpTarget] = useState<string | null>(null)
@@ -301,6 +308,7 @@ export function ChannelWorkspace({
       aria-label={t('kubecode.channel.title')}
       className="kubecode-channel-workspace"
       data-detail={detail !== null}
+      data-ws-components="official"
       ref={root}
       onFocusCapture={(event) => noteFocus(event.target)}
     >
@@ -311,19 +319,23 @@ export function ChannelWorkspace({
           meta={research.length > 0 || taskFilter ? (
             <div className="kubecode-channel-filter">
               {research.length > 0 && (
-                <label>
-                  <span>{t('kubecode.channel.filterTask')}</span>
-                  <select
-                    className="kubecode-channel-select"
-                    value={taskFilter ?? ''}
-                    onChange={(event) => setTaskFilter(event.target.value || null)}
-                  >
-                    <option value="">{t('kubecode.channel.filterAll')}</option>
-                    {research.map((item) => (
-                      <option key={item.id} value={item.id}>{item.title}</option>
-                    ))}
-                  </select>
-                </label>
+                // The official Select (ADR 0242); "everything" is its own item, as an empty value cannot be one.
+                <>
+                <span id={filterLabelId}>{t('kubecode.channel.filterTask')}</span>
+                <Select value={taskFilter ?? ALL_TASKS} onValueChange={(value) => setTaskFilter(value === ALL_TASKS ? null : value)}>
+                  <SelectTrigger aria-labelledby={filterLabelId} className="kubecode-channel-select" size="sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value={ALL_TASKS}>{t('kubecode.channel.filterAll')}</SelectItem>
+                      {research.map((item) => (
+                        <SelectItem key={item.id} value={item.id}>{item.title}</SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+                </>
               )}
               {taskFilter && filterTitle && (
                 <ReferenceChip
@@ -355,7 +367,11 @@ export function ChannelWorkspace({
           filter={taskFilter}
           // While a detail is open the reader is in it; coming back lands on the message again.
           focusId={detail ? null : jumpTarget ?? focusMessageId}
+          focusMissing={unreachable !== null && unreachable === focusMessageId}
           focusOnLand={jumpTarget !== null || landing === 'focus'}
+          // Another Workspace's General is another conversation: its scroller and its landing start
+          // afresh, so following one never scrolls (or reports a reading position for) the other.
+          key={`${projectId}:${channel?.id ?? ''}`}
           label={t('kubecode.channel.messages')}
           labels={labels}
           locale={locale}

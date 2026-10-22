@@ -73,6 +73,7 @@ test.describe('on a desktop', () => {
 
       // 2. Add context: the search names its scope, the preview shows the file, and the version shown is attached.
       await page.getByRole('button', { name: 'Add context' }).click()
+      await page.getByRole('menuitem', { name: 'Attach from this Workspace…' }).click()
       const dialog = page.getByRole('dialog', { name: 'Add context' })
       await expect(dialog.getByRole('note')).toContainText(`in ${projectName}.`)
       await expect(dialog.getByRole('note')).toContainText('Message text and direct messages are never searched.')
@@ -136,6 +137,7 @@ test.describe('on a desktop', () => {
       await expect(page.getByRole('heading', { name: 'General', exact: true, level: 2 })).toBeVisible()
       await composer(page).fill('and the plot')
       await page.getByRole('button', { name: 'Add context' }).click()
+      await page.getByRole('menuitem', { name: 'Attach from this Workspace…' }).click()
       await page.getByRole('dialog', { name: 'Add context' }).getByRole('button', { name: 'Browse in Resources' }).click()
       await expect(page.getByText('Adding to your message in General.')).toBeVisible()
       await resources.getByRole('option', { name: /results\/summary\.csv/ }).click()
@@ -236,6 +238,7 @@ test('@smoke on a phone, search opens Resources, a preview is its own screen, an
     await page.goto(`${workspaceUrl}/#/p/${projectId}/general`)
     await expect(page.getByRole('heading', { name: 'General', exact: true, level: 2 })).toBeVisible()
     await page.getByRole('button', { name: 'Add context' }).click()
+      await page.getByRole('menuitem', { name: 'Attach from this Workspace…' }).click()
     const dialog = page.getByRole('dialog', { name: 'Add context' })
     await dialog.getByRole('combobox').fill('pruning sweep')
     await dialog.getByRole('option', { name: /summary-of-the-pruning-sweep\.csv/ }).click()

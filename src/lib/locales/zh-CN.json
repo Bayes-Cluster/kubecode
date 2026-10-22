@@ -2888,5 +2888,16 @@
   "kubecode.proto.review.olderVersion": "较早的版本",
   "kubecode.resources.findInResources": "在资源中查找",
   "kubecode.reference.sources": "来源（{count}）",
-  "kubecode.reference.sourcesAttention": "{count} 项已更改或已移除"
+  "kubecode.reference.sourcesAttention": "{count} 项已更改或已移除",
+  "kubecode.markdown.copied": "已复制",
+  "kubecode.markdown.copyCode": "复制代码",
+  "kubecode.markdown.copyTable": "复制表格",
+  "kubecode.markdown.copyTableAsCsv": "复制表格为 CSV",
+  "kubecode.markdown.copyTableAsMarkdown": "复制表格为 Markdown",
+  "kubecode.markdown.copyTableAsTsv": "复制表格为 TSV",
+  "kubecode.markdown.formatCsv": "CSV",
+  "kubecode.markdown.formatMarkdown": "Markdown",
+  "kubecode.markdown.formatTsv": "TSV",
+  "kubecode.markdown.imageNotAvailable": "图片不可用",
+  "kubecode.composer.attachFromWorkspace": "从此工作区附加…"
 }

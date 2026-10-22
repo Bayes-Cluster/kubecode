@@ -9,7 +9,8 @@ import { cn } from "@/lib/utils";
 import { BookIcon, ChevronDownIcon } from "lucide-react";
 import type { ComponentProps } from "react";
 
-export type SourcesProps = ComponentProps<"div">;
+// Kubecode (ADR 0242): typed as the Collapsible it renders, so `defaultOpen` and `open` type-check.
+export type SourcesProps = ComponentProps<typeof Collapsible>;
 
 export const Sources = ({ className, ...props }: SourcesProps) => (
   <Collapsible

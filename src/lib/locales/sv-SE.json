@@ -2888,5 +2888,16 @@
   "kubecode.proto.review.olderVersion": "tidigare version",
   "kubecode.resources.findInResources": "Hitta i Resurser",
   "kubecode.reference.sources": "Källor ({count})",
-  "kubecode.reference.sourcesAttention": "{count} ändrade eller borttagna"
+  "kubecode.reference.sourcesAttention": "{count} ändrade eller borttagna",
+  "kubecode.markdown.copied": "Kopierat",
+  "kubecode.markdown.copyCode": "Kopiera kod",
+  "kubecode.markdown.copyTable": "Kopiera tabell",
+  "kubecode.markdown.copyTableAsCsv": "Kopiera tabell som CSV",
+  "kubecode.markdown.copyTableAsMarkdown": "Kopiera tabell som Markdown",
+  "kubecode.markdown.copyTableAsTsv": "Kopiera tabell som TSV",
+  "kubecode.markdown.formatCsv": "CSV",
+  "kubecode.markdown.formatMarkdown": "Markdown",
+  "kubecode.markdown.formatTsv": "TSV",
+  "kubecode.markdown.imageNotAvailable": "Bilden är inte tillgänglig",
+  "kubecode.composer.attachFromWorkspace": "Bifoga från den här arbetsytan…"
 }
