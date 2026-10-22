@@ -80,6 +80,37 @@ describe('AiPanelMessageHistory', () => {
     await new Promise((resolve) => window.requestAnimationFrame(resolve))
     expect(timeline.scrollTop).toBe(100)
   })
+
+  it('offers a jump to the latest message once the reader scrolls away, and resumes following', async () => {
+    const { rerender } = renderHistory([firstMessage])
+    const timeline = screen.getByTestId('ai-message-history')
+    const scrollTo = vi.fn(({ top }: { top: number }) => { timeline.scrollTop = top })
+    Object.defineProperty(timeline, 'scrollTo', { configurable: true, value: scrollTo })
+    setScrollMetrics(timeline, 480, 200)
+    timeline.scrollTop = 280
+    fireEvent.scroll(timeline)
+    expect(screen.queryByRole('button', { name: 'Jump to latest' })).toBeNull()
+
+    timeline.scrollTop = 100
+    fireEvent.scroll(timeline)
+    const jump = screen.getByRole('button', { name: 'Jump to latest' })
+    fireEvent.click(jump)
+    expect(scrollTo).toHaveBeenCalledWith({ behavior: 'smooth', top: 480 })
+    expect(screen.queryByRole('button', { name: 'Jump to latest' })).toBeNull()
+
+    // Following resumed: the next streamed chunk is followed again.
+    setScrollMetrics(timeline, 620, 200)
+    rerender(
+      <AiPanelMessageHistory
+        agentLabel="Codex"
+        agentReadiness="ready"
+        hasContext
+        isActive
+        messages={[{ ...firstMessage, response: 'More streamed text' }]}
+      />,
+    )
+    await waitFor(() => expect(timeline.scrollTop).toBe(620))
+  })
 })
 
 describe('AiPanelComposer', () => {

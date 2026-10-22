@@ -588,7 +588,7 @@ describe('Workspace navigation and routes', () => {
     await screen.findByRole('heading', { name: 'General', exact: true, level: 2 })
     fireEvent.click(await screen.findByRole('button', { name: /^Earlier chat/ }))
     await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/sessions/c/s1'))
-    expect(screen.getByTestId('agent-session-workspace')).toBeInTheDocument()
+    expect(await screen.findByTestId('agent-session-workspace')).toBeInTheDocument()
 
     fireEvent.click(within(nav).getAllByRole('button', { name: 'General' })[0])
     await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/general/m/m1'))

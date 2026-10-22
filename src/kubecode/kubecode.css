@@ -5999,6 +5999,150 @@ button.kubecode-reference-chip-open:focus-visible,
 .kubecode-task-decisions > .kubecode-decision { flex: 1 1 8rem; min-width: 0; }
 .kubecode-task-decisions > .kubecode-decision > button { width: 100%; }
 
+   S4 Session view on official AI Elements (ADR 0245)
+   Message, Reasoning, Tool, Code Block, Plan, Task, Queue,
+   Context and Prompt Input parts inside the coding Session.
+   ============================================================ */
+.kubecode-session-timeline { position: relative; }
+.kubecode-session-turn { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+
+/* The prompt: a right-aligned quiet bubble, actions on hover or focus. */
+.kubecode-session-prompt { gap: 4px; max-width: 80%; }
+.kubecode-session-prompt-content {
+  border-radius: 12px 12px 2px 12px;
+  font-size: var(--kubecode-ui-font-size, 14px);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  padding: 8px 12px !important;
+}
+.kubecode-session-prompt .kubecode-session-message-actions { justify-content: flex-end; }
+.kubecode-session-message-actions {
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.kubecode-session-prompt:hover .kubecode-session-message-actions,
+.kubecode-session-prompt:focus-within .kubecode-session-message-actions,
+.kubecode-session-response:hover .kubecode-session-message-actions,
+.kubecode-session-response:focus-within .kubecode-session-message-actions { opacity: 1; }
+.kubecode-session-prompt-editor > form { max-width: 85%; }
+
+/* The response: full width, markdown at the reading size. */
+.kubecode-session-response { gap: 6px; max-width: 100%; }
+.kubecode-session-response-content { gap: 16px; width: 100%; }
+.kubecode-session-markdown { font-size: var(--kubecode-ui-font-size, 14px); line-height: 1.6; }
+.kubecode-session-markdown pre { max-width: 100%; }
+
+/* Reasoning and the tool-use group: quiet one-line triggers. */
+.kubecode-session-reasoning { margin: 0; }
+.kubecode-session-reasoning > button {
+  font-size: 12px;
+  gap: 6px;
+  padding: 4px 0;
+  width: auto;
+}
+.kubecode-session-reasoning-caret { transition: transform 120ms ease; }
+.kubecode-session-reasoning[data-state='open'] .kubecode-session-reasoning-caret { transform: rotate(180deg); }
+.kubecode-session-reasoning .ai-reasoning-markdown {
+  font-size: 12px;
+  line-height: 1.5;
+  margin-top: 4px;
+  max-height: 200px;
+  overflow-y: auto;
+  padding-left: 20px;
+}
+.kubecode-session-tool-use { display: flex; flex-direction: column; gap: 4px; }
+.kubecode-session-tool-use-toggle {
+  align-self: flex-start;
+  color: var(--text-muted);
+  font-size: 12px;
+  gap: 6px;
+  height: auto;
+  padding: 4px 0;
+}
+.kubecode-session-tool-use-toggle:hover { background: transparent; color: var(--text-primary); }
+.kubecode-session-tool-use-caret { transition: transform 120ms ease; }
+.kubecode-session-tool-use[data-state='open'] .kubecode-session-tool-use-caret { transform: rotate(180deg); }
+.kubecode-session-tool-count { font-size: 10px; gap: 4px; height: 16px; min-width: 16px; padding: 0 5px; }
+.kubecode-session-tool-count svg { height: 10px; width: 10px; }
+
+/* One Tool per call: the official header in the compact row height. */
+.ai-action-card.group { border-color: transparent; margin: 0; }
+.ai-action-card .ai-action-card-header {
+  display: flex;
+  height: auto;
+  min-height: 28px;
+  padding: 2px 7px;
+}
+.ai-action-card .ai-action-card-header > div { min-width: 0; }
+.ai-action-card .ai-action-card-header > div > span:first-of-type {
+  font-size: var(--kubecode-ui-font-compact);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ai-action-card .ai-action-card-header [data-slot='badge'] { font-size: 10px; padding: 0 6px; }
+.ai-action-card .ai-action-card-details { gap: 8px; padding: 0 8px 8px; }
+.ai-action-card .ai-action-card-details > * + * { margin-top: 8px; }
+.ai-action-card .ai-action-card-details [data-language] { max-height: 200px; overflow: auto; }
+.ai-action-card[data-status='error'] .ai-action-card-details [data-testid='detail-output'] [data-language] {
+  border: 1px solid var(--feedback-error-border, var(--destructive));
+}
+
+/* Plan: one compact card row above the composer. */
+.kubecode-session-plan[data-slot='plan'] { gap: 0; padding: 0; }
+.kubecode-session-plan-header { align-items: center; padding: 4px 6px 4px 10px; }
+.kubecode-session-plan-heading { align-items: center; display: flex; gap: 8px; min-width: 0; }
+.kubecode-session-plan-title { font-size: 12px; font-weight: 500; }
+.kubecode-session-plan-progress { font-size: 12px; font-variant-numeric: tabular-nums; }
+.kubecode-session-plan-header .kubecode-session-plan-trigger { display: inline-flex; height: 28px; padding: 0; width: 28px; }
+
+/* Subagent: a Task in the transcript. */
+.kubecode-session-subagent { margin-bottom: 8px; }
+.kubecode-session-subagent-trigger {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  font-size: 13px;
+  gap: 8px;
+  padding: 4px 0;
+  text-align: start;
+  width: 100%;
+}
+.kubecode-session-subagent-trigger:hover { color: var(--text-primary); }
+.kubecode-session-subagent-trigger:focus-visible { border-radius: 4px; outline: 2px solid var(--state-focus-ring); }
+.kubecode-session-subagent-caret { transition: transform 120ms ease; }
+.kubecode-session-subagent[data-state='open'] .kubecode-session-subagent-caret { transform: rotate(180deg); }
+.kubecode-session-subagent-prompt { font-style: italic; }
+
+/* Queue above the composer. */
+.kubecode-session-queue { margin-bottom: 8px; }
+.kubecode-session-queue-text { color: var(--text-primary); }
+
+/* Context meter in the Session header. */
+.kubecode-session-usage-trigger { font-size: 12px; gap: 6px; height: 28px; padding: 0 8px; }
+.kubecode-session-usage { width: 16rem; }
+.kubecode-session-usage-bar[data-level='ok'] [data-slot='progress-indicator'] { background: var(--accent-green); }
+.kubecode-session-usage-bar[data-level='warning'] [data-slot='progress-indicator'] { background: var(--feedback-warning-border); }
+.kubecode-session-usage-bar[data-level='danger'] [data-slot='progress-indicator'] { background: var(--accent-red); }
+
+/* Composer: Prompt Input parts on the one-row surface (ADRs 0239/0240). */
+.kubecode-session-prompt-input[data-slot='input-group'] { background: var(--surface-app); }
+
+/* Jump to latest: ConversationScrollButton's place, over the timeline. */
+.kubecode-session-jump {
+  bottom: 12px;
+  box-shadow: var(--shadow-sm, 0 1px 3px rgb(0 0 0 / 12%));
+  left: 50%;
+  position: absolute;
+  transform: translateX(-50%);
+  z-index: 5;
+}
+/* End S4 Session view */
+=======
 /* ==== S2 (ADR 0243): Task inspector, Kanban and Needs you on the official parts ==== */
 /* Status tones on the official Badge: the text carries the meaning, the tone only adds emphasis. */
 .kubecode-tone-badge { font: var(--ws-font-meta); font-weight: 500; }
@@ -6280,3 +6424,5 @@ button.kubecode-reference-chip-open:focus-visible,
 .kubecode-manager-setup [data-slot='alert-description'] p { color: var(--text-secondary); margin: 0; }
 .kubecode-manager-setup[data-slot='alert'] > .kubecode-manager-setup-actions { grid-column: 2; margin-top: var(--ws-space-2); }
 /* ==== end S3 ==== */
+
+/* =====================================================

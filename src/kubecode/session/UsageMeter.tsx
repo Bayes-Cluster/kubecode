@@ -1,9 +1,17 @@
+import { useRef, useState } from 'react'
 import { Gauge } from 'lucide-react'
-import { Popover as PopoverPrimitive } from 'radix-ui'
 
+import {
+  Context,
+  ContextContent,
+  ContextContentBody,
+  ContextContentFooter,
+  ContextContentHeader,
+  ContextTrigger,
+} from '@/components/ai-elements/context'
+import { Button } from '@/components/ui/button'
+import { Progress } from '@/components/ui/progress'
 import type { Translator } from '@/lib/i18n'
-
-import { cn } from '@/lib/utils'
 
 import { parseUsage, usageLevel } from './sessionModel'
 
@@ -13,12 +21,6 @@ type UsageMeterProps = {
   usage: unknown
 }
 
-const LEVEL_CLASS: Record<string, string> = {
-  ok: 'bg-[var(--accent-green)]',
-  warning: 'bg-[var(--feedback-warning-border)]',
-  danger: 'bg-[var(--accent-red)]',
-}
-
 function formatNumber(value: number, locale: string, compact = false): string {
   return new Intl.NumberFormat(locale, compact
     ? { notation: 'compact', maximumFractionDigits: 1 }
@@ -26,72 +28,102 @@ function formatNumber(value: number, locale: string, compact = false): string {
 }
 
 /**
- * Live context-window meter (#106): the usage checkpoint the server already
- * pushes (`{ used, size, cost? }`) renders as a header gauge with threshold
- * colors and a counts-only fallback when the window size is unknown. It never
- * refetches — updates ride the session-state event stream.
+ * Live context-window meter (#106) on the official Context element
+ * (ADR 0245): the usage checkpoint the server already pushes
+ * (`{ used, size, cost? }`) renders as a header gauge with threshold colors
+ * and a counts-only fallback when the window size is unknown. Every label
+ * and number is localized here, so none of the element's English defaults
+ * show. It opens on click like the header's other popovers, never on hover,
+ * and it never refetches — updates ride the session-state event stream.
  */
 export function UsageMeter({ locale, t, usage }: UsageMeterProps) {
+  const [open, setOpen] = useState(false)
+  const triggerRef = useRef<HTMLButtonElement>(null)
   const snapshot = parseUsage(usage)
   if (!snapshot || snapshot.used == null) return null
   const { used, size, cost } = snapshot
   const hasWindow = size != null && size > 0
   const percent = hasWindow ? Math.min(100, Math.round((used / (size as number)) * 100)) : null
   const level = hasWindow ? usageLevel(used, size as number) : 'ok'
+  const openLabel = t('kubecode.usageMeterOpen')
 
   return (
-    <PopoverPrimitive.Root>
-      <PopoverPrimitive.Trigger
-        aria-label={t('kubecode.usageMeterOpen')}
-        className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs text-text-secondary hover:bg-state-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        data-testid="usage-meter-trigger"
-        title={t('kubecode.usageMeterOpen')}
-      >
-        <Gauge aria-hidden className="h-3.5 w-3.5" />
-        <span data-testid="usage-meter-value">
-          {hasWindow ? `${percent}%` : formatNumber(used, locale, true)}
-        </span>
-      </PopoverPrimitive.Trigger>
-      <PopoverPrimitive.Portal>
-        <PopoverPrimitive.Content
-          align="end"
-          className="z-50 w-64 rounded-lg border border-border bg-popover p-3 text-popover-foreground shadow-md"
-          data-testid="usage-meter-popover"
-          sideOffset={6}
+    <Context
+      maxTokens={hasWindow ? (size as number) : used}
+      open={open}
+      usedTokens={used}
+      // The element is a hover card: it asks to close whenever the pointer
+      // or focus leaves the trigger. Those requests are ignored so the
+      // meter behaves like a popover — a click toggles it, and only an
+      // explicit dismissal (Escape, a press outside) closes it.
+      onOpenChange={() => {}}
+    >
+      <ContextTrigger>
+        <Button
+          aria-expanded={open}
+          aria-label={openLabel}
+          className="kubecode-session-usage-trigger"
+          data-level={level}
+          data-testid="usage-meter-trigger"
+          data-ws-components="official"
+          size="sm"
+          title={openLabel}
+          type="button"
+          variant="outline"
+          ref={triggerRef}
+          onClick={() => setOpen((current) => !current)}
         >
-          <p className="text-xs font-medium text-text-secondary">{t('kubecode.usageContextTitle')}</p>
-          {hasWindow ? (
-            <>
-              <div
-                aria-hidden
-                className="mt-2 h-2 w-full overflow-hidden rounded-full bg-muted"
-              >
-                <div
-                  className={cn('h-full rounded-full transition-[width]', LEVEL_CLASS[level])}
-                  data-testid="usage-meter-bar"
-                  style={{ width: `${percent}%` }}
-                />
-              </div>
-              <p className="mt-2 text-sm" data-testid="usage-meter-detail">
-                {t('kubecode.usageOfWindow', {
-                  percent: percent as number,
-                  total: formatNumber(size as number, locale),
-                  used: formatNumber(used, locale),
-                })}
-              </p>
-            </>
-          ) : (
-            <p className="mt-2 text-sm" data-testid="usage-meter-detail">
-              {t('kubecode.usageTokensOnly', { count: formatNumber(used, locale) })}
-            </p>
+          <Gauge aria-hidden size={14} />
+          <span data-testid="usage-meter-value">
+            {hasWindow ? `${percent}%` : formatNumber(used, locale, true)}
+          </span>
+        </Button>
+      </ContextTrigger>
+      <ContextContent
+        align="end"
+        className="kubecode-session-usage"
+        data-testid="usage-meter-popover"
+        data-ws-components="official"
+        sideOffset={6}
+        onEscapeKeyDown={() => setOpen(false)}
+        // The trigger toggles; a press on it is not a dismissal.
+        onPointerDownOutside={(event) => {
+          if (triggerRef.current?.contains(event.target as Node)) event.preventDefault()
+          else setOpen(false)
+        }}
+      >
+        <ContextContentHeader>
+          <p className="text-xs font-medium text-muted-foreground">{t('kubecode.usageContextTitle')}</p>
+          {hasWindow && (
+            <Progress
+              aria-label={t('kubecode.usageContextTitle')}
+              // shadcn's Progress paints the value without handing it to
+              // the Radix root, so the value is named here for readers.
+              aria-valuenow={percent as number}
+              className="kubecode-session-usage-bar"
+              data-level={level}
+              data-testid="usage-meter-bar"
+              value={percent}
+            />
           )}
-          {cost && (
-            <p className="mt-1 text-xs text-text-muted">
-              {t('kubecode.usageCost', { cost })}
-            </p>
-          )}
-        </PopoverPrimitive.Content>
-      </PopoverPrimitive.Portal>
-    </PopoverPrimitive.Root>
+        </ContextContentHeader>
+        <ContextContentBody>
+          <p className="text-sm" data-testid="usage-meter-detail">
+            {hasWindow
+              ? t('kubecode.usageOfWindow', {
+                percent: percent as number,
+                total: formatNumber(size as number, locale),
+                used: formatNumber(used, locale),
+              })
+              : t('kubecode.usageTokensOnly', { count: formatNumber(used, locale) })}
+          </p>
+        </ContextContentBody>
+        {cost && (
+          <ContextContentFooter>
+            <p className="text-xs text-muted-foreground">{t('kubecode.usageCost', { cost })}</p>
+          </ContextContentFooter>
+        )}
+      </ContextContent>
+    </Context>
   )
 }

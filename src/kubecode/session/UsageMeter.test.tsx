@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
 import { parseUsage, usageLevel } from './sessionModel'
@@ -48,7 +48,9 @@ describe('UsageMeter', () => {
     const popover = screen.getByTestId('usage-meter-popover')
     expect(popover).toBeInTheDocument()
     expect(popover).toHaveTextContent('1,234 of 8,000 tokens (15%)')
-    expect(screen.getByTestId('usage-meter-bar')).toHaveStyle({ width: '15%' })
+    expect(screen.getByTestId('usage-meter-bar')).toHaveAttribute('aria-valuenow', '15')
+    fireEvent.click(screen.getByTestId('usage-meter-trigger'))
+    expect(screen.queryByTestId('usage-meter-popover')).not.toBeInTheDocument()
   })
 
   it('falls back to counts-only when the window size is unknown', async () => {
@@ -57,6 +59,23 @@ describe('UsageMeter', () => {
     fireEvent.click(screen.getByTestId('usage-meter-trigger'))
     expect(screen.getByTestId('usage-meter-detail')).toHaveTextContent('4,321')
     expect(screen.queryByTestId('usage-meter-bar')).not.toBeInTheDocument()
+  })
+
+  it('stays open when the pointer or focus leaves the trigger (click-to-open, not hover)', async () => {
+    render(<UsageMeter locale="en-US" t={t as never} usage={{ used: 1234, size: 8000 }} />)
+    const trigger = screen.getByTestId('usage-meter-trigger')
+    fireEvent.click(trigger)
+    fireEvent.pointerOut(trigger, { pointerType: 'mouse', relatedTarget: document.body })
+    fireEvent.focusOut(trigger, { relatedTarget: document.body })
+    // The hover card's close timer is a 0 ms timeout; let it fire.
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)) })
+    expect(screen.getByTestId('usage-meter-popover')).toBeInTheDocument()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByTestId('usage-meter-popover')).not.toBeInTheDocument()
+    fireEvent.click(trigger)
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)) })
+    fireEvent.pointerDown(document.body)
+    expect(screen.queryByTestId('usage-meter-popover')).not.toBeInTheDocument()
   })
 
   it('renders nothing without usage', () => {

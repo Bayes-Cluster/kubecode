@@ -885,6 +885,14 @@ Markdown files render through hardened streamdown with no images fetched; search
 forms use Field, Input and Select (`members/ProviderSelect.tsx`); the manager
 setup notice is an Alert.
 
+The coding Session view is on the official parts (ADR 0245). Messages use
+Message and MessageActions, markdown uses hardened `MessageResponse` through
+`SessionMarkdown`, which turns wikilinks into fragment links, and the other
+parts use Reasoning, Tool with Code Block output, Plan, Task for subagents,
+Queue, Context for usage, and Prompt Input parts on an InputGroup composer.
+Its history stays virtualised, with a jump-to-latest button wired to
+`autoFollowRef`. The view loads lazily from `AgentSessionWorkspace.tsx`.
+
 ## Agent sessions
 
 The server currently discovers Claude Code, Codex, and OpenCode.
