@@ -4573,6 +4573,7 @@
 }
 @media (pointer: coarse) {
   .kubecode-reference-chip-remove { min-height: var(--ws-touch-target); min-width: var(--ws-touch-target); }
+  button.kubecode-reference-chip-open { min-height: var(--ws-touch-target); }
 }
 .kubecode-reference-chip[data-state='unavailable'] .kubecode-reference-chip-state { color: var(--text-secondary); }
 
