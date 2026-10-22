@@ -41,6 +41,8 @@ export type ConversationComposerProps = {
   /** Called when the draft is submitted (Enter, or the send button). */
   onSend: () => void
   sendLabel: string
+  /** Names the Prompt Input's hidden file input. */
+  attachLabel: string
   /** Defaults to "the draft has text". Callers add their own conditions. */
   canSend?: boolean
   disabled?: boolean
@@ -101,6 +103,7 @@ export function ConversationComposer({
   placeholder,
   sendDisabledReason,
   sendLabel,
+  attachLabel,
   stop,
   textareaRef,
   tools,
@@ -253,7 +256,7 @@ export function ConversationComposer({
         </div>
       )}
       {/* The form never submits on its own: Enter and the send button go through `submit`. */}
-      <PromptInput className="kubecode-prompt-input" onSubmit={() => submit()}>
+      <PromptInput className="kubecode-prompt-input" uploadLabel={attachLabel} onSubmit={() => submit()}>
         {header && <PromptInputHeader className="kubecode-composer-context">{header}</PromptInputHeader>}
         <PromptInputBody>
           <PromptInputTextarea

@@ -278,7 +278,7 @@ export function OfficialComponentMatrix({ t }: { t: Translator }) {
               <Suggestion suggestion={say('kubecode.proto.suggest.ask')} onClick={setDraft} />
             </Suggestions>
           </div>
-          <PromptInput onSubmit={() => setDraft('')}>
+          <PromptInput uploadLabel={say('kubecode.vocab.command.attachFile')} onSubmit={() => setDraft('')}>
             <PromptInputBody>
               <PromptInputTextarea
                 aria-label={say('kubecode.matrix.sample.composerLabel')}
@@ -292,7 +292,7 @@ export function OfficialComponentMatrix({ t }: { t: Translator }) {
               <PromptInputSubmit aria-label={say('kubecode.vocab.command.send')} disabled={!draft.trim()} />
             </PromptInputFooter>
           </PromptInput>
-          <PromptInput onSubmit={() => undefined}>
+          <PromptInput uploadLabel={say('kubecode.vocab.command.attachFile')} onSubmit={() => undefined}>
             <PromptInputBody>
               <PromptInputTextarea
                 aria-label={say('kubecode.matrix.sample.composerLabel')}

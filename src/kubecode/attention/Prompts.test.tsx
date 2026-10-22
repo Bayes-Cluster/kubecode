@@ -54,6 +54,38 @@ describe('PermissionPrompt', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Your answer was not recorded. Try again.')
   })
 
+  it('hands focus to the next prompt, or else the composer, once an answered prompt goes (#229)', async () => {
+    const Harness = ({ ids }: { ids: string[] }) => (
+      <div>
+        {ids.map((id) => <PermissionPrompt deadlineMs={null} key={id} options={options} requestId={id} t={t} tool="pytest" onResolve={vi.fn()} />)}
+        <textarea aria-label="composer" className="kubecode-composer-textarea" />
+      </div>
+    )
+    const { rerender } = render(<Harness ids={['q1', 'q2']} />)
+    const first = document.querySelector<HTMLElement>('[data-focus-key="permission:q1"]')!
+    act(() => first.focus())
+    rerender(<Harness ids={['q2']} />)
+    await waitFor(() => expect(document.activeElement).toHaveAttribute('data-focus-key', 'permission:q2'))
+    rerender(<Harness ids={[]} />)
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'composer' })))
+  })
+
+  it('leaves focus alone when the prompt goes while focus is elsewhere', async () => {
+    const Harness = ({ show }: { show: boolean }) => (
+      <div>
+        {show && <PermissionPrompt deadlineMs={null} options={options} requestId="q1" t={t} tool="pytest" onResolve={vi.fn()} />}
+        <button type="button">elsewhere</button>
+        <textarea aria-label="composer" className="kubecode-composer-textarea" />
+      </div>
+    )
+    const { rerender } = render(<Harness show />)
+    const other = screen.getByRole('button', { name: 'elsewhere' })
+    act(() => other.focus())
+    rerender(<Harness show={false} />)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(document.activeElement).toBe(other)
+  })
+
   it('shows no countdown without a deadline, and never a 0 s one once a deadline passed', () => {
     const { rerender } = render(<PermissionPrompt deadlineMs={null} options={options} requestId="q1" t={t} tool="pytest" onResolve={vi.fn()} />)
     expect(screen.queryByTestId('permission-countdown')).not.toBeInTheDocument()

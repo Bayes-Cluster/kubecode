@@ -1,8 +1,6 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { useState } from 'react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
 
-import { Composer, type ComposerProps } from '@/components/workspace/Composer'
 import { IconButton } from '@/components/workspace/IconButton'
 import {
   extractMentions,
@@ -11,7 +9,6 @@ import {
   mentionQueryAt,
   type MentionOption,
 } from '@/components/workspace/mentions'
-import { RecipientRow, type Recipient } from '@/components/workspace/RecipientRow'
 import { SendButton, StopButton } from '@/components/workspace/SendButton'
 import { StatusBadge } from '@/components/workspace/StatusBadge'
 
@@ -19,22 +16,6 @@ const members: MentionOption[] = [
   { id: 's-general', handle: 'general', label: 'General' },
   { id: 's-analyst', handle: 'data-analyst', label: 'Data Analyst', detail: 'Analysis' },
 ]
-
-function Harness(props: Partial<ComposerProps> & { initial?: string }) {
-  const [value, setValue] = useState(props.initial ?? '')
-  return (
-    <Composer
-      label="Message"
-      mentions={members}
-      placeholder="Write"
-      sendLabel="Send"
-      value={value}
-      onChange={setValue}
-      onSend={vi.fn()}
-      {...props}
-    />
-  )
-}
 
 describe('mention helpers', () => {
   it('finds the @query before the caret only at a word start', () => {
@@ -56,167 +37,6 @@ describe('mention helpers', () => {
       .toEqual(['s-general', 's-analyst'])
     expect(extractMentions('email@general.example and @generalist', members)).toEqual([])
     expect(extractMentions('@GENERAL hello', members).map((m) => m.id)).toEqual(['s-general'])
-  })
-})
-
-describe('Composer', () => {
-  it('sends on Enter, breaks the line on Shift+Enter, and never sends an empty draft', () => {
-    const onSend = vi.fn()
-    render(<Harness initial="hello" onSend={onSend} />)
-    const box = screen.getByRole('combobox', { name: 'Message' })
-    fireEvent.keyDown(box, { key: 'Enter', shiftKey: true })
-    expect(onSend).not.toHaveBeenCalled()
-    fireEvent.keyDown(box, { key: 'Enter' })
-    expect(onSend).toHaveBeenCalledTimes(1)
-    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
-    expect(onSend).toHaveBeenCalledTimes(2)
-  })
-
-  it('does not send while an input method is composing', () => {
-    const onSend = vi.fn()
-    render(<Harness initial="こんにちは" onSend={onSend} />)
-    const box = screen.getByRole('combobox', { name: 'Message' })
-    fireEvent.compositionStart(box)
-    fireEvent.keyDown(box, { key: 'Enter' })
-    fireEvent.compositionEnd(box)
-    fireEvent.keyDown(box, { key: 'Enter', isComposing: true })
-    fireEvent.keyDown(box, { key: 'Enter', keyCode: 229 })
-    expect(onSend).not.toHaveBeenCalled()
-    fireEvent.keyDown(box, { key: 'Enter' })
-    expect(onSend).toHaveBeenCalledTimes(1)
-  })
-
-  it('has an empty and a disabled state that cannot send, and waits while a send is in flight', () => {
-    const onSend = vi.fn()
-    const { rerender } = render(<Harness initial="" onSend={onSend} />)
-    expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()
-    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' })
-    expect(onSend).not.toHaveBeenCalled()
-    rerender(<Harness busy initial="draft" onSend={onSend} />)
-    const send = screen.getByRole('button', { name: 'Send' })
-    // It keeps focus while waiting (ADR 0227), and ignores clicks.
-    expect(send).not.toBeDisabled()
-    expect(send).toHaveAttribute('aria-disabled', 'true')
-    expect(send).toHaveAttribute('aria-busy', 'true')
-    fireEvent.click(send)
-    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' })
-    expect(onSend).not.toHaveBeenCalled()
-    rerender(<Harness disabled initial="draft" onSend={onSend} />)
-    expect(screen.getByRole('combobox')).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()
-  })
-
-  it('keeps sending available while a named task runs, and stop is its own control', () => {
-    const onSend = vi.fn()
-    const onStop = vi.fn()
-    render(<Harness initial="more" stop={{ label: 'Stop Data Analyst', onStop }} onSend={onSend} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
-    expect(onSend).toHaveBeenCalledTimes(1)
-    expect(onStop).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: 'Stop Data Analyst' }))
-    expect(onStop).toHaveBeenCalledTimes(1)
-    expect(onSend).toHaveBeenCalledTimes(1)
-  })
-
-  it('suggests members after @, moves with the arrow keys, and inserts on Enter or Tab without sending', async () => {
-    const onSend = vi.fn()
-    render(<Harness mentionLabel="Members" onSend={onSend} />)
-    const box = screen.getByRole('combobox', { name: 'Message' })
-    expect(box).toHaveAttribute('aria-expanded', 'false')
-    fireEvent.change(box, { target: { value: '@', selectionStart: 1 } })
-    const list = await screen.findByRole('listbox', { name: 'Members' })
-    expect(box).toHaveAttribute('aria-expanded', 'true')
-    expect(list.querySelectorAll('[role="option"]')).toHaveLength(2)
-    fireEvent.keyDown(box, { key: 'ArrowDown' })
-    expect(screen.getByRole('option', { selected: true })).toHaveTextContent('@data-analyst')
-    expect(box).toHaveAttribute('aria-activedescendant', expect.stringMatching(/-option-1$/))
-    fireEvent.keyDown(box, { key: 'Enter' })
-    expect((box as HTMLTextAreaElement).value).toBe('@data-analyst ')
-    expect(onSend).not.toHaveBeenCalled()
-    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
-
-    fireEvent.change(box, { target: { value: '@data-analyst hi @ge', selectionStart: 20 } })
-    expect(await screen.findByRole('option')).toHaveTextContent('@general')
-    fireEvent.keyDown(box, { key: 'Tab' })
-    expect((box as HTMLTextAreaElement).value).toBe('@data-analyst hi @general ')
-  })
-
-  it('closes the list on Escape and chooses with the mouse', async () => {
-    render(<Harness />)
-    const box = screen.getByRole('combobox', { name: 'Message' })
-    fireEvent.change(box, { target: { value: '@g', selectionStart: 2 } })
-    await screen.findByRole('listbox')
-    fireEvent.keyDown(box, { key: 'Escape' })
-    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
-    fireEvent.change(box, { target: { value: '@ge', selectionStart: 3 } })
-    fireEvent.mouseDown(await screen.findByRole('option', { name: /general/i }))
-    await waitFor(() => expect((box as HTMLTextAreaElement).value).toBe('@general '))
-  })
-
-  it('is a plain text box when nobody can be mentioned', () => {
-    render(<Harness mentions={[]} />)
-    const box = screen.getByRole('textbox', { name: 'Message' })
-    expect(box).not.toHaveAttribute('aria-expanded')
-    fireEvent.change(box, { target: { value: '@g', selectionStart: 2 } })
-    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
-  })
-})
-
-describe('Composer for a conversation of members (ADR 0229)', () => {
-  it('shows who each suggestion is, and says when one cannot receive messages yet', async () => {
-    render(<Harness mentions={[
-      { id: 'g', handle: 'general', label: 'General', identity: { role: 'manager', roleLabel: 'Project manager' } },
-      { id: 'w', handle: 'writer', label: 'Writer', identity: { role: 'specialist', roleLabel: 'Specialist · Writing', unavailable: "Can't receive messages yet" } },
-    ]} />)
-    fireEvent.change(screen.getByRole('combobox', { name: 'Message' }), { target: { value: '@', selectionStart: 1 } })
-    const options = await screen.findAllByRole('option')
-    expect(options[0]).toHaveTextContent('General@generalProject manager')
-    expect(options[0].querySelector('[data-testid="member-avatar"]')).not.toBeNull()
-    // It can still be chosen: the draft then says why it cannot be sent.
-    expect(options[1]).toHaveTextContent("Can't receive messages yet")
-  })
-
-  it('says why it cannot send, linked to the send button, and links the caller’s hints to the text box', () => {
-    render(
-      <>
-        <p id="hint">Mentions never start work.</p>
-        <Harness describedBy="hint" initial="@writer hi" sendDisabledReason="Writer can't receive messages yet." canSend={false} />
-      </>,
-    )
-    const send = screen.getByRole('button', { name: 'Send' })
-    expect(send).toBeDisabled()
-    expect(send).toHaveAccessibleDescription("Writer can't receive messages yet.")
-    expect(screen.getByRole('combobox', { name: 'Message' })).toHaveAccessibleDescription('Mentions never start work.')
-  })
-
-  it('gives the caller its text box, to put the caret after a reply', () => {
-    const ref = { current: null as HTMLTextAreaElement | null }
-    render(<Harness focusKey="composer:general" textareaRef={ref} />)
-    expect(ref.current).toBe(screen.getByRole('combobox', { name: 'Message' }))
-    expect(ref.current).toHaveAttribute('data-focus-key', 'composer:general')
-  })
-})
-
-describe('RecipientRow', () => {
-  function Row({ onEmpty }: { onEmpty: () => void }) {
-    const [names, setNames] = useState(['Analyst', 'Writer'])
-    const recipients: Recipient[] = names.map((name) => ({
-      key: name, name, role: 'specialist', removeLabel: `Don't send to ${name}`,
-      onRemove: () => setNames((current) => current.filter((item) => item !== name)),
-    }))
-    return <RecipientRow empty="General · Project manager" label="To" recipients={recipients} onFocusAfterLast={onEmpty} />
-  }
-
-  it('lists whom a draft goes to, each removable, and moves focus to the next one or past the row', () => {
-    const onEmpty = vi.fn()
-    render(<Row onEmpty={onEmpty} />)
-    const row = screen.getByRole('list', { name: 'To' })
-    expect(row).toHaveTextContent(/Analyst.*Writer/)
-    fireEvent.click(screen.getByRole('button', { name: "Don't send to Analyst" }))
-    expect(screen.getByRole('button', { name: "Don't send to Writer" })).toHaveFocus()
-    fireEvent.click(screen.getByRole('button', { name: "Don't send to Writer" }))
-    expect(onEmpty).toHaveBeenCalled()
-    expect(screen.getByText('General · Project manager')).toBeInTheDocument()
   })
 })
 
@@ -299,91 +119,5 @@ describe('IconButton sizes', () => {
     expect(screen.getByRole('button', { name: 'Open' })).toHaveAttribute('data-size', 'md')
     rerender(<IconButton disabled icon={<svg />} label="Open" />)
     expect(screen.getByRole('button', { name: 'Open' })).toBeDisabled()
-  })
-})
-
-describe('Composer keyboard details', () => {
-  const originalMatchMedia = window.matchMedia
-  afterEach(() => {
-    window.matchMedia = originalMatchMedia
-  })
-
-  it('completes with Tab only once there is something to complete, and Shift+Tab never completes', () => {
-    render(<Harness />)
-    const box = screen.getByRole('combobox', { name: 'Message' })
-    fireEvent.change(box, { target: { value: '@', selectionStart: 1 } })
-    expect(screen.getByRole('listbox')).toBeInTheDocument()
-    // An empty "@" does not trap Tab.
-    expect(fireEvent.keyDown(box, { key: 'Tab' })).toBe(true)
-    expect((box as HTMLTextAreaElement).value).toBe('@')
-    fireEvent.change(box, { target: { value: '@da', selectionStart: 3 } })
-    expect(fireEvent.keyDown(box, { key: 'Tab', shiftKey: true })).toBe(true)
-    expect((box as HTMLTextAreaElement).value).toBe('@da')
-    expect(fireEvent.keyDown(box, { key: 'Tab' })).toBe(false)
-    expect((box as HTMLTextAreaElement).value).toBe('@data-analyst ')
-  })
-
-  it('moves up and wraps around the list', () => {
-    render(<Harness />)
-    const box = screen.getByRole('combobox', { name: 'Message' })
-    fireEvent.change(box, { target: { value: '@', selectionStart: 1 } })
-    fireEvent.keyDown(box, { key: 'ArrowUp' })
-    expect(screen.getByRole('option', { selected: true })).toHaveTextContent('@data-analyst')
-    fireEvent.keyDown(box, { key: 'ArrowDown' })
-    expect(screen.getByRole('option', { selected: true })).toHaveTextContent('@general')
-  })
-
-  it('does not suggest anyone while the box is disabled', () => {
-    render(<Harness disabled initial="@g" />)
-    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
-  })
-
-  it('lets Enter send again after a composition that never ended', () => {
-    const onSend = vi.fn()
-    render(<Harness initial="draft" onSend={onSend} />)
-    const box = screen.getByRole('combobox', { name: 'Message' })
-    fireEvent.compositionStart(box)
-    fireEvent.keyDown(box, { key: 'Enter' })
-    expect(onSend).not.toHaveBeenCalled()
-    fireEvent.blur(box)
-    fireEvent.keyDown(box, { key: 'Enter' })
-    expect(onSend).toHaveBeenCalledTimes(1)
-  })
-
-  it('breaks the line on Enter with a touch keyboard, and still sends on the arrow or a chord', () => {
-    window.matchMedia = ((query: string) => ({
-      matches: query === '(pointer: coarse)',
-      media: query,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-    })) as unknown as typeof window.matchMedia
-    const onSend = vi.fn()
-    render(<Harness initial="draft" onSend={onSend} />)
-    const box = screen.getByRole('combobox', { name: 'Message' })
-    expect(fireEvent.keyDown(box, { key: 'Enter' })).toBe(true)
-    expect(onSend).not.toHaveBeenCalled()
-    fireEvent.keyDown(box, { key: 'Enter', ctrlKey: true })
-    expect(onSend).toHaveBeenCalledTimes(1)
-    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
-    expect(onSend).toHaveBeenCalledTimes(2)
-  })
-
-  it('announces a send in flight to assistive technology', () => {
-    render(<Harness busy busyLabel="Sending…" initial="draft" />)
-    expect(screen.getByRole('status')).toHaveTextContent('Sending…')
-  })
-
-  it('sends one draft once even when Enter is pressed twice before the send settles', async () => {
-    let finish: () => void = () => {}
-    const onSend = vi.fn(() => new Promise<void>((resolve) => { finish = resolve }))
-    render(<Harness initial="draft" onSend={onSend} />)
-    const box = screen.getByRole('combobox', { name: 'Message' })
-    fireEvent.keyDown(box, { key: 'Enter' })
-    fireEvent.keyDown(box, { key: 'Enter' })
-    expect(onSend).toHaveBeenCalledTimes(1)
-    finish()
-    await waitFor(() => expect(box).toHaveFocus())
-    fireEvent.keyDown(box, { key: 'Enter' })
-    expect(onSend).toHaveBeenCalledTimes(2)
   })
 })

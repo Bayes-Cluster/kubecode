@@ -31,6 +31,7 @@ import type { AiAgentMessage } from '../lib/aiAgentConversation'
 import type { AiAgentReadiness } from '../lib/aiAgents'
 import type { NoteReference } from '../utils/ai-context'
 import type { VaultEntry } from '../types'
+import { scrollBehavior } from '@/lib/reducedMotion'
 import { cn } from '@/lib/utils'
 
 interface AiPanelHeaderProps {
@@ -504,11 +505,11 @@ export const AiPanelMessageHistory = memo(function AiPanelMessageHistory({
     autoFollowRef.current = true
     setAwayFromLatest(false)
     if (virtualized) {
-      virtuosoRef.current?.scrollToIndex({ align: 'end', behavior: 'smooth', index: 'LAST' })
+      virtuosoRef.current?.scrollToIndex({ align: 'end', behavior: scrollBehavior(), index: 'LAST' })
       return
     }
     const element = containerRef.current
-    if (element) element.scrollTo({ behavior: 'smooth', top: element.scrollHeight })
+    if (element) element.scrollTo({ behavior: scrollBehavior(), top: element.scrollHeight })
   }, [virtualized])
 
   const jumpLabel = createTranslator(locale)('kubecode.session.jumpToLatest')

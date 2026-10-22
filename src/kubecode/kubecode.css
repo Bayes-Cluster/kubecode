@@ -110,9 +110,7 @@
   padding: 0 10px;
 }
 
-.kubecode-history-controls,
 .kubecode-topbar-actions,
-.kubecode-search,
 .kubecode-session-status,
 .kubecode-session-title,
 .kubecode-context-tabbar,
@@ -121,8 +119,6 @@
   align-items: center;
   display: flex;
 }
-
-.kubecode-history-controls { gap: 3px; }
 .kubecode-topbar-actions {
   gap: 1px;
   justify-self: end;
@@ -131,39 +127,6 @@
 .kubecode-layout-toggle[aria-pressed='true'] {
   background: var(--surface-active);
   color: var(--text-primary);
-}
-
-.kubecode-search {
-  background: var(--surface-app);
-  border: 1px solid var(--border-subtle);
-  border-radius: 7px;
-  color: var(--text-secondary);
-  gap: 6px;
-  height: 28px;
-  padding: 0 8px;
-}
-
-.kubecode-search > svg,
-.kubecode-new-session > svg,
-.kubecode-directory-list > button > svg {
-  height: 18px;
-  width: 18px;
-}
-
-.kubecode-search input {
-  background: transparent;
-  border: 0;
-  box-shadow: none;
-  font-size: 14px;
-  height: 26px;
-  padding: 0;
-  text-align: center;
-}
-
-.kubecode-search kbd {
-  color: var(--text-muted);
-  font-size: 12px;
-  white-space: nowrap;
 }
 
 .kubecode-topbar-error {
@@ -245,65 +208,9 @@
 
 .kubecode-panel-backdrop { display: none; }
 
-.kubecode-project-rail {
-  align-items: center;
-  background: var(--surface-sidebar);
-  border-right: 1px solid var(--border-subtle);
-  display: flex;
-  flex: 0 0 50px;
-  flex-direction: column;
-  justify-content: space-between;
-  padding: 12px 5px 10px;
-}
-
-.kubecode-project-rail-list,
-.kubecode-project-rail-footer {
-  align-items: center;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.kubecode-project-button {
-  border: 1px solid transparent;
-  border-radius: 9px;
-  color: var(--text-secondary);
-  font-weight: 650;
-  height: 34px;
-  position: relative;
-  width: 34px;
-}
-
-.kubecode-project-button[data-session-status]::after {
-  border: 2px solid var(--surface-sidebar);
-  border-radius: 50%;
-  bottom: -2px;
-  content: '';
-  height: 9px;
-  position: absolute;
-  right: -2px;
-  width: 9px;
-}
-
-.kubecode-project-button[data-session-status='running']::after {
-  animation: kubecode-project-running 1.6s ease-in-out infinite;
-  background: var(--accent-blue);
-}
-
-.kubecode-project-button[data-session-status='stuck']::after {
-  background: var(--feedback-warning-text);
-}
-
 @keyframes kubecode-project-running {
   0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-blue) 34%, transparent); }
   50% { box-shadow: 0 0 0 4px transparent; }
-}
-
-.kubecode-project-button[data-active='true'] {
-  background: var(--surface-app);
-  border-color: var(--border-strong);
-  box-shadow: 0 1px 3px color-mix(in srgb, var(--shadow-dialog) 25%, transparent);
-  color: var(--text-primary);
 }
 
 .kubecode-session-sidebar {
@@ -315,38 +222,6 @@
   min-width: 0;
   overflow: hidden;
   padding: 12px 10px;
-}
-
-.kubecode-project-heading {
-  align-items: flex-start;
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 18px;
-  min-height: 42px;
-  padding: 0 3px;
-}
-
-.kubecode-project-heading > div {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.kubecode-project-heading strong { font-size: 15px; }
-.kubecode-project-heading span {
-  color: var(--text-secondary);
-  font-family: var(--kubecode-code-font, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.kubecode-new-session {
-  justify-content: center;
-  margin-bottom: 16px;
-  width: 100%;
 }
 
 .kubecode-new-session-dialog {
@@ -498,22 +373,6 @@
   align-self: flex-start;
   color: var(--text-secondary);
   margin: 0 10px;
-}
-
-.kubecode-team-isolation {
-  align-items: flex-start;
-  display: flex;
-  gap: 10px;
-}
-
-.kubecode-team-isolation > span {
-  display: grid;
-  gap: 2px;
-}
-
-.kubecode-team-isolation small {
-  color: var(--text-muted);
-  font-size: 12px;
 }
 
 .kubecode-team-overview {
@@ -852,13 +711,6 @@
   min-height: 34px;
   resize: vertical;
 }
-.kubecode-team-cleanup {
-  align-items: center;
-  display: flex;
-  gap: 8px;
-  justify-content: space-between;
-  width: 100%;
-}
 .kubecode-team-verification > div {
   border-top: 1px solid color-mix(in srgb, var(--feedback-warning-text) 18%, transparent);
   display: grid;
@@ -1009,29 +861,6 @@
   min-height: 0;
 }
 
-.kubecode-session-search {
-  align-items: center;
-  background: var(--surface-app);
-  border: 1px solid var(--border-subtle);
-  border-radius: 7px;
-  color: var(--text-muted);
-  display: flex;
-  flex: 0 0 30px;
-  gap: 5px;
-  margin: 8px 8px 6px;
-  padding: 0 3px 0 8px;
-}
-.kubecode-session-search > svg { flex: 0 0 auto; height: 16px; width: 16px; }
-.kubecode-session-search input {
-  background: transparent;
-  border: 0;
-  box-shadow: none;
-  font-size: 13px;
-  height: 28px;
-  min-width: 0;
-  padding: 0;
-}
-
 .kubecode-session-list {
   flex: 1;
   min-height: 0;
@@ -1082,19 +911,6 @@
 .kubecode-session-team-tree .kubecode-session-row-shell[data-team-child='true'] {
   margin-left: 18px;
 }
-
-.kubecode-session-section > header {
-  align-items: center;
-  color: var(--text-muted);
-  display: flex;
-  font-size: 11px;
-  font-weight: 600;
-  justify-content: space-between;
-  letter-spacing: 0.035em;
-  padding: 10px 8px 4px;
-  text-transform: uppercase;
-}
-.kubecode-session-section > header small { font-size: 10px; font-weight: 500; }
 
 .kubecode-session-row-shell {
   align-items: center;
@@ -1154,27 +970,6 @@
 }
 .kubecode-session-row-shell:hover .kubecode-session-row-actions,
 .kubecode-session-row-actions[data-state='open'] { opacity: 1; }
-
-.kubecode-session-agent-status { display: inline-flex; flex: 0 0 auto; position: relative; }
-.kubecode-session-agent-status::after {
-  background: transparent;
-  border: 1.5px solid var(--surface-sidebar);
-  border-radius: 50%;
-  bottom: -2px;
-  content: '';
-  height: 7px;
-  position: absolute;
-  right: -2px;
-  width: 7px;
-}
-.kubecode-session-agent-status[data-status='running']::after { background: var(--accent-blue); }
-.kubecode-session-agent-status[data-status='waiting_permission']::after { background: var(--feedback-warning-text); }
-.kubecode-session-agent-status[data-status='failed']::after,
-.kubecode-session-agent-status[data-status='timed_out']::after,
-.kubecode-session-agent-status[data-status='interrupted']::after { background: var(--feedback-error-text); }
-.kubecode-session-agent-status:not([data-status])::after,
-.kubecode-session-agent-status[data-status='completed']::after,
-.kubecode-session-agent-status[data-status='cancelled']::after { display: none; }
 .kubecode-session-filter-menu { min-width: 210px; }
 
 .kubecode-main-stack {
@@ -1292,17 +1087,6 @@
 .kubecode-session-plan-trigger > span:nth-child(3) {
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
-}
-
-.kubecode-session-plan-list {
-  border-top: 1px solid var(--border-subtle);
-  display: grid;
-  gap: 1px;
-  list-style: none;
-  margin: 0;
-  max-height: min(180px, 30vh);
-  overflow: auto;
-  padding: 7px 10px 9px;
 }
 
 .kubecode-session-plan-entry {
@@ -1675,8 +1459,7 @@
 }
 
 .kubecode-editor-toolbar { justify-content: space-between; }
-.kubecode-editor-toolbar > span,
-.kubecode-path-label {
+.kubecode-editor-toolbar > span {
   color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1827,7 +1610,6 @@
 }
 .kubecode-project-file-tree[data-virtualized='true'] { overflow: hidden; }
 .kubecode-file-tree-virtual-list { flex: 1 1 auto; min-height: 0; }
-.kubecode-file-search-results { padding-top: 5px; }
 .kubecode-file-tree-empty {
   color: var(--text-muted);
   display: block;
@@ -2311,15 +2093,6 @@
   text-align: center;
 }
 
-.kubecode-inline-error {
-  color: var(--feedback-error-text);
-  font-size: 13px;
-  max-width: 100%;
-  min-width: 0;
-  overflow-wrap: anywhere;
-  padding: 6px 12px;
-}
-
 .kubecode-system-message {
   align-items: center;
   background: color-mix(in srgb, var(--surface-panel) 88%, currentColor);
@@ -2421,15 +2194,6 @@
 }
 .kubecode-system-message[data-expanded='true'] .kubecode-system-message-expand > svg { transform: rotate(180deg); }
 
-.kubecode-directory-browser {
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  display: grid;
-  grid-template-rows: 40px minmax(180px, 34vh) 38px;
-  min-height: 0;
-  overflow: hidden;
-}
-
 .kubecode-provider-session-list {
   border: 1px solid var(--border-subtle);
   border-radius: 8px;
@@ -2463,54 +2227,6 @@
 .kubecode-provider-session-list > button code {
   color: var(--text-muted);
   font-size: 12px;
-}
-
-.kubecode-directory-location {
-  align-items: center;
-  background: var(--surface-sidebar);
-  border-bottom: 1px solid var(--border-subtle);
-  display: flex;
-  gap: 6px;
-  min-width: 0;
-  padding: 0 8px;
-}
-
-.kubecode-directory-location code {
-  color: var(--text-secondary);
-  font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.kubecode-directory-list {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 5px;
-}
-
-.kubecode-directory-list > button {
-  flex: 0 0 30px;
-  justify-content: flex-start;
-  overflow: hidden;
-}
-
-.kubecode-directory-list > button span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.kubecode-show-hidden {
-  align-items: center;
-  border-top: 1px solid var(--border-subtle);
-  color: var(--text-secondary);
-  display: flex;
-  font-size: 14px;
-  gap: 8px;
-  padding: 0 10px;
 }
 
 @media (max-width: 980px) {
@@ -2638,19 +2354,6 @@
   height: 24px;
   padding-inline: 8px;
 }
-
-.kubecode-search {
-  background: color-mix(in srgb, var(--surface-app) 72%, transparent);
-  height: 28px;
-  margin-inline: 12px;
-}
-
-.kubecode-search:focus-within {
-  border-color: var(--border-focus);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--border-focus) 35%, transparent);
-}
-
-.kubecode-search input { text-align: left; }
 
 .kubecode-session-sidebar {
   border-right: 0;
@@ -2902,19 +2605,6 @@
   padding: 0 7px;
   width: 100%;
 }
-.ai-action-card-icon,
-.ai-action-card-caret {
-  align-items: center;
-  color: var(--text-muted);
-  display: inline-flex;
-  justify-content: center;
-}
-.ai-action-card-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ai-action-card-caret { grid-column: 4; }
 .kubecode-permission-dock {
   background: color-mix(in srgb, var(--feedback-warning-bg) 38%, var(--surface-app));
   gap: 7px;
@@ -3257,7 +2947,6 @@
   .kubecode-agent-readiness-grid { grid-template-columns: 1fr; }
   /* The Workspace search stays as one icon (ADR 0231): leading, search, actions. */
   .kubecode-topbar { grid-template-columns: minmax(0, 1fr) auto auto; }
-  .kubecode-search { display: none; }
   .kubecode-titlebar-session-slot { max-width: calc(100vw - 190px); }
   [data-slot='dialog-content'].kubecode-settings-dialog {
     grid-template-columns: minmax(0, 1fr);
@@ -3518,7 +3207,6 @@
   flex-direction: column;
   gap: 6px;
 }
-.kubecode-composer-field { position: relative; }
 .kubecode-composer-row {
   align-items: center;
   display: flex;
@@ -4128,13 +3816,6 @@
   flex: 1 1 auto;
 }
 
-.kubecode-new-messages {
-  bottom: var(--ws-space-2);
-  left: 50%;
-  position: absolute;
-  transform: translateX(-50%);
-}
-
 .kubecode-inert-image {
   border: 1px dashed var(--border-subtle);
   border-radius: var(--radius-sm, 4px);
@@ -4152,44 +3833,7 @@
   min-width: 0;
 }
 
-.kubecode-composer-about-label,
-.kubecode-composer-to-label { color: var(--text-secondary); }
-
-.kubecode-composer-to-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--ws-space-2);
-  list-style: none;
-  margin: 0;
-  min-width: 0;
-  padding: 0;
-}
-
-.kubecode-recipient {
-  align-items: center;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  display: inline-flex;
-  gap: var(--ws-space-1);
-  max-width: 100%;
-  min-width: 0;
-  padding: 0 0 0 var(--ws-space-1);
-}
-
-.kubecode-recipient-remove {
-  align-items: center;
-  background: transparent;
-  border: 0;
-  color: var(--text-secondary);
-  cursor: pointer;
-  display: inline-flex;
-  justify-content: center;
-  min-height: var(--ws-touch-target);
-  min-width: var(--ws-touch-target);
-}
-
-.kubecode-recipient-remove:hover { color: var(--text-primary); }
-.kubecode-recipient-remove:focus-visible { border-radius: var(--radius-md); box-shadow: var(--ws-focus-ring); outline: none; }
+.kubecode-composer-about-label { color: var(--text-secondary); }
 
 .kubecode-composer-warning { color: var(--feedback-warning-text); font: var(--ws-font-meta); margin: 0; }
 .kubecode-composer-hint { color: var(--text-secondary); font: var(--ws-font-meta); margin: 0; }
@@ -4216,19 +3860,6 @@
 /* -- Workspace navigation and the on-demand detail area (ADR 0224) ----------- */
 .kubecode-workspace-nav { display: flex; flex-direction: column; gap: 6px; padding: 4px 0 8px; }
 .kubecode-workspace-nav .kubecode-research-nav-list { margin: 0; }
-
-.kubecode-needs-you summary {
-  align-items: center;
-  color: var(--text-secondary);
-  cursor: pointer;
-  display: flex;
-  font-size: var(--kubecode-ui-font-small);
-  gap: 6px;
-  padding: 2px 10px;
-}
-
-.kubecode-needs-you[data-waiting='true'] summary { color: var(--text-primary); }
-.kubecode-needs-you .kubecode-research-nav-note { margin: 2px 10px; }
 
 .kubecode-nav-members { list-style: none; margin: 0; padding: 0; }
 .kubecode-nav-members li { align-items: center; display: flex; }
@@ -4312,7 +3943,6 @@
 }
 
 .kubecode-detail-pane > header h3 { flex: 1 1 auto; margin: 0; }
-.kubecode-detail-facts { margin: 0; padding: 4px 14px; }
 .kubecode-detail-pane > h4,
 .kubecode-detail-pane > p,
 .kubecode-detail-pane > button { margin-left: 14px; margin-right: 14px; }
@@ -4323,7 +3953,6 @@
   flex-direction: column;
   gap: var(--ws-space-2);
 }
-.kubecode-member-profile > .kubecode-detail-facts { padding: 0; }
 .kubecode-member-profile > h4,
 .kubecode-member-profile > p { margin: 0; }
 .kubecode-detail-pane > .kubecode-member-profile { padding: 0 14px 14px; }
@@ -4787,7 +4416,6 @@
 .kubecode-work-text { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
 .kubecode-work-evidence { border-left: 2px solid var(--border-subtle, var(--border)); display: grid; gap: 6px; margin: 6px 0 6px 4px; padding-left: 10px; }
 .kubecode-work-evidence h5 { color: var(--text-secondary); font-size: var(--kubecode-ui-font-small); margin: 0; }
-.kubecode-work-evidence-text { background: var(--surface-subtle, transparent); border-radius: 4px; margin: 0; max-height: 240px; overflow: auto; padding: 6px 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .kubecode-work-commands,
 .kubecode-work-review { display: flex; flex-direction: column; gap: 8px; }
 .kubecode-work-review label { display: flex; flex-direction: column; font-size: var(--kubecode-ui-font-small); gap: 4px; }
@@ -5204,7 +4832,6 @@ button.kubecode-reference-chip-open:focus-visible,
 .kubecode-record-preview-meta { align-items: center; display: flex; flex-wrap: wrap; gap: var(--ws-space-2); }
 .kubecode-record-preview-meta strong { overflow-wrap: anywhere; }
 .kubecode-record-preview-related { list-style: none; margin: 0; padding: 0; }
-.kubecode-record-preview-compact .kubecode-work-evidence-text { max-height: 40vh; }
 .kubecode-reference-chip-host { display: contents; }
 
 /* The titlebar search: a field-like button, then the popover. */
@@ -5315,7 +4942,6 @@ button.kubecode-reference-chip-open:focus-visible,
 }
 .kubecode-execution-state { color: var(--text-secondary); flex: 1 1 12rem; font: var(--ws-font-meta); min-width: 0; overflow-wrap: anywhere; }
 .kubecode-execution-row[data-state='failed'] .kubecode-execution-state { color: var(--ws-danger-text); }
-.kubecode-execution-runs { display: flex; flex: 1 1 14rem; flex-direction: column; min-width: 0; }
 .kubecode-execution-who { align-items: center; display: flex; flex-wrap: wrap; gap: var(--ws-space-2); min-height: var(--ws-touch-target); min-width: 0; }
 .kubecode-execution-pill { align-self: flex-start; border-radius: 999px; gap: var(--ws-space-1); }
 .kubecode-execution-popover {
@@ -5482,11 +5108,6 @@ button.kubecode-reference-chip-open:focus-visible,
 
 /* Inline citation */
 
-@media (pointer: coarse) {
-  /* An inline target inside running text is exempt from 44px (WCAG 2.5.8); give it room anyway. */
-
-}
-
 /* Sources, activity, internal work */
 
 /* Tool */
@@ -5496,8 +5117,6 @@ button.kubecode-reference-chip-open:focus-visible,
 /* Confirmation: a pending decision */
 
 /* Loader, suggestions, shimmer */
-
-
 
 /* Workspace prototypes (ADR 0233, `#/prototypes`): places, main, one
    inspector, in the Harness proportions; a phone stacks them. */
@@ -5550,7 +5169,7 @@ button.kubecode-reference-chip-open:focus-visible,
 }
 .kubecode-proto-places ul { display: flex; flex-direction: column; gap: 2px; list-style: none; margin: 0 0 var(--ws-space-3); padding: 0; }
 .kubecode-proto-places a { font: var(--ws-font-body); width: 100%; }
-.kubecode-proto-places a .kubecode-status-badge, .kubecode-proto-places a > :last-child:not(span) { margin-inline-start: auto; }
+.kubecode-proto-places a > :last-child:not(span) { margin-inline-start: auto; }
 .kubecode-proto-workspace { font: var(--ws-font-subtitle); margin: 0 var(--ws-space-2) var(--ws-space-3); }
 .kubecode-proto-places-heading { color: var(--text-secondary); font: var(--ws-font-meta); margin: 0 var(--ws-space-2) var(--ws-space-1); }
 .kubecode-proto-dm { align-items: center; display: flex; flex-wrap: wrap; gap: var(--ws-space-2); padding: var(--ws-space-1) var(--ws-space-2); }
@@ -5569,13 +5188,8 @@ button.kubecode-reference-chip-open:focus-visible,
   padding: var(--ws-space-3) var(--ws-space-5);
 }
 .kubecode-proto-dock { display: flex; flex-direction: column; gap: var(--ws-space-2); padding: var(--ws-space-2) var(--ws-space-4) var(--ws-space-3); }
-.kubecode-proto-chips { display: flex; flex-wrap: wrap; gap: var(--ws-space-1); }
-.kubecode-proto-delivery { align-items: center; color: var(--ws-danger-text); display: flex; flex-wrap: wrap; font: var(--ws-font-meta); gap: var(--ws-space-2); margin: 0; }
 .kubecode-proto-note { color: var(--text-secondary); font: var(--ws-font-meta); margin: 0; }
-.kubecode-proto-list { display: flex; flex-direction: column; gap: var(--ws-space-1); list-style: none; margin: 0; padding: 0; }
-.kubecode-proto-list li { max-width: 100%; min-width: 0; }
 .kubecode-proto-subheading { font: var(--ws-font-subtitle); margin: var(--ws-space-4) 0 var(--ws-space-2); }
-.kubecode-proto-versions { color: var(--text-secondary); font: var(--ws-font-meta); margin: 0; padding-inline-start: 1.2em; }
 .kubecode-proto-review { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; overflow-y: auto; }
 .kubecode-proto-tabs { flex: 1 1 auto; margin: 0 auto; max-width: var(--ws-conversation-width); padding: var(--ws-space-3) var(--ws-space-4); width: 100%; }
 .kubecode-proto-tabs [role='tabpanel'] { padding-top: var(--ws-space-3); }
@@ -5685,7 +5299,7 @@ button.kubecode-reference-chip-open:focus-visible,
   min-width: 0;
   overflow-y: auto;
 }
-.kubecode-destination-body { max-width: var(--ws-conversation-width); padding: var(--ws-space-3) var(--ws-space-5); width: 100%; }
+.kubecode-destination-body { max-width: var(--ws-conversation-width); padding: var(--ws-space-3) var(--ws-space-4); width: 100%; }
 .kubecode-needs-you-view .kubecode-research-nav-list { display: flex; flex-direction: column; gap: 2px; padding: 0; }
 .kubecode-needs-you-view .kubecode-needs-you-row { border-radius: var(--ws-radius-sm); font: var(--ws-font-body); padding: var(--ws-space-2); }
 .kubecode-needs-you-view .kubecode-needs-you-row:hover { background: var(--ws-surface-quiet); }
@@ -5739,9 +5353,6 @@ button.kubecode-reference-chip-open:focus-visible,
   margin: var(--ws-space-3) var(--ws-space-4) 0;
   padding: var(--ws-space-3) var(--ws-space-4);
 }
-.kubecode-manager-setup-icon { color: var(--feedback-warning-text); flex: 0 0 auto; margin-top: 2px; }
-.kubecode-manager-setup-body { display: flex; flex: 1 1 260px; flex-direction: column; gap: var(--ws-space-1); min-width: 0; }
-.kubecode-manager-setup-body p { color: var(--text-secondary); font: var(--ws-font-body); margin: 0; }
 .kubecode-manager-setup-actions { align-items: center; display: flex; flex-wrap: wrap; gap: var(--ws-space-2); }
 
 .kubecode-members-tabs { display: flex; flex-direction: column; gap: var(--ws-space-3); max-width: var(--ws-conversation-width); width: 100%; }
@@ -5999,6 +5610,7 @@ button.kubecode-reference-chip-open:focus-visible,
 .kubecode-task-decisions > .kubecode-decision { flex: 1 1 8rem; min-width: 0; }
 .kubecode-task-decisions > .kubecode-decision > button { width: 100%; }
 
+/* ============================================================
    S4 Session view on official AI Elements (ADR 0245)
    Message, Reasoning, Tool, Code Block, Plan, Task, Queue,
    Context and Prompt Input parts inside the coding Session.
@@ -6142,7 +5754,7 @@ button.kubecode-reference-chip-open:focus-visible,
   z-index: 5;
 }
 /* End S4 Session view */
-=======
+
 /* ==== S2 (ADR 0243): Task inspector, Kanban and Needs you on the official parts ==== */
 /* Status tones on the official Badge: the text carries the meaning, the tone only adds emphasis. */
 .kubecode-tone-badge { font: var(--ws-font-meta); font-weight: 500; }
@@ -6251,6 +5863,9 @@ button.kubecode-reference-chip-open:focus-visible,
 .kubecode-message { display: flex; flex-direction: column; max-width: none; min-width: 0; padding: var(--ws-space-2); }
 .kubecode-message[data-continued='true'] { padding-top: 0; }
 .kubecode-message > .kubecode-message-inner { gap: var(--ws-space-1); max-width: none; width: 100%; }
+/* A continued message has no author line: its toolbar floats, so one line of text is one row (#229). */
+.kubecode-message[data-continued='true'] { position: relative; }
+.kubecode-message[data-continued='true'] .kubecode-message-header { inset-block-start: calc(-1 * var(--ws-space-2)); inset-inline-end: var(--ws-space-2); position: absolute; z-index: 1; }
 .kubecode-message-header { align-items: center; display: flex; flex-wrap: wrap; gap: var(--ws-space-2); min-width: 0; }
 .kubecode-message .kubecode-message-content {
   font: var(--ws-font-reading);
@@ -6313,6 +5928,11 @@ button.kubecode-reference-chip-open:focus-visible,
   border-color: transparent;
   border-radius: var(--ws-radius-composer);
   box-shadow: var(--ws-elevation-soft);
+}
+/* Reached by keyboard, the card shows the ring the soft elevation above would hide (#229). */
+.kubecode-prompt-input > [data-slot='input-group']:has(:focus-visible) {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 50%, transparent), var(--ws-elevation-soft);
 }
 .kubecode-composer-textarea {
   field-sizing: content;
@@ -6425,4 +6045,7 @@ button.kubecode-reference-chip-open:focus-visible,
 .kubecode-manager-setup[data-slot='alert'] > .kubecode-manager-setup-actions { grid-column: 2; margin-top: var(--ws-space-2); }
 /* ==== end S3 ==== */
 
-/* =====================================================
+/* The inspector and its entries take focus only so keyboard reading starts there;
+   they are not controls, so they draw no ring around the whole panel (#229). */
+.kubecode-detail-pane[tabindex='-1']:focus,
+.kubecode-inspector-entry[tabindex='-1']:focus { outline: none; }

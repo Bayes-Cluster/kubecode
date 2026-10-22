@@ -248,6 +248,7 @@ export function DmPane({
             ) : undefined}
             placeholder={t('kubecode.dm.placeholder', { name: member.name })}
             sendLabel={t('kubecode.channel.send')}
+            attachLabel={t('kubecode.vocab.command.attachFile')}
             value={draft.body}
             onChange={(body) => setDraft((current) => ({ ...current, body }))}
             onSend={send}
