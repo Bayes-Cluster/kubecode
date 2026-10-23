@@ -35,7 +35,7 @@ describe('ResearchThreadsPanel', () => {
         t={t}
       />,
     )
-    expect(await screen.findByText('Title a')).toBeInTheDocument()
+    expect((await screen.findByText('Title a')).closest('[data-slot="item"]')).toBeInTheDocument()
     expect(screen.queryByText('Title b')).not.toBeInTheDocument()
     expect(screen.queryByText('Title c')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'kubecode.channel.openThread' }))
@@ -54,6 +54,6 @@ describe('ResearchThreadsPanel', () => {
         t={t}
       />,
     )
-    expect(await screen.findByText('kubecode.channel.noLinkedThreads')).toBeInTheDocument()
+    expect((await screen.findByText('kubecode.channel.noLinkedThreads')).closest('[data-slot="empty"]')).toBeInTheDocument()
   })
 })

@@ -1,11 +1,14 @@
 import { MessageSquareText } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { Empty, EmptyDescription } from '@/components/ui/empty'
+import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemTitle } from '@/components/ui/item'
 import type { Translator } from '@/lib/i18n'
 
 import type { KubecodeApi, WorkspaceEvent } from '../api'
 import { useChannelThreads, useDefaultChannel } from '../channel/useChannel'
 import type { WorkspaceConnectionState } from '../useWorkspaceEventStream'
+import { ResearchSection } from './ResearchLayout'
 
 /**
  * The Workspace-conversation Threads linked to this question: the way back
@@ -33,25 +36,29 @@ export function ResearchThreadsPanel({
   const linked = threads.filter((thread) => thread.research_id === researchId)
   if (!channel) return null
   return (
-    <section className="kubecode-research-section">
-      <h3>{t('kubecode.channel.linkedThreads')}</h3>
-      {linked.length === 0 && (
-        <p className="kubecode-research-muted">{t('kubecode.channel.noLinkedThreads')}</p>
+    <ResearchSection label={t('kubecode.channel.linkedThreads')}>
+      {linked.length === 0 ? (
+        <Empty className="items-start p-0 text-left">
+          <EmptyDescription>{t('kubecode.channel.noLinkedThreads')}</EmptyDescription>
+        </Empty>
+      ) : (
+        <ItemGroup>
+          {linked.map((thread) => (
+            <Item key={thread.id} size="sm" variant="outline">
+              <ItemMedia><MessageSquareText aria-hidden /></ItemMedia>
+              <ItemContent>
+                <ItemTitle className="[overflow-wrap:anywhere]">{thread.title}</ItemTitle>
+                <ItemDescription>{t('kubecode.channel.replies', { count: thread.reply_count })}</ItemDescription>
+              </ItemContent>
+              <ItemActions>
+                <Button size="xs" variant="ghost" onClick={() => onOpenThread(thread.id)}>
+                  {t('kubecode.channel.openThread')}
+                </Button>
+              </ItemActions>
+            </Item>
+          ))}
+        </ItemGroup>
       )}
-      <ul className="kubecode-research-list">
-        {linked.map((thread) => (
-          <li key={thread.id}>
-            <MessageSquareText aria-hidden size={14} />
-            <span>{thread.title}</span>
-            <span className="kubecode-research-muted">
-              {t('kubecode.channel.replies', { count: thread.reply_count })}
-            </span>
-            <Button size="xs" variant="ghost" onClick={() => onOpenThread(thread.id)}>
-              {t('kubecode.channel.openThread')}
-            </Button>
-          </li>
-        ))}
-      </ul>
-    </section>
+    </ResearchSection>
   )
 }

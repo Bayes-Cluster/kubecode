@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react'
+import { Archive, CircleAlert, Info } from 'lucide-react'
 
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia } from '@/components/ui/empty'
+import { Spinner } from '@/components/ui/spinner'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { IconButton } from '@/components/workspace/IconButton'
 import { StatusBadge } from '@/components/workspace/StatusBadge'
@@ -125,18 +129,27 @@ export function ResearchWorkspace({
   if (!bundle) {
     return (
       <section className="kubecode-research-workspace" aria-busy={status === 'loading'}>
-        <header className="kubecode-research-header">
+        <header className="flex flex-wrap items-start justify-between gap-3">
           {backControl}
           {closeControl}
         </header>
-        {status === 'loading' && <p className="kubecode-empty-small" role="status">{t('kubecode.research.loading')}</p>}
+        {status === 'loading' && (
+          <Empty className="p-6" role="status">
+            <EmptyHeader>
+              <EmptyMedia><Spinner aria-hidden="true" role="presentation" /></EmptyMedia>
+              <EmptyDescription>{t('kubecode.research.loading')}</EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        )}
         {status === 'error' && (
-          <div className="kubecode-empty-small" role="alert">
-            <p>{errorCode === 'research_not_found' ? t('kubecode.research.error.notFound') : t('kubecode.research.loadFailed')}</p>
-            {errorCode !== 'research_not_found' && (
-              <Button size="sm" variant="outline" onClick={reload}>{t('kubecode.retry')}</Button>
-            )}
-          </div>
+          <Alert className="mt-3" variant="destructive">
+            <AlertDescription>
+              <p>{errorCode === 'research_not_found' ? t('kubecode.research.error.notFound') : t('kubecode.research.loadFailed')}</p>
+              {errorCode !== 'research_not_found' && (
+                <Button size="sm" variant="outline" onClick={reload}>{t('kubecode.retry')}</Button>
+              )}
+            </AlertDescription>
+          </Alert>
         )}
       </section>
     )
@@ -162,11 +175,11 @@ export function ResearchWorkspace({
 
   return (
     <section className="kubecode-research-workspace" aria-label={detail.brief.title}>
-      <header className="kubecode-research-header">
-        <div>
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
           {backControl}
-          <h2>{detail.brief.title}</h2>
-          <div className="kubecode-research-header-meta">
+          <h2 className="my-1 text-lg font-semibold [overflow-wrap:anywhere]">{detail.brief.title}</h2>
+          <div className="flex flex-wrap items-center gap-2">
             {task ? (
               <StatusBadge tone={task.stage === 'done' ? 'ok' : 'info'}>{stageLabel(t, task.stage)}</StatusBadge>
             ) : (
@@ -177,12 +190,12 @@ export function ResearchWorkspace({
             {detail.archived && (
               <StatusBadge tone="muted">{t('kubecode.research.status.archived')}</StatusBadge>
             )}
-            <span className="kubecode-research-muted">
+            <span className="text-xs text-muted-foreground">
               {t('kubecode.research.revision', { revision: detail.revision })}
             </span>
           </div>
         </div>
-        <div className="kubecode-research-header-actions">
+        <div className="flex flex-wrap items-center gap-2">
           {task ? (
             <Button size="sm" variant="outline" onClick={task.onOpen}>{t('kubecode.task.openTask')}</Button>
           ) : (
@@ -198,17 +211,22 @@ export function ResearchWorkspace({
           {closeControl}
         </div>
       </header>
-      {state.error && <p className="kubecode-research-error" role="alert">{state.error}</p>}
-      {task && <p className="kubecode-research-notice" role="status">{t('kubecode.task.isTask')}</p>}
-      {detail.archived && <p className="kubecode-research-notice" role="status">{t('kubecode.research.archivedNotice')}</p>}
-      {pendingDecisions > 0 && (
-        <p className="kubecode-research-notice" role="status">
-          <button type="button" onClick={() => setTab('findings')}>
-            {t('kubecode.research.pendingDecisions', { count: pendingDecisions })}
-          </button>
-        </p>
-      )}
-      <Tabs value={tab} onValueChange={(value) => setTab(value as TabId)} className="kubecode-research-tabs">
+      <div className="mt-2 flex flex-col gap-2 empty:hidden">
+        {state.error && <Alert variant="destructive"><AlertDescription>{state.error}</AlertDescription></Alert>}
+        {task && <Alert role="status"><Info /><AlertDescription>{t('kubecode.task.isTask')}</AlertDescription></Alert>}
+        {detail.archived && <Alert role="status"><Archive /><AlertDescription>{t('kubecode.research.archivedNotice')}</AlertDescription></Alert>}
+        {pendingDecisions > 0 && (
+          <Alert role="status">
+            <CircleAlert />
+            <AlertDescription>
+              <Button className="h-auto p-0" size="sm" variant="link" onClick={() => setTab('findings')}>
+                {t('kubecode.research.pendingDecisions', { count: pendingDecisions })}
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
+      </div>
+      <Tabs value={tab} onValueChange={(value) => setTab(value as TabId)} className="mt-2">
         <TabsList variant="line">
           <TabsTrigger value="brief">{t('kubecode.research.tab.brief')}</TabsTrigger>
           <TabsTrigger value="discussion">{t('kubecode.research.tab.discussion')}</TabsTrigger>
@@ -271,11 +289,11 @@ export function ResearchWorkspace({
         </TabsContent>
         <TabsContent forceMount value="work" hidden={tab !== 'work'}>
           {onOpenBoard && (
-            <p className="kubecode-research-muted">
+            <div className="pt-2">
               <Button size="xs" variant="outline" onClick={() => onOpenBoard({ research_id: researchId })}>
                 {t('kubecode.work.openBoard')}
               </Button>
-            </p>
+            </div>
           )}
           <ResearchRoundsPanel
             agents={agents}

@@ -1,12 +1,15 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import type { Translator } from '@/lib/i18n'
 
 import { ApiError } from '../api'
 import type { KubecodeApi, ResearchBrief, ResearchBriefPatch, ResearchDetail } from '../api'
+import { ResearchPanel, ResearchSection } from './ResearchLayout'
 import { useAction } from './useAction'
 
 type Draft = {
@@ -79,12 +82,13 @@ export function ResearchBriefPanel({
     if (cause instanceof ApiError && cause.code === 'research_revision_conflict') setConflict(true)
   })
   const { brief } = detail
+  const fieldId = useId()
 
   if (!editing) {
     return (
-      <div className="kubecode-research-panel">
-        <div className="kubecode-research-panel-actions">
-          <span className="kubecode-research-muted">
+      <ResearchPanel>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <span className="text-xs text-muted-foreground">
             {t('kubecode.research.revision', { revision: detail.revision })}
           </span>
           <Button
@@ -105,7 +109,7 @@ export function ResearchBriefPanel({
         <BriefList label={t('kubecode.research.field.hypotheses')} items={brief.hypotheses} />
         <BriefList label={t('kubecode.research.field.constraints')} items={brief.constraints} />
         <BriefList label={t('kubecode.research.field.criteria')} items={brief.evaluation_criteria} />
-      </div>
+      </ResearchPanel>
     )
   }
 
@@ -131,51 +135,55 @@ export function ResearchBriefPanel({
 
   return (
     <form
-      className="kubecode-research-panel kubecode-research-form"
+      className="flex max-w-[820px] flex-col gap-4 pt-2"
       onSubmit={(event) => {
         event.preventDefault()
         void save()
       }}
     >
-      <label>
-        <span>{t('kubecode.research.field.title')}</span>
-        <Input value={editing.draft.title} maxLength={200} onChange={(event) => set('title', event.target.value)} />
-      </label>
-      <label>
-        <span>{t('kubecode.research.field.question')}</span>
-        <Textarea rows={4} value={editing.draft.question} onChange={(event) => set('question', event.target.value)} />
-      </label>
-      <label>
-        <span>{t('kubecode.research.field.motivation')}</span>
-        <Textarea rows={3} value={editing.draft.motivation} onChange={(event) => set('motivation', event.target.value)} />
-      </label>
-      {LIST_FIELDS.map((field) => (
-        <label key={field}>
-          <span>{t(listLabelKey(field))}</span>
-          <Textarea rows={3} value={editing.draft[field]} onChange={(event) => set(field, event.target.value)} />
-        </label>
-      ))}
-      <p className="kubecode-research-muted">{t('kubecode.research.listHint')}</p>
+      <FieldGroup>
+        <Field>
+          <FieldLabel htmlFor={`${fieldId}-title`}>{t('kubecode.research.field.title')}</FieldLabel>
+          <Input id={`${fieldId}-title`} value={editing.draft.title} maxLength={200} onChange={(event) => set('title', event.target.value)} />
+        </Field>
+        <Field>
+          <FieldLabel htmlFor={`${fieldId}-question`}>{t('kubecode.research.field.question')}</FieldLabel>
+          <Textarea id={`${fieldId}-question`} rows={4} value={editing.draft.question} onChange={(event) => set('question', event.target.value)} />
+        </Field>
+        <Field>
+          <FieldLabel htmlFor={`${fieldId}-motivation`}>{t('kubecode.research.field.motivation')}</FieldLabel>
+          <Textarea id={`${fieldId}-motivation`} rows={3} value={editing.draft.motivation} onChange={(event) => set('motivation', event.target.value)} />
+        </Field>
+        {LIST_FIELDS.map((field) => (
+          <Field key={field}>
+            <FieldLabel htmlFor={`${fieldId}-${field}`}>{t(listLabelKey(field))}</FieldLabel>
+            <Textarea id={`${fieldId}-${field}`} rows={3} value={editing.draft[field]} onChange={(event) => set(field, event.target.value)} />
+          </Field>
+        ))}
+        <FieldDescription>{t('kubecode.research.listHint')}</FieldDescription>
+      </FieldGroup>
       {conflict ? (
-        <div className="kubecode-research-error" role="alert">
-          <p>{t('kubecode.research.error.revisionConflict')}</p>
-          <Button
-            size="sm"
-            type="button"
-            variant="outline"
-            onClick={() => {
-              setEditing(null)
-              setConflict(false)
-              onChanged()
-            }}
-          >
-            {t('kubecode.research.discardAndReload')}
-          </Button>
-        </div>
+        <Alert variant="destructive">
+          <AlertDescription>
+            <p>{t('kubecode.research.error.revisionConflict')}</p>
+            <Button
+              size="sm"
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setEditing(null)
+                setConflict(false)
+                onChanged()
+              }}
+            >
+              {t('kubecode.research.discardAndReload')}
+            </Button>
+          </AlertDescription>
+        </Alert>
       ) : action.error ? (
-        <p className="kubecode-research-error" role="alert">{action.error}</p>
+        <Alert variant="destructive"><AlertDescription>{action.error}</AlertDescription></Alert>
       ) : null}
-      <div className="kubecode-research-panel-actions">
+      <div className="flex flex-wrap items-center justify-end gap-2">
         <Button type="button" variant="ghost" disabled={action.busy} onClick={() => setEditing(null)}>
           {t('kubecode.cancel')}
         </Button>
@@ -196,19 +204,17 @@ function listLabelKey(field: (typeof LIST_FIELDS)[number]) {
 function BriefField({ label, text }: { label: string; text: string }) {
   if (!text) return null
   return (
-    <section className="kubecode-research-field">
-      <h4>{label}</h4>
-      <p>{text}</p>
-    </section>
+    <ResearchSection label={label} level={4}>
+      <p className="m-0 whitespace-pre-wrap [overflow-wrap:anywhere]">{text}</p>
+    </ResearchSection>
   )
 }
 
 function BriefList({ label, items }: { label: string; items: string[] }) {
   if (items.length === 0) return null
   return (
-    <section className="kubecode-research-field">
-      <h4>{label}</h4>
-      <ul>{items.map((item, index) => <li key={`${index}-${item}`}>{item}</li>)}</ul>
-    </section>
+    <ResearchSection label={label} level={4}>
+      <ul className="m-0 list-disc pl-5 [overflow-wrap:anywhere]">{items.map((item, index) => <li key={`${index}-${item}`}>{item}</li>)}</ul>
+    </ResearchSection>
   )
 }

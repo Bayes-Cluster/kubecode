@@ -130,7 +130,9 @@ describe('ResearchWorkspace', () => {
   it('offers retry on a failed load and reports a missing question without retry', async () => {
     const getResearch = vi.fn().mockRejectedValueOnce(new Error('boom')).mockResolvedValue(detailFixture)
     mount({ api: fakeApi({ getResearch }) })
-    expect(await screen.findByRole('alert')).toHaveTextContent('kubecode.research.loadFailed')
+    const failed = await screen.findByRole('alert')
+    expect(failed).toHaveTextContent('kubecode.research.loadFailed')
+    expect(failed).toHaveAttribute('data-slot', 'alert')
     fireEvent.click(screen.getByRole('button', { name: 'kubecode.retry' }))
     expect(await screen.findByText('Does structured pruning keep accuracy?')).toBeInTheDocument()
 
@@ -209,10 +211,10 @@ describe('ResearchWorkspace', () => {
     const { props } = mount({ api: fakeApi({ getResearch: vi.fn().mockResolvedValue(detail) }) })
     await screen.findByText('Does structured pruning keep accuracy?')
     openTab('kubecode.research.tab.discussion')
-    const list = (await panel().findByText('Pruning chat')).closest('li')!
+    const list = (await panel().findByText('Pruning chat')).closest('[data-slot="item"]') as HTMLElement
     fireEvent.click(within(list).getByRole('button', { name: /kubecode.research.openSession/ }))
     expect(props.onOpenSession).toHaveBeenCalledWith('s-1')
-    const gone = panel().getByText('Old chat').closest('li')!
+    const gone = panel().getByText('Old chat').closest('[data-slot="item"]') as HTMLElement
     expect(within(gone).getByText('kubecode.research.availability.removed')).toBeInTheDocument()
     expect(within(gone).getByRole('button', { name: /kubecode.research.openSession/ })).toBeDisabled()
   })
@@ -257,6 +259,8 @@ describe('ResearchWorkspace', () => {
     })
     const banner = await screen.findByRole('button', { name: /kubecode.research.pendingDecisions/ })
     expect(banner).toHaveTextContent('"count":2')
+    expect(banner).toHaveAttribute('data-slot', 'button')
+    expect(banner.closest('[data-slot="alert"]')).toBeInTheDocument()
     fireEvent.click(banner)
 
     expect(await screen.findByText('Drop single-GPU')).toBeInTheDocument()
