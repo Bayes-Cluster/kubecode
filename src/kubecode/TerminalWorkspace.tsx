@@ -29,6 +29,7 @@ import {
 } from 'lucide-react'
 
 import { AiAgentIcon } from '@/components/AiAgentIcon'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -38,8 +39,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { Input } from '@/components/ui/input'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
+import { Spinner } from '@/components/ui/spinner'
 import { trackEvent } from '@/lib/telemetry'
 import type { Translator } from '@/lib/i18n'
 
@@ -411,9 +414,14 @@ export function TerminalWorkspace({
               visible={open}
             />
           ) : (
-            <div className="kubecode-empty-small">
-              {creating ? t('kubecode.loading') : t('kubecode.newTerminal')}
-            </div>
+            <Empty className="h-full p-4">
+              <EmptyHeader>
+                {creating && <EmptyMedia><Spinner /></EmptyMedia>}
+                <EmptyTitle className="text-sm font-normal text-muted-foreground">
+                  {creating ? t('kubecode.loading') : t('kubecode.newTerminal')}
+                </EmptyTitle>
+              </EmptyHeader>
+            </Empty>
           )}
         </ResizablePanel>
         {navigatorVisible && (
@@ -714,10 +722,12 @@ function TerminalLayoutView({
           visible={visible}
         />
         {terminal.status === 'exited' && (
-          <div className="kubecode-terminal-exited">
-            <span>{t('kubecode.terminalExitedCode', { code: terminal.exit_code ?? '?' })}</span>
-            <Button size="sm" variant="outline" onClick={() => void onRestart(terminal)}>{t('kubecode.restartTerminal')}</Button>
-          </div>
+          <Alert className="kubecode-terminal-exited w-auto py-1.5" role="status">
+            <AlertDescription className="flex flex-row flex-wrap items-center gap-2">
+              <span>{t('kubecode.terminalExitedCode', { code: terminal.exit_code ?? '?' })}</span>
+              <Button size="sm" variant="outline" onClick={() => void onRestart(terminal)}>{t('kubecode.restartTerminal')}</Button>
+            </AlertDescription>
+          </Alert>
         )}
       </div>
     )
