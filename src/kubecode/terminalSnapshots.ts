@@ -56,3 +56,13 @@ function validNumber(value: unknown): number | null {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
+
+/**
+ * The xterm size options a snapshot restores. Without a snapshot there are no
+ * keys at all: xterm rejects an explicit `cols: undefined` ("cols must be numeric").
+ */
+export function snapshotDimensions(
+  snapshot: Pick<TerminalViewSnapshot, 'cols' | 'rows'> | null | undefined,
+): { cols?: number; rows?: number } {
+  return snapshot ? { cols: snapshot.cols, rows: snapshot.rows } : {}
+}

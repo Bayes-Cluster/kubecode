@@ -8,6 +8,7 @@ import type { KubecodeApi, TerminalInfo } from './api'
 import {
   readTerminalSnapshot,
   removeTerminalSnapshot,
+  snapshotDimensions,
   writeTerminalSnapshot,
 } from './terminalSnapshots'
 import { terminalThemeFromStyles } from './terminalTheme'
@@ -70,8 +71,7 @@ export function TerminalView({
     const xterm = new Terminal({
       cursorBlink: true,
       convertEol: true,
-      cols: snapshot?.cols,
-      rows: snapshot?.rows,
+      ...snapshotDimensions(snapshot),
       fontFamily: fontFamilyRef.current,
       fontSize: 14,
       scrollback: 10_000,
