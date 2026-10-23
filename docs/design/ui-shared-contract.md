@@ -110,11 +110,17 @@ non-lucide icon a registry item brings before committing.
 ## 7. Adding or updating components
 
 ```bash
-pnpm dlx shadcn@latest add <component>            # @shadcn registry
+pnpm dlx shadcn@4.22.1 info                       # must print the config
+pnpm dlx shadcn@latest add <component>            # built-in @shadcn registry
 pnpm dlx shadcn@latest add @ai-elements/<name>    # AI Elements
 pnpm dlx shadcn@latest add <component> --dry-run  # preview
 pnpm dlx shadcn@latest add <component> --diff <file>
 ```
+
+`@shadcn` is the CLI's built-in, reserved registry. Do not declare it under
+`registries` in `components.json`: the CLI then rejects the whole file with
+"Invalid configuration" (ADR 0254). Only third-party registries such as
+`@ai-elements` belong there.
 
 Review the added files (composition, groups, titles, lucide icons, locale
 strings for any visible English), add a new dependency only with an ADR, and

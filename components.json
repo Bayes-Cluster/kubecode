@@ -19,7 +19,6 @@
   },
   "iconLibrary": "lucide",
   "registries": {
-    "@shadcn": "https://ui.shadcn.com/r/styles/{style}/{name}.json",
     "@ai-elements": "https://ai-sdk.dev/elements/api/registry/{name}.json"
   }
 }
