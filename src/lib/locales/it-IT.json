@@ -1701,6 +1701,7 @@
   "kubecode.execution.openMember": "Apri {name} in Membri",
   "kubecode.dm.queued": "{name} lo leggerà dopo la risposta in corso",
   "kubecode.execution.pauseTaskWork": "Sospendi il nuovo lavoro su {task}",
+  "kubecode.execution.pauseWorkShort": "Sospendi nuovo lavoro",
   "kubecode.execution.policyChanged": "I limiti dell’Attività sono stati modificati altrove; viene mostrato lo stato attuale.",
   "kubecode.execution.pauseLaunches": "Sospendi gli avvii di esperimenti nel ciclo {round}",
   "kubecode.execution.resumeLaunches": "Riprendi gli avvii di esperimenti nel ciclo {round}",

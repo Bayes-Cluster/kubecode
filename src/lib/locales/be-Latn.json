@@ -1701,6 +1701,7 @@
   "kubecode.execution.openMember": "Adkryć «Udzielniki»: {name}",
   "kubecode.dm.queued": "{name} pračytaje heta paśla biahučaha adkazu",
   "kubecode.execution.pauseTaskWork": "Prypynić novuju pracu ŭ Zadačcy {task}",
+  "kubecode.execution.pauseWorkShort": "Prypynić novuju pracu",
   "kubecode.execution.policyChanged": "Limity Zadački źmianilisia ŭ inšym miescy; pakazany biahučy stan.",
   "kubecode.execution.pauseLaunches": "Prypynić zapusk eksperymientaŭ u raŭndzie {round}",
   "kubecode.execution.resumeLaunches": "Adnavić zapusk eksperymientaŭ u raŭndzie {round}",

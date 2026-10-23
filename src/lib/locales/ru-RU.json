@@ -1701,6 +1701,7 @@
   "kubecode.execution.openMember": "Открыть «Участники»: {name}",
   "kubecode.dm.queued": "{name} прочитает это после текущего ответа",
   "kubecode.execution.pauseTaskWork": "Приостановить новую работу по задаче {task}",
+  "kubecode.execution.pauseWorkShort": "Приостановить новую работу",
   "kubecode.execution.policyChanged": "Лимиты задачи изменены в другом месте; показано текущее состояние.",
   "kubecode.execution.pauseLaunches": "Приостановить запуск экспериментов в раунде {round}",
   "kubecode.execution.resumeLaunches": "Возобновить запуск экспериментов в раунде {round}",

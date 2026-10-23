@@ -1701,6 +1701,7 @@
   "kubecode.execution.openMember": "Відкрити «Учасники»: {name}",
   "kubecode.dm.queued": "{name} прочитає це після поточної відповіді",
   "kubecode.execution.pauseTaskWork": "Призупинити нову роботу в завданні {task}",
+  "kubecode.execution.pauseWorkShort": "Призупинити нову роботу",
   "kubecode.execution.policyChanged": "Ліміти завдання змінено в іншому місці; показано поточний стан.",
   "kubecode.execution.pauseLaunches": "Призупинити запуск експериментів у раунді {round}",
   "kubecode.execution.resumeLaunches": "Відновити запуск експериментів у раунді {round}",

@@ -69,9 +69,10 @@ export function MembersView({
     <section aria-label={t('kubecode.nav.members')} className="kubecode-members-view" ref={scroller}>
       <DestinationHeader description={t('kubecode.members.viewDescription')} destination="members" t={t} />
       <Tabs className="w-full max-w-(--ws-conversation-width) gap-3" value={tab} onValueChange={(value) => setTab(value as typeof tab)}>
-        <TabsList className="max-w-full overflow-x-auto">
-          <TabsTrigger value="current">{t('kubecode.members.tabs.current')}</TabsTrigger>
-          <TabsTrigger value="defaults">{t('kubecode.members.tabs.defaults')}</TabsTrigger>
+        {/* On a phone the two tabs share the width and their labels wrap instead of scrolling out of view. */}
+        <TabsList className="h-auto w-full sm:w-fit">
+          <TabsTrigger className="h-auto whitespace-normal" value="current">{t('kubecode.members.tabs.current')}</TabsTrigger>
+          <TabsTrigger className="h-auto whitespace-normal" value="defaults">{t('kubecode.members.tabs.defaults')}</TabsTrigger>
         </TabsList>
         <TabsContent value="current">
           <MemberRoster

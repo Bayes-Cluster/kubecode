@@ -1701,6 +1701,7 @@
   "kubecode.execution.openMember": "メンバーで {name} を開く",
   "kubecode.dm.queued": "{name} は現在の返信が終わった後にこれを読みます",
   "kubecode.execution.pauseTaskWork": "{task} の新しい作業を一時停止",
+  "kubecode.execution.pauseWorkShort": "新しい作業を一時停止",
   "kubecode.execution.policyChanged": "タスクの制限が別の場所で変更されました。現在の状態を表示しています。",
   "kubecode.execution.pauseLaunches": "ラウンド {round} の実験の開始を一時停止",
   "kubecode.execution.resumeLaunches": "ラウンド {round} の実験の開始を再開",

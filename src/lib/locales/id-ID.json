@@ -1701,6 +1701,7 @@
   "kubecode.execution.openMember": "Buka {name} di Anggota",
   "kubecode.dm.queued": "{name} akan membaca ini setelah balasan saat ini",
   "kubecode.execution.pauseTaskWork": "Jeda pekerjaan baru pada {task}",
+  "kubecode.execution.pauseWorkShort": "Jeda pekerjaan baru",
   "kubecode.execution.policyChanged": "Batas Tugas diubah di tempat lain; status saat ini ditampilkan.",
   "kubecode.execution.pauseLaunches": "Jeda peluncuran eksperimen di putaran {round}",
   "kubecode.execution.resumeLaunches": "Lanjutkan peluncuran eksperimen di putaran {round}",

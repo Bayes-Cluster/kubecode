@@ -1701,6 +1701,7 @@
   "kubecode.execution.openMember": "Otwórz Członków: {name}",
   "kubecode.dm.queued": "{name} przeczyta to po bieżącej odpowiedzi",
   "kubecode.execution.pauseTaskWork": "Wstrzymaj nową pracę w Zadaniu {task}",
+  "kubecode.execution.pauseWorkShort": "Wstrzymaj nową pracę",
   "kubecode.execution.policyChanged": "Limity Zadania zmieniono gdzie indziej; pokazano bieżący stan.",
   "kubecode.execution.pauseLaunches": "Wstrzymaj uruchamianie eksperymentów w rundzie {round}",
   "kubecode.execution.resumeLaunches": "Wznów uruchamianie eksperymentów w rundzie {round}",

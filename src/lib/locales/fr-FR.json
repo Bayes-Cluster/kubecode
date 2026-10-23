@@ -1701,6 +1701,7 @@
   "kubecode.execution.openMember": "Ouvrir {name} dans Membres",
   "kubecode.dm.queued": "{name} lira ceci après la réponse en cours",
   "kubecode.execution.pauseTaskWork": "Suspendre le nouveau travail sur {task}",
+  "kubecode.execution.pauseWorkShort": "Suspendre le nouveau travail",
   "kubecode.execution.policyChanged": "Les limites de la Tâche ont été modifiées ailleurs ; l’état actuel est affiché.",
   "kubecode.execution.pauseLaunches": "Suspendre les lancements d’expériences du cycle {round}",
   "kubecode.execution.resumeLaunches": "Reprendre les lancements d’expériences du cycle {round}",

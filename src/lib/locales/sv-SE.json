@@ -1701,6 +1701,7 @@
   "kubecode.execution.openMember": "Öppna {name} i Medlemmar",
   "kubecode.dm.queued": "{name} läser detta efter det pågående svaret",
   "kubecode.execution.pauseTaskWork": "Pausa nytt arbete för {task}",
+  "kubecode.execution.pauseWorkShort": "Pausa nytt arbete",
   "kubecode.execution.policyChanged": "Uppgiftens gränser ändrades någon annanstans; aktuellt läge visas.",
   "kubecode.execution.pauseLaunches": "Pausa experimentstarter i omgång {round}",
   "kubecode.execution.resumeLaunches": "Återuppta experimentstarter i omgång {round}",

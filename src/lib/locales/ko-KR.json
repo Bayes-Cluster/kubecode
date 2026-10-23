@@ -1701,6 +1701,7 @@
   "kubecode.execution.openMember": "멤버에서 {name} 열기",
   "kubecode.dm.queued": "{name}이(가) 현재 답장을 마친 후 읽습니다",
   "kubecode.execution.pauseTaskWork": "{task}의 새 작업 일시 중지",
+  "kubecode.execution.pauseWorkShort": "새 작업 일시 중지",
   "kubecode.execution.policyChanged": "다른 곳에서 작업 한도가 변경되었습니다. 현재 상태를 표시합니다.",
   "kubecode.execution.pauseLaunches": "라운드 {round}의 실험 시작 일시 중지",
   "kubecode.execution.resumeLaunches": "라운드 {round}의 실험 시작 재개",

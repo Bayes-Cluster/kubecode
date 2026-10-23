@@ -1701,6 +1701,7 @@
   "kubecode.execution.openMember": "Mở {name} trong Thành viên",
   "kubecode.dm.queued": "{name} sẽ đọc tin này sau câu trả lời hiện tại",
   "kubecode.execution.pauseTaskWork": "Tạm dừng việc mới cho {task}",
+  "kubecode.execution.pauseWorkShort": "Tạm dừng công việc mới",
   "kubecode.execution.policyChanged": "Giới hạn của Tác vụ đã được thay đổi ở nơi khác; đang hiển thị trạng thái hiện tại.",
   "kubecode.execution.pauseLaunches": "Tạm dừng khởi chạy thử nghiệm ở vòng {round}",
   "kubecode.execution.resumeLaunches": "Tiếp tục khởi chạy thử nghiệm ở vòng {round}",

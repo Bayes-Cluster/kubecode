@@ -1701,6 +1701,7 @@
   "kubecode.execution.openMember": "在成員中開啟 {name}",
   "kubecode.dm.queued": "{name} 會在目前的回覆結束後閱讀此訊息",
   "kubecode.execution.pauseTaskWork": "暫停 {task} 的新工作",
+  "kubecode.execution.pauseWorkShort": "暫停新工作",
   "kubecode.execution.policyChanged": "任務的限制已在其他地方變更；此處顯示目前狀態。",
   "kubecode.execution.pauseLaunches": "暫停第 {round} 輪的實驗啟動",
   "kubecode.execution.resumeLaunches": "恢復第 {round} 輪的實驗啟動",

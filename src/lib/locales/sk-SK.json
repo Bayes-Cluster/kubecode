@@ -1701,6 +1701,7 @@
   "kubecode.execution.openMember": "Otvoriť Členov: {name}",
   "kubecode.dm.queued": "{name} si to prečíta po aktuálnej odpovedi",
   "kubecode.execution.pauseTaskWork": "Pozastaviť novú prácu v úlohe {task}",
+  "kubecode.execution.pauseWorkShort": "Pozastaviť novú prácu",
   "kubecode.execution.policyChanged": "Limity úlohy sa zmenili inde; zobrazuje sa aktuálny stav.",
   "kubecode.execution.pauseLaunches": "Pozastaviť spúšťanie experimentov v kole {round}",
   "kubecode.execution.resumeLaunches": "Obnoviť spúšťanie experimentov v kole {round}",
