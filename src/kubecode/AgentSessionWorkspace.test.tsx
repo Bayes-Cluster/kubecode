@@ -187,11 +187,11 @@ describe('AgentSessionWorkspace', () => {
       workspaceEvents={[]}
     />)
 
-    expect(screen.getByRole('tab', { name: 'Team' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('radio', { name: 'Team' })).toHaveAttribute('aria-checked', 'true')
     expect(screen.queryByTestId('composer')).not.toBeInTheDocument()
 
-    expect(screen.getByRole('tab', { name: 'Chat' }).closest('[data-slot="tabs-list"]')).not.toBeNull()
-    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Chat' }))
+    expect(screen.getByRole('radio', { name: 'Chat' })).toHaveAttribute('data-slot', 'toggle-group-item')
+    fireEvent.click(screen.getByRole('radio', { name: 'Chat' }))
     expect(await screen.findByTestId('composer')).toBeInTheDocument()
   })
 

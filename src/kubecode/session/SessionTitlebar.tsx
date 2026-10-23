@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Spinner } from '@/components/ui/spinner'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { StatusBadge } from '@/components/workspace/StatusBadge'
 import type { Translator } from '@/lib/i18n'
 import { trackEvent } from '@/lib/telemetry'
@@ -67,34 +67,38 @@ export function SessionTitlebar({
       </div>
       <UsageMeter locale={locale} t={t} usage={usage} />
       {team && (
-        <Tabs
+        // A view switch, not tabs: the Chat and Team views are rendered by the
+        // workspace, so there is no tab panel for a tab to control.
+        <ToggleGroup
+          aria-label={t('kubecode.teamSession')}
           className="kubecode-team-view-switch"
+          size="sm"
+          type="single"
           value={teamView}
+          variant="outline"
           onValueChange={(value) => {
-            const view = value === 'team' ? 'team' : 'chat'
-            onTeamViewChange(view)
-            if (view === 'team') {
+            if (value !== 'chat' && value !== 'team') return
+            onTeamViewChange(value)
+            if (value === 'team') {
               trackEvent('kubecode_team_view_opened', { team_size: team.members.length })
             }
           }}
         >
-          <TabsList>
-            <TabsTrigger value="chat">{t('kubecode.chat')}</TabsTrigger>
-            <TabsTrigger value="team">
-              {t('kubecode.teamSession')}
-              {team.summary?.needs_attention > 0 && (
-                <Badge variant="destructive">{team.summary.needs_attention}</Badge>
-              )}
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
+          <ToggleGroupItem value="chat">{t('kubecode.chat')}</ToggleGroupItem>
+          <ToggleGroupItem value="team">
+            {t('kubecode.teamSession')}
+            {team.summary?.needs_attention > 0 && (
+              <Badge variant="destructive">{team.summary.needs_attention}</Badge>
+            )}
+          </ToggleGroupItem>
+        </ToggleGroup>
       )}
       <div className="kubecode-session-status">
         <StatusBadge
           className={cn('kubecode-session-status-badge', !waitingForInput && !active && 'is-idle')}
           tone={waitingForInput ? 'warn' : active ? 'info' : 'muted'}
         >
-          {waitingForInput ? <TriangleAlert aria-hidden="true" /> : active && <Spinner />}
+          {waitingForInput ? <TriangleAlert aria-hidden="true" /> : active && <Spinner aria-hidden="true" aria-label={undefined} role={undefined} />}
           <span className="kubecode-session-status-label">
             {waitingForInput
               ? t(pendingElicitation

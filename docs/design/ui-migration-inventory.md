@@ -388,12 +388,12 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 | Plan summary | `src/kubecode/session/SessionPlanSummary.tsx:4-35` | AI Elements Plan; no CSS redraw | AI Elements Plan | SessionComposer | #261 | migrated | — |
 | Prompt queue dock | `src/kubecode/session/PromptQueueDock.tsx:4-18,75` | AI Elements Queue + Input/Button | AI Elements Queue | SessionWorkspace | #261 | migrated | — |
 | Usage/context meter | `src/kubecode/session/UsageMeter.tsx:4-13,77` | AI Elements Context + Progress; no indicator recolouring | AI Elements Context | SessionTitlebar | #261 | migrated | — |
-| Title, status dot, team view switch, overflow menu | `src/kubecode/session/SessionTitlebar.tsx:5-11,58-92` | DropdownMenu; Tabs for Chat/Team; StatusBadge for run state | Tabs/ToggleGroup, Badge | SessionWorkspace | #261 | migrated | — |
+| Title, status dot, team view switch, overflow menu | `src/kubecode/session/SessionTitlebar.tsx:5-11,58-92` | DropdownMenu; single ToggleGroup for Chat/Team (a view switch with no tab panels); StatusBadge + decorative Spinner for run state | Tabs/ToggleGroup, Badge | SessionWorkspace | #261 | migrated | — |
 | Subagent bubble | `src/kubecode/session/SubagentBubble.tsx:4-11,54` | AI Elements Task + Shimmer + Badge; trigger styled with utilities only | AI Elements Task | SessionTimeline | #261 | migrated | Registry search 2026-10-23: no Subagent element |
 | Timeline wrapper, recreated-context divider | `src/kubecode/session/SessionTimeline.tsx:53,78` | layout wrapper; AI Elements Checkpoint for recreated context | Separator / AI Elements Checkpoint | SessionWorkspace | #261 | migrated | — |
 | Revision navigator | `src/kubecode/session/RevisionNavigator.tsx:20-30` | shadcn ButtonGroup + ButtonGroupText | ButtonGroup / MessageBranch | SessionWorkspace | #261 | migrated | — |
 | Empty state: agent readiness grid, start actions | `src/kubecode/session/SessionWorkspace.tsx:475-533` | shadcn Empty + Item per Agent + Buttons | Empty + Item/Card | session route | #261 | migrated | — |
-| Rename/fork dialogs and header | `src/kubecode/session/SessionWorkspace.tsx:7-16,632` | official Dialog + Input; header handcrafted | shadcn Dialog | SessionWorkspace | #261 | migrated | — |
+| Rename/fork dialogs and header | `src/kubecode/session/SessionWorkspace.tsx:7-16,632` | official Dialog + Input; the fallback `<header>` (used only when the shell gives no title bar slot) is a layout-only flex row holding the migrated SessionTitlebar | shadcn Dialog | SessionWorkspace | #261 | migrated | Header draws no control: `.kubecode-session-header` is flex/height/border layout only (contract §3 layout CSS); its contents are the Title bar row above |
 
 ## Team
 
@@ -411,6 +411,8 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 | Work board filters, attention chips, column headers | `src/kubecode/work/WorkBoard.tsx` | Select, Checkbox, single ToggleGroup, Badge counts; new Task form on Field/Input/Textarea | Select, Checkbox, ToggleGroup, Badge, Field | TeamTasksView, work route | #261 | migrated | Taken over from #259 (ADR 0253); no Kanban in the core registry, columns stay layout CSS |
 | Work inspector forms (questions, assign, review, close, priority) | `src/kubecode/work/WorkInspector.tsx` | Field, Select, Input, Textarea | Field, Select, Input | WorkBoard | #261 | migrated | Taken over from #259 (ADR 0253) |
 | New Session dialog (mode, kind, Agent, workspace, import list) | `src/kubecode/app/NewSessionDialog.tsx` | Dialog, ToggleGroup, RadioGroup choice cards, Field/Select/Input, Item list, Empty | Dialog, ToggleGroup, RadioGroup, Field, Item | session route | #261 | migrated | ADR 0253 |
+
+#261 reconciliation: the 33 original #261 rows are all kept (none deleted, merged or re-owned); three rows were added (Work board, Work inspector, New Session dialog), giving 36. 34 are migrated, Prompt input is partial and the Conversation scroller is specialist-engine. Row-by-row before/after status and screenshots: [ui-g-acceptance-evidence.md](ui-g-acceptance-evidence.md).
 
 ## Context workbench
 

@@ -369,7 +369,7 @@ export function WorkInspector({
                     {request.options.length > 0 ? (
                       <ChoiceSelect
                         label={`${request.question} — ${t('kubecode.work.question.choose')}`}
-                        options={request.options.map((option) => ({ label: option, value: option }))}
+                        options={offeredChoices(request.options)}
                         placeholder={t('kubecode.work.question.choose')}
                         value={answers[request.id] ?? ''}
                         onChange={(value) => setAnswers((current) => ({ ...current, [request.id]: value }))}
@@ -699,6 +699,13 @@ function Section({ text, title }: { text: string | null; title: string }) {
 
 
 /** One official Select for the Inspector's choices; an empty value shows the placeholder. */
+// Radix Select rejects an empty item value and keys items by value, so an
+// Agent's blank or repeated options are dropped; an answer is trimmed anyway.
+function offeredChoices(options: string[]) {
+  return [...new Set(options.map((option) => option.trim()).filter((option) => option !== ''))]
+    .map((option) => ({ label: option, value: option }))
+}
+
 function ChoiceSelect({
   id,
   label,

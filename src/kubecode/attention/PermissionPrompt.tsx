@@ -65,7 +65,7 @@ export function PermissionPrompt({ deadlineMs, heading, onGone, onResolve, optio
     <Confirmation
       approval={{ id: requestId }}
       aria-label={`${title}: ${tool}`}
-      className="kubecode-permission-dock"
+      className="outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
       data-focus-key={`permission:${requestId}`}
       data-testid="permission-queue-card"
       role="group"
@@ -78,9 +78,9 @@ export function PermissionPrompt({ deadlineMs, heading, onGone, onResolve, optio
         if (!Number.isNaN(digit) && digit >= 1 && digit <= options.length) void resolve(options[digit - 1].id)
       }}
     >
-      <ShieldAlert aria-hidden size={17} />
-      <ConfirmationTitle className="kubecode-permission-heading">
-        <strong>{title}</strong>
+      <ConfirmationTitle className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <ShieldAlert aria-hidden className="size-4 shrink-0 text-foreground" />
+        <strong className="text-foreground [overflow-wrap:anywhere]">{title}</strong>
         {deadlineMs !== null && <PermissionCountdown deadlineMs={deadlineMs} t={t} />}
       </ConfirmationTitle>
       <ConfirmationRequest>

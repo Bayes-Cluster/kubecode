@@ -620,6 +620,23 @@ describe('WorkBoard analysis and evidence', () => {
     fireEvent.click(send)
     await waitFor(() => expect(answerWorkDecision).toHaveBeenCalledWith('p1', 'w1', 'q1', 'yes'))
   })
+
+  it('renders a question whose offered options include blank or duplicate strings', async () => {
+    const answerWorkDecision = vi.fn().mockResolvedValue({})
+    open(detailOf(analyzing, {
+      decision_requests: [{
+        id: 'q1', work_id: 'w1', question: 'Proceed?', options: ['', '  ', 'yes', 'yes'], impact: null,
+        asked_by: 's1', state: 'open', answer: null, created_at: '',
+      }],
+    }), { answerWorkDecision })
+    fireEvent.click(await screen.findByTestId('work-card-w1'))
+    const inspector = await screen.findByRole('complementary', { name: 'kubecode.work.inspector' })
+    fireEvent.click(within(inspector).getByRole('combobox', { name: 'Proceed? — kubecode.work.question.choose' }))
+    expect(await screen.findAllByRole('option')).toHaveLength(1)
+    fireEvent.click(screen.getByRole('option', { name: 'yes' }))
+    fireEvent.click(within(inspector).getByRole('button', { name: 'kubecode.work.question.answer' }))
+    await waitFor(() => expect(answerWorkDecision).toHaveBeenCalledWith('p1', 'w1', 'q1', 'yes'))
+  })
 })
 
 describe('WorkBoard evidence review', () => {
