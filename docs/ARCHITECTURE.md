@@ -553,7 +553,10 @@ you — a count; the list is the `attention/NeedsYouView.tsx` destination over
 Members, then the roster with private-message shortcuts and Direct messages
 under their own headings), then a collapsed History and execution section with the
 Session search across all Workspaces, this Workspace's Sessions and Teams,
-Threads and questions. Reference chips in General and rows in Resources open
+Threads and questions — all official `SidebarGroup`/`SidebarMenu` items, the
+history a `Collapsible` that stays open while it holds what is on screen or a
+search. The title bar's location is a `Breadcrumb`; the command palette is
+`Command` (cmdk) in the shell's `Dialog`. Reference chips in General and rows in Resources open
 through the shell's one `openReference` (`location/references.ts`): a Task or a
 record in the inspector of the view they were chosen in, a Thread in General
 with nothing over it, a work item on Kanban with its Task, and a Session as
@@ -760,10 +763,15 @@ hierarchical Project/Session navigator, a primary Agent timeline/composer, a
 docked Explorer, and a Terminal dock. The single 44-pixel title bar contains the
 active Session identity, global Session search, attention, and layout controls.
 Navigator visibility is global; Explorer and Terminal geometry remain
-Project-scoped. All surrounding panels are resizable and independently
-collapsible. Below 980 pixels, the navigator and Explorer are mutually exclusive
-overlay panels with a dismissible backdrop; desktop geometry and resizing
-remain unchanged.
+Project-scoped. The layout is the official shadcn `Resizable`
+(`react-resizable-panels`, ADR 0248): navigation | (place | Files and Git) over a
+collapsible Terminal panel, with named, keyboard-operable separators and sizes
+kept in pixels. The navigator is the official `Sidebar` inside a
+`SidebarProvider` that owns the navigation's open state (the title-bar toggle; the
+official Cmd/Ctrl+B shortcut and `sidebar_state` cookie are turned off). Below 980 pixels, the navigator and Explorer are mutually
+exclusive official `Sheet`s, opened on demand (a phone opens on the place),
+which own the overlay, focus trap, Escape and focus return; the remembered
+wide-screen layout is not changed by them.
 
 The navigator searches, filters, sorts, groups, archives, forks, and deletes
 Sessions beneath their owning Project. Query matches temporarily reveal

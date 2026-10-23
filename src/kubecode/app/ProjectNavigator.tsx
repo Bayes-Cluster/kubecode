@@ -1,9 +1,19 @@
-import type { ReactNode, RefObject } from 'react'
-import { CircleHelp, Plus, Search, Settings } from 'lucide-react'
+import type { CSSProperties, ReactNode, RefObject } from 'react'
+import { ChevronRight, Plus, Search, Settings } from 'lucide-react'
 
-import { ResizeHandle } from '@/components/ResizeHandle'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group'
+import { Kbd } from '@/components/ui/kbd'
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+} from '@/components/ui/sidebar'
+import { IconButton } from '@/components/workspace/IconButton'
+import { cn } from '@/lib/utils'
 
 import type { AgentRun, Conversation, KubecodeApi, Project, RunStatus, TeamSnapshot } from '../api'
 import { SessionSidebarList } from '../SessionSidebarList'
@@ -25,7 +35,8 @@ export type ProjectNavigatorProps = {
   historyPinned?: boolean
   /** The active Workspace's legacy Threads and research questions, inside execution history. */
   historySection?: ReactNode
-  navigatorWidth: number
+  /** The width beside the view; absent inside the phone sheet, which sizes it. */
+  navigatorWidth?: number
   onAddProject: () => void
   onConversationCreated: (conversation: Conversation) => void
   onConversationRemoved: (conversationId: string) => void
@@ -37,7 +48,6 @@ export type ProjectNavigatorProps = {
   onProjectDelete: (projectId: string) => void
   onProjectWorkspacesToggle: (projectId: string) => void
   onQueryChange: (query: string) => void
-  onResize: (delta: number) => void
   onSelect: (projectId: string, conversationId: string) => void
   onWorkspaceSelect: (projectId: string) => void
   projects: Project[]
@@ -78,7 +88,6 @@ export function ProjectNavigator({
   onProjectDelete,
   onProjectWorkspacesToggle,
   onQueryChange,
-  onResize,
   onSelect,
   onWorkspaceSelect,
   projects,
@@ -96,82 +105,100 @@ export function ProjectNavigator({
   ]))
 
   return (
-    <>
-      <nav
-        aria-label={t('kubecode.nav.workspaces')}
+    <Sidebar
         className="kubecode-session-sidebar"
-        style={{ width: navigatorWidth }}
+        collapsible="none"
+        style={navigatorWidth === undefined
+          ? { width: '100%' }
+          : { '--sidebar-width': `${navigatorWidth}px`, width: navigatorWidth } as CSSProperties}
       >
-        <div className="kubecode-navigator-heading">
-          <strong>{t('kubecode.nav.workspaces')}</strong>
-          <div>
-            <Button aria-label={t('kubecode.addProject')} size="icon-xs" variant="ghost" onClick={onAddProject}><Plus  size={16}/></Button>
-            <Button aria-label={t('kubecode.settings')} size="icon-xs" variant="ghost" onClick={onOpenSettings}><Settings  size={16}/></Button>
-            <Button aria-label={t('kubecode.help')} size="icon-xs" variant="ghost"><CircleHelp  size={16}/></Button>
-          </div>
-        </div>
-        <div className="kubecode-navigator-body">
-          <WorkspaceList
-            activeProjectId={activeProjectId}
-            conversations={conversations}
-            projects={projects}
-            projectStatuses={projectStatuses}
-            t={t}
-            onNewSession={onNewSession}
-            onProjectDelete={onProjectDelete}
-            onProjectWorkspacesToggle={onProjectWorkspacesToggle}
-            onWorkspaceSelect={onWorkspaceSelect}
-          />
-          {workspaceSection}
-          <details
-            className="kubecode-history-nav"
-            open={historyOpen}
-            onToggle={(event) => {
-              const open = event.currentTarget.open
-              if (!open && historyPinned) {
-                event.currentTarget.open = true
-                return
-              }
-              if (open !== historyOpen) onHistoryOpenChange(open)
-            }}
-          >
-            <summary>{t('kubecode.nav.history')}</summary>
-            <div className="kubecode-history-search">
-              <Search aria-hidden="true" size={16} />
-              <Input
-                // It finds Sessions of every Workspace, not only this one, and says so.
-                aria-label={t('kubecode.searchSessionsAllWorkspaces')}
-                placeholder={t('kubecode.searchSessionsAllWorkspaces')}
-                ref={searchRef}
-                spellCheck={false}
-                value={query}
-                onChange={(event) => onQueryChange(event.target.value)}
-              />
-              <kbd>⌘K</kbd>
+        <nav aria-label={t('kubecode.nav.workspaces')} className="flex min-h-0 flex-1 flex-col">
+          {/* In the phone Sheet the header leaves room for the Sheet's close button. */}
+          <SidebarHeader className={cn('flex-row items-center justify-between', navigatorWidth === undefined && 'pr-12')}>
+            <h2 className="truncate px-2 text-sm font-semibold">{t('kubecode.nav.workspaces')}</h2>
+            <div className="flex items-center">
+              <IconButton icon={<Plus aria-hidden="true" />} label={t('kubecode.addProject')} onClick={onAddProject} />
+              <IconButton icon={<Settings aria-hidden="true" />} label={t('kubecode.settings')} onClick={onOpenSettings} />
             </div>
-            <SessionSidebarList
-              activeConversationId={activeConversationId}
-              api={api}
-              conversations={conversations}
-              onConversationCreated={onConversationCreated}
-              onConversationRemoved={onConversationRemoved}
-              onConversationUpdated={onConversationUpdated}
-              onError={onError}
-              onNewSession={onNewSession}
-              onSelect={onSelect}
-              projects={projects}
-              query={query}
-              scopeProjectId={activeProjectId}
-              t={t}
-              teams={teams}
-              wechat={wechat}
-            />
-            {historySection}
-          </details>
-        </div>
-      </nav>
-      <ResizeHandle onResize={onResize} />
-    </>
+          </SidebarHeader>
+          <SidebarContent>
+            <SidebarGroup>
+              <WorkspaceList
+                activeProjectId={activeProjectId}
+                conversations={conversations}
+                projects={projects}
+                projectStatuses={projectStatuses}
+                t={t}
+                onNewSession={onNewSession}
+                onProjectDelete={onProjectDelete}
+                onProjectWorkspacesToggle={onProjectWorkspacesToggle}
+                onWorkspaceSelect={onWorkspaceSelect}
+              />
+            </SidebarGroup>
+            {workspaceSection}
+            <Collapsible
+              className="group/collapsible"
+              open={historyOpen}
+              onOpenChange={(open) => {
+                // While it holds what is on screen, it stays open.
+                if (!open && historyPinned) return
+                onHistoryOpenChange(open)
+              }}
+            >
+              <SidebarGroup>
+                <SidebarGroupLabel asChild>
+                  <CollapsibleTrigger className="w-full">
+                    {t('kubecode.nav.history')}
+                    <ChevronRight
+                      aria-hidden="true"
+                      className="ml-auto transition-transform group-data-[state=open]/collapsible:rotate-90"
+                    />
+                  </CollapsibleTrigger>
+                </SidebarGroupLabel>
+                <CollapsibleContent>
+                  <SidebarGroupContent className="flex flex-col gap-2">
+                    <InputGroup>
+                      <InputGroupAddon>
+                        <Search aria-hidden="true" />
+                      </InputGroupAddon>
+                      <InputGroupInput
+                        // It finds Sessions of every Workspace, not only this one, and says so.
+                        aria-label={t('kubecode.searchSessionsAllWorkspaces')}
+                        placeholder={t('kubecode.searchSessionsAllWorkspaces')}
+                        ref={searchRef}
+                        spellCheck={false}
+                        value={query}
+                        onChange={(event) => onQueryChange(event.target.value)}
+                      />
+                      <InputGroupAddon align="inline-end">
+                        <Kbd>⌘K</Kbd>
+                      </InputGroupAddon>
+                    </InputGroup>
+                    <SessionSidebarList
+                      activeConversationId={activeConversationId}
+                      api={api}
+                      conversations={conversations}
+                      onConversationCreated={onConversationCreated}
+                      onConversationRemoved={onConversationRemoved}
+                      onConversationUpdated={onConversationUpdated}
+                      onError={onError}
+                      onNewSession={onNewSession}
+                      onSelect={onSelect}
+                      projects={projects}
+                      query={query}
+                      scopeProjectId={activeProjectId}
+                      t={t}
+                      teams={teams}
+                      wechat={wechat}
+                    />
+                    {historySection}
+                  </SidebarGroupContent>
+                </CollapsibleContent>
+              </SidebarGroup>
+            </Collapsible>
+          </SidebarContent>
+        </nav>
+    </Sidebar>
   )
 }
 

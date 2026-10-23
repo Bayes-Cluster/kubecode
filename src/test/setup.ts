@@ -36,6 +36,31 @@ globalThis.WebSocket = class MockWebSocket {
 // Mock scrollIntoView for jsdom (not implemented)
 Element.prototype.scrollIntoView = vi.fn()
 
+// jsdom has no matchMedia; the official Sidebar's useIsMobile needs one. Nothing matches by default.
+if (typeof window.matchMedia !== 'function') {
+  window.matchMedia = ((query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+    addListener: () => undefined,
+    removeListener: () => undefined,
+    dispatchEvent: () => false,
+  })) as typeof window.matchMedia
+}
+
+// jsdom lays nothing out, so every rect is empty at (0, 0) and react-resizable-panels
+// would take every pointerdown there for a drag of its separators (and prevent it,
+// so menus and popovers never open). Its elements are reported off-screen instead.
+const layoutRect = Element.prototype.getBoundingClientRect
+Element.prototype.getBoundingClientRect = function getBoundingClientRect(this: Element) {
+  if (this.hasAttribute('data-separator') || this.hasAttribute('data-panel') || this.hasAttribute('data-group')) {
+    return { x: -10_000, y: -10_000, top: -10_000, left: -10_000, bottom: -10_000, right: -10_000, width: 0, height: 0, toJSON: () => ({}) } as DOMRect
+  }
+  return layoutRect.call(this)
+}
+
 // Mock ResizeObserver for jsdom (not implemented)
 globalThis.ResizeObserver = class {
   observe() {}

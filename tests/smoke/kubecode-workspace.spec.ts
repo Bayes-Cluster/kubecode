@@ -139,9 +139,8 @@ test('@smoke project, reconnect recovery, editor, terminal, and project removal'
   const sendButton = page.getByRole('button', { name: 'Send' })
   const sessionsToggle = page.getByRole('button', { name: 'Toggle navigation' })
   const contextToggle = page.getByRole('button', { name: 'Toggle context panel' })
-  await expect(sessionsToggle).toHaveAttribute('aria-pressed', 'true')
-  await expect(contextToggle).toHaveAttribute('aria-pressed', 'false')
-  await page.locator('[contenteditable="true"]').fill('Confirm readiness')
+  // On a phone the navigation is a modal official Sheet over the view.
+  const navigationSheet = page.getByRole('dialog', { name: 'Workspaces' })
   const assertSendReachable = async () => {
     await expect(sendButton).toBeEnabled()
     const sendBox = await sendButton.boundingBox()
@@ -151,13 +150,21 @@ test('@smoke project, reconnect recovery, editor, terminal, and project removal'
     ), { x: sendBox.x + sendBox.width / 2, y: sendBox.y + sendBox.height / 2 })
     expect(probe).toBeTruthy()
   }
-  await assertSendReachable()
+  if (!(await navigationSheet.isVisible())) await sessionsToggle.click()
+  await expect(navigationSheet).toBeVisible()
+  // The Sheet's overlay dismisses it.
   await page.mouse.click(620, 220)
+  await expect(navigationSheet).toBeHidden()
   await expect(sessionsToggle).toHaveAttribute('aria-pressed', 'false')
   await expect(contextToggle).toHaveAttribute('aria-pressed', 'false')
-  await expect(page.getByRole('button', { name: 'Close side panels' })).toHaveCount(0)
+  await page.locator('[contenteditable="true"]').fill('Confirm readiness')
+  await assertSendReachable()
+  // Escape is the Sheet's own, and focus returns to the toggle that opened it.
   await sessionsToggle.click()
-  await expect(sessionsToggle).toHaveAttribute('aria-pressed', 'true')
+  await expect(navigationSheet).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(navigationSheet).toBeHidden()
+  await expect(sessionsToggle).toBeFocused()
   await assertSendReachable()
   await page.screenshot({ path: testInfo.outputPath('runtime-connection-narrow.png') })
   await sendButton.click()
@@ -178,7 +185,16 @@ test('@smoke project, reconnect recovery, editor, terminal, and project removal'
   await usageTrigger.click()
   await expect(usagePopover).toBeHidden()
   const projectButton = page.getByRole('button', { name: projectName, exact: true })
-  await expect(projectButton).toHaveAttribute('data-session-status', 'running', { timeout: 20_000 })
+  // The Workspace rows are in the navigation Sheet: open it to read a row, then put it away.
+  const expectProjectStatus = async (running: boolean, timeout = 20_000) => {
+    await sessionsToggle.click()
+    await expect(navigationSheet).toBeVisible()
+    if (running) await expect(projectButton).toHaveAttribute('data-session-status', 'running', { timeout })
+    else await expect(projectButton).not.toHaveAttribute('data-session-status', 'running', { timeout })
+    await page.keyboard.press('Escape')
+    await expect(navigationSheet).toBeHidden()
+  }
+  await expectProjectStatus(true)
   await expect(page.getByRole('button', { name: 'Runtime connection: Live' })).toBeVisible()
 
   await page.evaluate(() => {
@@ -196,13 +212,13 @@ test('@smoke project, reconnect recovery, editor, terminal, and project removal'
     // The fake agent holds each prompt open for ~20s so the running status
     // stays observable; the completion poll must outlive that window.
   }, { timeout: 30_000 }).toBe('completed')
-  await expect(projectButton).toHaveAttribute('data-session-status', 'running', { timeout: 20_000 })
+  await expectProjectStatus(true)
   await page.evaluate(() => {
     (window as unknown as { __reconnectWorkspaceEvents: () => void })
       .__reconnectWorkspaceEvents()
   })
   await expect(page.getByRole('button', { name: 'Runtime connection: Live' })).toBeVisible()
-  await expect(projectButton).not.toHaveAttribute('data-session-status', 'running')
+  await expectProjectStatus(false)
   const connectionTrigger = page.getByRole('button', { name: 'Runtime connection: Live' })
   await connectionTrigger.click()
   await expect(page.getByText('Last successful sync')).toBeVisible()
@@ -210,8 +226,12 @@ test('@smoke project, reconnect recovery, editor, terminal, and project removal'
   await page.keyboard.press('Escape')
   await page.setViewportSize({ width: 1280, height: 720 })
   await expect(page.locator('.kubecode-workspace')).toHaveAttribute('data-narrow', 'false')
-  await page.getByRole('button', { name: 'Toggle navigation' }).click()
-  await page.getByRole('button', { name: 'Toggle context panel' }).click()
+  // The phone Sheet never changed the wide-screen choice: the navigation is back open.
+  await expect(page.getByRole('button', { name: 'Toggle navigation' })).toHaveAttribute('aria-pressed', 'true')
+  // Files and Git comes back as it was left on the wide screen; open it if it is closed.
+  const wideContextToggle = page.getByRole('button', { name: 'Toggle context panel' })
+  if (await wideContextToggle.getAttribute('aria-pressed') !== 'true') await wideContextToggle.click()
+  await expect(wideContextToggle).toHaveAttribute('aria-pressed', 'true')
   await expect(page.getByRole('tab', { name: 'Explorer' })).toHaveAttribute('data-state', 'active')
   await expect(page.getByRole('button', { name: 'Files', exact: true })).toHaveAttribute('aria-expanded', 'true')
   await page.getByRole('button', { name: 'New file' }).click()

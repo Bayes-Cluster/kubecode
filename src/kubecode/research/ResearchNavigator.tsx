@@ -1,6 +1,17 @@
 import { FlaskConical, Plus } from 'lucide-react'
 
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import {
+  SidebarGroup,
+  SidebarGroupAction,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+} from '@/components/ui/sidebar'
+import { Spinner } from '@/components/ui/spinner'
 import { StatusBadge } from '@/components/workspace/StatusBadge'
 import type { Translator } from '@/lib/i18n'
 
@@ -18,8 +29,9 @@ export type ResearchNavigatorProps = {
 }
 
 /**
- * The Project's research questions, beside its Sessions. Selecting one opens
- * the research surface; Sessions and Teams stay reachable underneath.
+ * The Project's research questions, beside its Sessions: a Sidebar group.
+ * Selecting one opens the research surface; Sessions and Teams stay reachable
+ * underneath.
  */
 export function ResearchNavigator({
   activeResearchId,
@@ -31,53 +43,53 @@ export function ResearchNavigator({
   t,
 }: ResearchNavigatorProps) {
   return (
-    <section aria-label={t('kubecode.research.title')} className="kubecode-research-nav">
-      <div className="kubecode-navigator-tools">
-        <span>{t('kubecode.research.title')}</span>
-        <Button
-          aria-label={t('kubecode.research.new')}
-          size="icon-xs"
-          variant="ghost"
-          onClick={onNew}
-        >
-          <Plus size={16} />
-        </Button>
-      </div>
-      {status === 'loading' && (
-        <p className="kubecode-research-nav-note" role="status">{t('kubecode.research.loading')}</p>
-      )}
-      {status === 'error' && (
-        <p className="kubecode-research-nav-note" role="alert">
-          {t('kubecode.research.loadFailed')}{' '}
-          <Button size="xs" variant="ghost" onClick={onReload}>{t('kubecode.retry')}</Button>
-        </p>
-      )}
-      {status === 'ready' && items.length === 0 && (
-        <p className="kubecode-research-nav-note">{t('kubecode.research.empty')}</p>
-      )}
-      {items.length > 0 && (
-        <ul className="kubecode-research-nav-list">
-          {items.map((item) => (
-            <li key={item.id}>
-              <button
-                aria-current={item.id === activeResearchId ? 'true' : undefined}
-                className="kubecode-research-nav-item"
-                type="button"
-                onClick={() => onSelect(item.id)}
-              >
-                <FlaskConical aria-hidden size={14} />
-                <span className="kubecode-research-nav-title">{item.title}</span>
-                {item.archived && (
-                  <StatusBadge tone="muted">{t('kubecode.research.status.archived')}</StatusBadge>
-                )}
-                {item.status === 'resolved' && (
-                  <StatusBadge tone="muted">{t('kubecode.research.status.resolved')}</StatusBadge>
-                )}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
+    <SidebarGroup aria-label={t('kubecode.research.title')} className="p-0" role="region">
+      <SidebarGroupLabel>{t('kubecode.research.title')}</SidebarGroupLabel>
+      <SidebarGroupAction aria-label={t('kubecode.research.new')} title={t('kubecode.research.new')} onClick={onNew}>
+        <Plus aria-hidden="true" />
+      </SidebarGroupAction>
+      <SidebarGroupContent>
+        {status === 'loading' && (
+          <div className="flex items-center gap-2 px-2 py-1 text-xs text-muted-foreground" role="status">
+            <Spinner aria-hidden="true" role="presentation" />
+            {t('kubecode.research.loading')}
+          </div>
+        )}
+        {status === 'error' && (
+          <Alert variant="destructive">
+            <AlertDescription>
+              <p>{t('kubecode.research.loadFailed')}</p>
+              <Button size="xs" variant="outline" onClick={onReload}>{t('kubecode.retry')}</Button>
+            </AlertDescription>
+          </Alert>
+        )}
+        {status === 'ready' && items.length === 0 && (
+          <p className="px-2 py-1 text-xs text-muted-foreground">{t('kubecode.research.empty')}</p>
+        )}
+        {items.length > 0 && (
+          <SidebarMenu>
+            {items.map((item) => (
+              <SidebarMenuItem key={item.id}>
+                <SidebarMenuButton
+                  className="pointer-coarse:min-h-(--ws-touch-target)"
+                  aria-current={item.id === activeResearchId ? 'true' : undefined}
+                  isActive={item.id === activeResearchId}
+                  onClick={() => onSelect(item.id)}
+                >
+                  <FlaskConical aria-hidden="true" />
+                  <span className="min-w-0 flex-1 truncate">{item.title}</span>
+                  {item.archived && (
+                    <StatusBadge tone="muted">{t('kubecode.research.status.archived')}</StatusBadge>
+                  )}
+                  {item.status === 'resolved' && (
+                    <StatusBadge tone="muted">{t('kubecode.research.status.resolved')}</StatusBadge>
+                  )}
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            ))}
+          </SidebarMenu>
+        )}
+      </SidebarGroupContent>
+    </SidebarGroup>
   )
 }

@@ -1,6 +1,7 @@
 import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { SidebarProvider } from '@/components/ui/sidebar'
 import { createTranslator } from '@/lib/i18n'
 import { trackEvent } from '@/lib/telemetry'
 
@@ -201,7 +202,7 @@ function binding(overrides: Partial<WeChatBinding> = {}): WeChatBinding {
 
 function renderSidebar(conversations: Conversation[], wechat: WeChatBinding) {
   return render(
-    <SessionSidebarList
+    <SidebarProvider><SessionSidebarList
       activeConversationId={null}
       api={{} as KubecodeApi}
       conversations={conversations}
@@ -215,7 +216,7 @@ function renderSidebar(conversations: Conversation[], wechat: WeChatBinding) {
       scopeProjectId="project-1"
       t={t}
       wechat={wechat}
-    />,
+    /></SidebarProvider>,
   )
 }
 

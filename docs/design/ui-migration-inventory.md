@@ -22,11 +22,11 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 
 | Status | Rows |
 | --- | ---: |
-| migrated | 61 |
-| partial | 102 |
-| handcrafted | 69 |
+| migrated | 85 |
+| partial | 91 |
+| handcrafted | 53 |
 | specialist-engine | 4 |
-| exception | 1 |
+| exception | 4 |
 | not-applicable | 8 |
 
 | Owner | Rows |
@@ -48,84 +48,84 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| WorkbenchShell layout root (main.kubecode-app / .kubecode-workspace / main stack) | `src/kubecode/app/WorkbenchShell.tsx:1054,1098,1197` | handcrafted markup + kubecode.css | shadcn/ui Sidebar (SidebarProvider/SidebarInset) + Resizable | all workspace routes | #256 | handcrafted | — |
-| Panel resize handles | `src/components/ResizeHandle.tsx:9; src/kubecode/app/ProjectNavigator.tsx:790; WorkbenchShell.tsx:7` | handcrafted mouse-drag div | shadcn/ui Resizable (ResizablePanelGroup/ResizableHandle) | navigator, main stack, terminal | #256 | handcrafted | Deferred from #255: shadcn Resizable needs `react-resizable-panels`, a new dependency that needs its own ADR. #256 writes that ADR with the shell layout migration; #262's terminal split follows it |
+| WorkbenchShell layout root (main.kubecode-app / .kubecode-workspace / main stack) | `src/kubecode/app/WorkbenchShell.tsx:1054,1098,1197` | SidebarProvider (navigation open state) + ResizablePanelGroup/ResizablePanel; `.kubecode-workspace` keeps layout only | shadcn/ui Sidebar (SidebarProvider/SidebarInset) + Resizable | all workspace routes | #256 | migrated | ADR 0248 |
+| Panel resize handles | `src/components/ResizeHandle.tsx:9; src/kubecode/app/ProjectNavigator.tsx:790; WorkbenchShell.tsx:7` | ResizableHandle separators (named, keyboard and touch) in WorkbenchShell; ProjectNavigator has none | shadcn/ui Resizable (ResizablePanelGroup/ResizableHandle) | navigator, main stack, terminal | #256 | migrated | ADR 0248: `react-resizable-panels@4.14.8` added via the CLI. `ResizeHandle` remains only for the terminal split in `TerminalWorkspace` (#262) |
 
 ## Phone
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Navigator/context overlay 'sheet' + scrim button | `src/kubecode/app/WorkbenchShell.tsx:410,1099-1104` | handcrafted CSS overlay + raw button scrim; no Sheet used | shadcn/ui Sheet (installed) or Sidebar mobile mode | narrow layout | #256 | handcrafted | — |
+| Navigator/context overlay 'sheet' + scrim button | `src/kubecode/app/WorkbenchShell.tsx:410,1099-1104` | Sheet side=left (navigation) and side=right (Files and Git) below 980px; scrim button and Escape listener removed | shadcn/ui Sheet (installed) or Sidebar mobile mode | narrow layout | #256 | migrated | ADR 0248: the Sidebar's own mobile mode is not used because its breakpoint (768px) differs from the shell's 980px |
 
 ## Title bar
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| WorkbenchTitlebar header, project/place breadcrumb | `src/kubecode/app/WorkbenchTitlebar.tsx:110-130` | handcrafted spans with '/' separator | shadcn/ui Breadcrumb (not installed) | all routes | #256 | handcrafted | — |
-| Topbar error indicator | `src/kubecode/app/WorkbenchTitlebar.tsx:140-146` | handcrafted span with CircleAlert + aria-label | shadcn/ui Tooltip + Badge or Alert | global errors | #256 | handcrafted | — |
-| Notification bell (Needs you) menu: labels, entries with StatusBadge, show all, other workspaces, separator | `src/kubecode/app/WorkbenchTitlebar.tsx:149-210` | official DropdownMenu + Button + StatusBadge; entry body handcrafted span; CSS redraw (.kubecode-attention-*) | shadcn/ui DropdownMenu + Badge | Needs you entries, other workspaces | #256 | partial | — |
-| Runtime connection menu (status rows, retry) | `src/kubecode/app/WorkbenchTitlebar.tsx:239-270` | official DropdownMenu with handcrafted div rows inside | shadcn/ui DropdownMenu + Item/Badge | event stream state | #256 | partial | — |
-| Layout toggles (navigation/terminal/context) | `src/kubecode/app/WorkbenchTitlebar.tsx:210-215,284-295` | official Button with aria-pressed + CSS redraw | shadcn/ui Toggle / ToggleGroup (not installed) | shell panels | #256 | partial | — |
+| WorkbenchTitlebar header, project/place breadcrumb | `src/kubecode/app/WorkbenchTitlebar.tsx:110-130` | Breadcrumb / BreadcrumbList / BreadcrumbPage (aria-current), named Location | shadcn/ui Breadcrumb (not installed) | all routes | #256 | migrated | — |
+| Topbar error indicator | `src/kubecode/app/WorkbenchTitlebar.tsx:140-146` | Badge destructive + Tooltip, role=status named by the error | shadcn/ui Tooltip + Badge or Alert | global errors | #256 | migrated | — |
+| Notification bell (Needs you) menu: labels, entries with StatusBadge, show all, other workspaces, separator | `src/kubecode/app/WorkbenchTitlebar.tsx:149-210` | DropdownMenu + StatusBadge; entry is layout-only flex column; `.kubecode-attention-*` CSS removed | shadcn/ui DropdownMenu + Badge | Needs you entries, other workspaces | #256 | migrated | — |
+| Runtime connection menu (status rows, retry) | `src/kubecode/app/WorkbenchTitlebar.tsx:239-270` | DropdownMenuLabel rows in DropdownMenuGroup with a state Badge; Retry DropdownMenuItem; `.kubecode-connection-*` CSS removed | shadcn/ui DropdownMenu + Item/Badge | event stream state | #256 | migrated | — |
+| Layout toggles (navigation/terminal/context) | `src/kubecode/app/WorkbenchTitlebar.tsx:210-215,284-295` | Toggle (Radix pressed state) + Separator | shadcn/ui Toggle / ToggleGroup (not installed) | shell panels | #256 | migrated | — |
 
 ## Global command
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Global command palette (Cmd/Ctrl+K) | `src/kubecode/GlobalCommandPalette.tsx:99,299-370; WorkbenchShell.tsx:770-786` | official Dialog + Input with handcrafted listbox, arrow keys and status messages | shadcn/ui CommandDialog/Command (installed) | whole app | #256 | partial | — |
-| Palette loading/empty/error states | `src/kubecode/GlobalCommandPalette.tsx:354-370` | handcrafted p role=status | CommandEmpty / Spinner | palette | #256 | handcrafted | — |
+| Global command palette (Cmd/Ctrl+K) | `src/kubecode/GlobalCommandPalette.tsx:99,299-370; WorkbenchShell.tsx:770-786` | Dialog + Command/CommandInput/CommandList/CommandGroup/CommandItem (cmdk owns listbox, selection, arrows); provenance as outline Badge | shadcn/ui CommandDialog/Command (installed) | whole app | #256 | migrated | ADR 0248: `CommandDialog` is not used because it does not pass `onCloseAutoFocus`; cmdk filtering is off because the shared ranking filters |
+| Palette loading/empty/error states | `src/kubecode/GlobalCommandPalette.tsx:354-370` | Spinner status / Alert destructive / CommandEmpty | CommandEmpty / Spinner | palette | #256 | migrated | — |
 
 ## Navigator
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| ProjectNavigator heading actions (add project, settings, help) | `src/kubecode/app/ProjectNavigator.tsx:105-110` | official Button icon-xs; help button has no handler/tooltip | shadcn/ui Button + Tooltip (IconButton) | sidebar | #256 | partial | — |
-| Workspace (project) switcher list rows + status | `src/kubecode/app/WorkspaceList.tsx:57-115` | official Button rows in handcrafted ul/li + CSS redraw | shadcn/ui SidebarMenu/SidebarMenuButton/SidebarMenuAction | sidebar | #256 | partial | — |
-| Project row actions hidden menu (new session, toggle workspaces, delete) | `src/kubecode/app/WorkspaceList.tsx:82-105` | official DropdownMenu | shadcn/ui DropdownMenu | WorkspaceList | #256 | migrated | — |
-| No-project empty text | `src/kubecode/app/WorkspaceList.tsx:48; WorkbenchShell.tsx:1378` | handcrafted p/div .kubecode-empty-small | shadcn/ui Empty (installed) | sidebar, main | #256 | handcrafted | — |
-| History section collapsible | `src/kubecode/app/ProjectNavigator.tsx:126-138` | native details/summary + CSS | shadcn/ui Collapsible (installed) / SidebarGroup | sidebar | #256 | handcrafted | — |
-| History session search input | `src/kubecode/app/ProjectNavigator.tsx:139-150` | official Input with handcrafted icon wrapper | shadcn/ui InputGroup (installed) / SidebarInput | history | #256 | partial | — |
+| ProjectNavigator heading actions (add project, settings, help) | `src/kubecode/app/ProjectNavigator.tsx:105-110` | SidebarHeader + IconButton (Add project, Settings); the help button with no action is removed | shadcn/ui Button + Tooltip (IconButton) | sidebar | #256 | migrated | — |
+| Workspace (project) switcher list rows + status | `src/kubecode/app/WorkspaceList.tsx:57-115` | SidebarMenu/SidebarMenuItem/SidebarMenuButton/SidebarMenuAction/SidebarMenuBadge; run state in words (role=img label) beside a dot | shadcn/ui SidebarMenu/SidebarMenuButton/SidebarMenuAction | sidebar | #256 | migrated | — |
+| Project row actions hidden menu (new session, toggle workspaces, delete) | `src/kubecode/app/WorkspaceList.tsx:82-105` | DropdownMenu on a SidebarMenuAction trigger | shadcn/ui DropdownMenu | WorkspaceList | #256 | migrated | — |
+| No-project empty text | `src/kubecode/app/WorkspaceList.tsx:48; WorkbenchShell.tsx:1378` | Empty | shadcn/ui Empty (installed) | sidebar, main | #256 | migrated | — |
+| History section collapsible | `src/kubecode/app/ProjectNavigator.tsx:126-138` | Collapsible with SidebarGroupLabel trigger; pinned open while it holds the place or a search | shadcn/ui Collapsible (installed) / SidebarGroup | sidebar | #256 | migrated | — |
+| History session search input | `src/kubecode/app/ProjectNavigator.tsx:139-150` | InputGroup + InputGroupAddon + Kbd | shadcn/ui InputGroup (installed) / SidebarInput | history | #256 | migrated | — |
 
 ## Execution section
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| SessionSidebarList team tree, session rows, empty states | `src/kubecode/SessionSidebarList.tsx:255-345,402-430` | official Button rows in handcrafted div tree + .kubecode-empty-small | Sidebar SidebarMenuSub + Empty | history | #256 | partial | — |
-| Session row actions menu (archive/fork/rename/delete) | `src/kubecode/SessionSidebarList.tsx:439-492` | official DropdownMenu | shadcn/ui DropdownMenu | session rows | #256 | migrated | — |
-| Session filter/sort menu | `src/kubecode/SessionSidebarList.tsx:522-560` | official DropdownMenu radio/checkbox | shadcn/ui DropdownMenu | history | #256 | migrated | — |
-| Channel threads and research navigators in history | `src/kubecode/channel/ChannelNavigator.tsx; src/kubecode/research/ResearchNavigator.tsx; WorkbenchShell.tsx:1120-1140` | handcrafted lists | Sidebar SidebarMenu | history | #256 | handcrafted | — |
+| SessionSidebarList team tree, session rows, empty states | `src/kubecode/SessionSidebarList.tsx:255-345,402-430` | SidebarGroup + SidebarMenu; a Team's Leader row and its teammates in SidebarMenuSub; count Badge; Empty | Sidebar SidebarMenuSub + Empty | history | #256 | migrated | — |
+| Session row actions menu (archive/fork/rename/delete) | `src/kubecode/SessionSidebarList.tsx:439-492` | DropdownMenu on a SidebarMenuAction trigger | shadcn/ui DropdownMenu | session rows | #256 | migrated | — |
+| Session filter/sort menu | `src/kubecode/SessionSidebarList.tsx:522-560` | DropdownMenu on a SidebarGroupAction trigger | shadcn/ui DropdownMenu | history | #256 | migrated | — |
+| Channel threads and research navigators in history | `src/kubecode/channel/ChannelNavigator.tsx; src/kubecode/research/ResearchNavigator.tsx; WorkbenchShell.tsx:1120-1140` | SidebarGroup/SidebarGroupLabel/SidebarGroupAction + SidebarMenu; Spinner and Alert states | Sidebar SidebarMenu | history | #256 | migrated | — |
 
 ## Workspace nav
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Destination list items with counts | `src/kubecode/app/WorkspaceNav.tsx:69-96` | raw button .kubecode-research-nav-item + StatusBadge | SidebarMenuButton + SidebarMenuBadge | workspace routes | #256 | handcrafted | — |
-| Roster members + DM icon buttons | `src/kubecode/app/WorkspaceNav.tsx:100-120` | handcrafted list + Identity + IconButton (official Button+Tooltip) | SidebarGroup/SidebarMenu + Avatar | members, DMs | #256 | partial | — |
-| Direct messages list | `src/kubecode/app/WorkspaceNav.tsx:123-140` | raw button + MemberAvatar | SidebarMenuButton + Avatar | DM route | #256 | handcrafted | — |
+| Destination list items with counts | `src/kubecode/app/WorkspaceNav.tsx:69-96` | SidebarMenuButton (isActive + aria-current) + StatusBadge counts | SidebarMenuButton + SidebarMenuBadge | workspace routes | #256 | migrated | — |
+| Roster members + DM icon buttons | `src/kubecode/app/WorkspaceNav.tsx:100-120` | SidebarGroup/SidebarMenu; MemberIdentity row with a SidebarMenuAction for the private message | SidebarGroup/SidebarMenu + Avatar | members, DMs | #256 | migrated | — |
+| Direct messages list | `src/kubecode/app/WorkspaceNav.tsx:123-140` | SidebarMenuButton + MemberAvatar | SidebarMenuButton + Avatar | DM route | #256 | migrated | — |
 
 ## Headers
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| DestinationHeader | `src/kubecode/app/DestinationHeader.tsx:40-55` | ViewHeader wrapper | as ViewHeader | all destinations | #256 | handcrafted | — |
+| DestinationHeader | `src/kubecode/app/DestinationHeader.tsx:40-55` | ViewHeader wrapper (level 2, destination glyph) | as ViewHeader | all destinations | #256 | exception | Composes the shared `ViewHeader`, the contract's exception (no registry page header; ADR 0247 §2) |
 
 ## Inspector
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Inspector stack pane (DetailPane aside, focus/Escape) | `src/kubecode/app/DetailPane.tsx:44; src/kubecode/app/inspector/InspectorPane.tsx:154-180` | handcrafted aside + sections | shadcn/ui Sheet (phone) / Sidebar right / Resizable panel | inspect records | #256 | handcrafted | — |
-| InspectorPanel loading/notice states | `src/kubecode/app/inspector/InspectorPanel.tsx:34-50` | handcrafted p role=status | Skeleton/Spinner + Alert/Empty (installed) | inspector panels | #256 | handcrafted | — |
+| Inspector stack pane (DetailPane aside, focus/Escape) | `src/kubecode/app/DetailPane.tsx:44; src/kubecode/app/inspector/InspectorPane.tsx:154-180` | DetailPane aside (focus on open, return to opener, Escape pops one level) holding the InspectorPane stack | shadcn/ui Sheet (phone) / Sidebar right / Resizable panel | inspect records | #256 | exception | ADR 0248 §6: no registry component is a non-modal, in-flow inspector that parks lower entries (`Sheet` is modal and portalled, a right `Sidebar` has one level, `Resizable` has no stack). Smallest adapter kept, covered by DetailPane.test and InspectorPane.test |
+| InspectorPanel loading/notice states | `src/kubecode/app/inspector/InspectorPanel.tsx:34-50` | Spinner status (loading) / Empty status with recovery (unavailable) | Skeleton/Spinner + Alert/Empty (installed) | inspector panels | #256 | migrated | — |
 
 ## Loading
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Opening/route loading text | `src/kubecode/app/WorkbenchShell.tsx:1204,1235` | handcrafted div role=status | Spinner/Skeleton (installed) | route transitions | #256 | handcrafted | — |
+| Opening/route loading text | `src/kubecode/app/WorkbenchShell.tsx:1204,1235` | Empty + Spinner (`RouteOpening`); terminal without a Project is an Empty | Spinner/Skeleton (installed) | route transitions | #256 | migrated | — |
 
 ## Notifications
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Browser notification onboarding banner | `src/kubecode/app/WorkbenchShell.tsx:1396-1408` | handcrafted aside + official Buttons | shadcn/ui Alert + action / Sonner toast | first run | #256 | partial | — |
+| Browser notification onboarding banner | `src/kubecode/app/WorkbenchShell.tsx:1396-1408` | Alert with its two Buttons | shadcn/ui Alert + action / Sonner toast | first run | #256 | migrated | — |
 | Global toasts | `src/kubecode (no sonner/toast usage)` | none; errors via topbar icon and sr-only live region | shadcn/ui Sonner (not installed) | n/a | #256 | not-applicable | — |
 
 ## Accessibility
@@ -138,7 +138,7 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Shortcuts: Cmd/Ctrl+K palette, focus navigator search, Escape closes overlays | `src/kubecode/app/WorkbenchShell.tsx:760-811` | document keydown listeners; no Kbd hints | Kbd (installed) for hints; CommandShortcut | global | #256 | partial | — |
+| Shortcuts: Cmd/Ctrl+K palette, focus navigator search, Escape closes overlays | `src/kubecode/app/WorkbenchShell.tsx:760-811` | document keydown listeners for Cmd/Ctrl+K (session search) and Cmd/Ctrl+Shift+P (palette); Escape is owned by Sheet/Dialog; Kbd hint in the search; SidebarProvider's Cmd/Ctrl+B turned off | Kbd (installed) for hints; CommandShortcut | global | #256 | exception | ADR 0248: no registry component registers application-wide shortcuts (the Sidebar's Cmd/Ctrl+B is turned off so Ctrl+B stays with the terminal and composer); the two listeners only open the palette and focus the search, and the navigation has one toggle, the title-bar button |
 
 ## Global search
 
@@ -229,7 +229,7 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Legacy thread link button in message | `src/kubecode/channel/MessageItem.tsx:241` | handcrafted button | shadcn Button variant=link | MessageItem | #257 | handcrafted | — |
-| Channel navigator (General + threads list) | `src/kubecode/channel/ChannelNavigator.tsx:26-50` | handcrafted ul/span with StatusBadge | Sidebar menu / Item | ChannelWorkspace | #256 | handcrafted | — |
+| Channel navigator (General + threads list) | `src/kubecode/channel/ChannelNavigator.tsx:26-50` | SidebarGroup + SidebarMenuButton (isActive) + StatusBadge | Sidebar menu / Item | ChannelWorkspace | #256 | migrated | — |
 | Read-only legacy thread pane | `src/kubecode/channel/ThreadPane.tsx:134-212` | handcrafted aside/p/div with Button and ViewHeader | shadcn Sheet/Card + Alert + Button | ChannelWorkspace | #257 | partial | — |
 
 ## General/DM
