@@ -13,25 +13,25 @@ panels); its look matches the New Session dialog's mode switch.
 
 | Surface | Before | After |
 | --- | --- | --- |
-| Session, de-DE, light, 1440 | [before](evidence/ui-g/before-session-de-light-1440.png) | [after](evidence/ui-g/after-session-de-light-1440.png) |
-| Session, de-DE, light, 768 | [before](evidence/ui-g/before-session-de-light-768.png) | [after](evidence/ui-g/after-session-de-light-768.png) |
-| Session, de-DE, light, 390 | [before](evidence/ui-g/before-session-de-light-390.png) | [after](evidence/ui-g/after-session-de-light-390.png) |
-| Session, de-DE, light, 320 | [before](evidence/ui-g/before-session-de-light-320.png) | [after](evidence/ui-g/after-session-de-light-320.png) |
-| Session, de-DE, dark, 1440 | [before](evidence/ui-g/before-session-de-dark-1440.png) | [after](evidence/ui-g/after-session-de-dark-1440.png) |
-| Session, de-DE, dark, 768 | [before](evidence/ui-g/before-session-de-dark-768.png) | [after](evidence/ui-g/after-session-de-dark-768.png) |
-| Session, de-DE, dark, 390 | [before](evidence/ui-g/before-session-de-dark-390.png) | [after](evidence/ui-g/after-session-de-dark-390.png) |
-| Session, de-DE, dark, 320 | [before](evidence/ui-g/before-session-de-dark-320.png) | [after](evidence/ui-g/after-session-de-dark-320.png) |
-| Session, en, light, 1440 | [before](evidence/ui-g/before-session-en-light-1440.png) | [after](evidence/ui-g/after-session-en-light-1440.png) |
-| Team setup, de-DE, light, 1440 | [before](evidence/ui-g/before-team-setup-de-light-1440.png) | [after](evidence/ui-g/after-team-setup-de-light-1440.png) |
-| Team setup, de-DE, light, 390 | [before](evidence/ui-g/before-team-setup-de-light-390.png) | [after](evidence/ui-g/after-team-setup-de-light-390.png) |
-| Team setup, de-DE, dark, 1440 | [before](evidence/ui-g/before-team-setup-de-dark-1440.png) | [after](evidence/ui-g/after-team-setup-de-dark-1440.png) |
-| Team setup, de-DE, dark, 390 | [before](evidence/ui-g/before-team-setup-de-dark-390.png) | [after](evidence/ui-g/after-team-setup-de-dark-390.png) |
-| Agent control menu by keyboard | [before](evidence/ui-g/before-keyboard-agent-menu-en-1440.png) | [after](evidence/ui-g/after-keyboard-agent-menu-en-1440.png) |
-| Agent control menu by touch, 390 | [before](evidence/ui-g/before-touch-agent-menu-en-390.png) | [after](evidence/ui-g/after-touch-agent-menu-en-390.png) |
-| Slash command suggestions | [before](evidence/ui-g/before-slash-commands-en-1440.png) | [after](evidence/ui-g/after-slash-commands-en-1440.png) |
-| IME composing (ja) | [before](evidence/ui-g/before-ime-composing-ja-1440.png) | [after](evidence/ui-g/after-ime-composing-ja-1440.png) |
-| IME committed (ja) | [before](evidence/ui-g/before-ime-committed-ja-1440.png) | [after](evidence/ui-g/after-ime-committed-ja-1440.png) |
-| Zoom 200% + reduced motion | [before](evidence/ui-g/before-zoom200-reduced-motion-en-1440.png) | [after](evidence/ui-g/after-zoom200-reduced-motion-en-1440.png) |
+| Session, de-DE, light, 1440 | `before-session-de-light-1440.png` | `after-session-de-light-1440.png` |
+| Session, de-DE, light, 768 | `before-session-de-light-768.png` | `after-session-de-light-768.png` |
+| Session, de-DE, light, 390 | `before-session-de-light-390.png` | `after-session-de-light-390.png` |
+| Session, de-DE, light, 320 | `before-session-de-light-320.png` | `after-session-de-light-320.png` |
+| Session, de-DE, dark, 1440 | `before-session-de-dark-1440.png` | `after-session-de-dark-1440.png` |
+| Session, de-DE, dark, 768 | `before-session-de-dark-768.png` | `after-session-de-dark-768.png` |
+| Session, de-DE, dark, 390 | `before-session-de-dark-390.png` | `after-session-de-dark-390.png` |
+| Session, de-DE, dark, 320 | `before-session-de-dark-320.png` | `after-session-de-dark-320.png` |
+| Session, en, light, 1440 | `before-session-en-light-1440.png` | `after-session-en-light-1440.png` |
+| Team setup, de-DE, light, 1440 | `before-team-setup-de-light-1440.png` | `after-team-setup-de-light-1440.png` |
+| Team setup, de-DE, light, 390 | `before-team-setup-de-light-390.png` | `after-team-setup-de-light-390.png` |
+| Team setup, de-DE, dark, 1440 | `before-team-setup-de-dark-1440.png` | `after-team-setup-de-dark-1440.png` |
+| Team setup, de-DE, dark, 390 | `before-team-setup-de-dark-390.png` | `after-team-setup-de-dark-390.png` |
+| Agent control menu by keyboard | `before-keyboard-agent-menu-en-1440.png` | `after-keyboard-agent-menu-en-1440.png` |
+| Agent control menu by touch, 390 | `before-touch-agent-menu-en-390.png` | `after-touch-agent-menu-en-390.png` |
+| Slash command suggestions | `before-slash-commands-en-1440.png` | `after-slash-commands-en-1440.png` |
+| IME composing (ja) | `before-ime-composing-ja-1440.png` | `after-ime-composing-ja-1440.png` |
+| IME committed (ja) | `before-ime-committed-ja-1440.png` | `after-ime-committed-ja-1440.png` |
+| Zoom 200% + reduced motion | `before-zoom200-reduced-motion-en-1440.png` | `after-zoom200-reduced-motion-en-1440.png` |
 
 ## Official source comparison
 
