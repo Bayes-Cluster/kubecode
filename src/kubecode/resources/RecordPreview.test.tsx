@@ -260,7 +260,7 @@ describe('RecordPreview', () => {
     }, { target: { kind: 'file', id: 'README.md' } })
     await waitFor(() => expect(container.querySelector('.kubecode-record-code')).not.toBeNull())
     expect(container.querySelector('.kubecode-record-code')!.textContent).toContain('# Title')
-    expect(container.querySelector('.kubecode-record-markdown')).toBeNull()
+    expect(container.querySelector('[data-record-markdown]')).toBeNull()
   })
 
   it('never fetches a remote image from a Markdown file preview (review S3)', async () => {

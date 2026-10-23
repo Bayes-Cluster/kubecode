@@ -23,6 +23,12 @@ function startOnSessions(projectId = 'project-1') {
   }))
 }
 
+/** Opens execution history (an official Collapsible) as the researcher does. */
+async function openHistory() {
+  const trigger = await screen.findByRole('button', { name: 'History and execution' }, { timeout: 5_000 })
+  if (trigger.getAttribute('aria-expanded') !== 'true') fireEvent.click(trigger)
+}
+
 describe('Kubecode workspace', () => {
   beforeEach(() => localStorage.clear())
   afterEach(() => vi.unstubAllGlobals())
@@ -99,6 +105,7 @@ describe('Kubecode workspace', () => {
 
       try {
         render(<KubecodeApp api={api} />)
+        await openHistory()
         await screen.findByRole('button', { name: 'New session' })
         fireEvent.click(screen.getByRole('button', { name: 'New session' }))
         if (mode === 'import') {
@@ -158,7 +165,7 @@ describe('Kubecode workspace', () => {
     expect(titlebarActions).toContainElement(screen.getByRole('button', { name: 'Toggle navigation' }))
     expect(titlebarActions).toContainElement(screen.getByRole('button', { name: 'Toggle terminal' }))
     expect(titlebarActions).toContainElement(screen.getByRole('button', { name: 'Toggle context panel' }))
-    expect(Array.from(titlebarActions?.querySelectorAll('.kubecode-layout-toggle') ?? []).map(
+    expect(Array.from(titlebarActions?.querySelectorAll('[data-slot="toggle"]') ?? []).map(
       (button) => button.getAttribute('aria-label'),
     )).toEqual(['Toggle navigation', 'Toggle terminal', 'Toggle context panel'])
     expect(screen.getByRole('tab', { name: 'Explorer' })).toHaveAttribute('data-state', 'active')
@@ -626,6 +633,56 @@ describe('Kubecode workspace', () => {
     }
   })
 
+  it('offers browser notifications on the first run as an official Alert with its two actions', async () => {
+    const originalEventSource = globalThis.EventSource
+    class OnboardingEventSource {
+      static current: OnboardingEventSource | null = null
+      onerror: ((event: Event) => void) | null = null
+      private listener: ((event: MessageEvent<string>) => void) | null = null
+      constructor() { OnboardingEventSource.current = this }
+      addEventListener(_type: string, listener: EventListener) {
+        this.listener = listener as (event: MessageEvent<string>) => void
+      }
+      close() {}
+      emit(event: unknown) {
+        this.listener?.(new MessageEvent('workspace_event', { data: JSON.stringify(event) }))
+      }
+    }
+    class DefaultNotification {
+      static permission: NotificationPermission = 'default'
+      static requestPermission = vi.fn(async () => 'default' as NotificationPermission)
+    }
+    vi.stubGlobal('Notification', DefaultNotification)
+    globalThis.EventSource = OnboardingEventSource as unknown as typeof EventSource
+    const api = {
+      listProjects: vi.fn().mockResolvedValue([{ id: 'project-live', name: 'Live', path: '/srv/live' }]),
+      listAgents: vi.fn().mockResolvedValue([]),
+      listEntries: vi.fn().mockResolvedValue([]),
+      listTerminals: vi.fn().mockResolvedValue([]),
+      listConversations: vi.fn().mockResolvedValue([]),
+      listProjectRuns: vi.fn().mockResolvedValue([]),
+      gitStatus: vi.fn().mockResolvedValue({ is_repository: false, branch: null, files: [] }),
+      workspaceEventStreamUrl: vi.fn().mockReturnValue('/events'),
+    } as unknown as KubecodeApi
+    try {
+      render(<KubecodeApp api={api} />)
+      await screen.findByRole('button', { name: 'Live' })
+      act(() => OnboardingEventSource.current?.emit({
+        id: 1, kind: 'run_started', project_id: 'project-live', conversation_id: 'session-live',
+        run_id: 'run-live', payload: {}, created_at: 'now',
+      }))
+      const enable = await screen.findByRole('button', { name: 'Enable notifications' })
+      const alert = enable.closest('[data-slot="alert"]') as HTMLElement
+      expect(alert).not.toBeNull()
+      expect(alert).toHaveAttribute('role', 'status')
+      expect(within(alert).getByRole('button', { name: 'Not now' })).toBeInTheDocument()
+      fireEvent.click(within(alert).getByRole('button', { name: 'Not now' }))
+      await waitFor(() => expect(screen.queryByRole('button', { name: 'Enable notifications' })).toBeNull())
+    } finally {
+      globalThis.EventSource = originalEventSource
+    }
+  })
+
   it('reconciles a 100-event workspace burst once per affected resource type', async () => {
     const originalEventSource = globalThis.EventSource
     class BurstEventSource {
@@ -770,6 +827,7 @@ describe('Kubecode workspace', () => {
 
     try {
       render(<KubecodeApp api={api} />)
+      await openHistory()
       // The sharded coverage run instruments and parallelizes heavily; the
       // initial Project load can exceed the 1s default there.
       expect(await screen.findByRole(
@@ -983,6 +1041,7 @@ describe('Kubecode workspace', () => {
 
     try {
       render(<KubecodeApp api={api} />)
+      await openHistory()
       expect(await screen.findByRole('button', { name: 'Initial session' })).toBeInTheDocument()
       await waitFor(() => expect(ReconnectingEventSource.current).not.toBeNull())
 
@@ -1057,6 +1116,7 @@ describe('Kubecode workspace', () => {
     } as unknown as KubecodeApi
 
     render(<KubecodeApp api={api} />)
+    await openHistory()
 
     expect(await screen.findByRole(
       'button',
@@ -1215,7 +1275,7 @@ describe('Kubecode workspace', () => {
     }
   })
 
-  it('creates sessions only from available agents and resizes session, context, and terminal panes', async () => {
+  it('creates sessions only from available agents and lays out session, context, and terminal panes as official Resizable panels', async () => {
     // These tests are about the Sessions surface; an address names it.
     window.history.replaceState(null, '', '/#/p/project-1/sessions')
     const api = {
@@ -1255,39 +1315,29 @@ describe('Kubecode workspace', () => {
     fireEvent.keyDown(document, { key: 'Escape' })
     fireEvent.keyDown(document, { key: 'Escape' })
     fireEvent.keyDown(document, { key: 'Escape' })
-    expect((container.querySelector('.kubecode-terminal-pane') as HTMLElement).style.height).toBe('0px')
+    const terminalPane = container.querySelector('.kubecode-terminal-pane') as HTMLElement
+    expect(terminalPane).toHaveAttribute('data-open', 'false')
     fireEvent.click(screen.getByRole('button', { name: 'Toggle terminal' }))
     expect(screen.getByRole('button', { name: 'Toggle terminal' })).toHaveAttribute('aria-pressed', 'true')
-    const handles = container.querySelectorAll('.cursor-col-resize')
-    expect(handles).toHaveLength(2)
-    const terminalHandle = container.querySelector('.cursor-row-resize') as HTMLElement
-    expect(terminalHandle).toBeInTheDocument()
+    expect(terminalPane).toHaveAttribute('data-open', 'true')
+    // The panes are official Resizable panels: named, keyboard-operable separators,
+    // and no handcrafted drag handle is left in the shell.
+    const separators = screen.getAllByRole('separator', { name: /^Resize / })
+    expect(separators.map((separator) => separator.getAttribute('aria-label'))).toEqual([
+      'Resize navigation', 'Resize context panel', 'Resize terminal',
+    ])
+    for (const separator of separators) expect(separator).toHaveAttribute('data-slot', 'resizable-handle')
+    expect(container.querySelector('.kubecode-workspace .cursor-col-resize, .kubecode-workspace > .cursor-row-resize')).toBeNull()
+    expect(terminalPane.closest('[data-panel]')).not.toBeNull()
 
     const sidebar = container.querySelector('.kubecode-session-sidebar') as HTMLElement
     expect(sidebar.style.width).toBe('280px')
-    fireEvent.mouseDown(handles[0], { clientX: 328 })
-    fireEvent.mouseMove(document, { clientX: 368 })
-    fireEvent.mouseUp(document)
-    expect(sidebar.style.width).toBe('320px')
-
-    const contextPane = screen.getByTestId('context-workbench')
-    expect(contextPane.style.width).toBe('440px')
-    fireEvent.mouseDown(handles[1], { clientX: 1100 })
-    fireEvent.mouseMove(document, { clientX: 1060 })
-    fireEvent.mouseUp(document)
-    expect(contextPane.style.width).toBe('480px')
-
-    const terminalPane = container.querySelector('.kubecode-terminal-pane') as HTMLElement
-    expect(terminalPane.style.height).toBe('260px')
-    fireEvent.mouseDown(terminalHandle, { clientY: 600 })
-    fireEvent.mouseMove(document, { clientY: 560 })
-    fireEvent.mouseUp(document)
-    expect(terminalPane.style.height).toBe('300px')
+    expect(screen.getByTestId('context-workbench').style.width).toBe('440px')
 
     expect(await screen.findByTestId('agent-session-workspace')).toBeVisible()
   })
 
-  it('keeps narrow overlay side panels mutually exclusive and dismissible by the backdrop', async () => {
+  it('keeps narrow side panels in mutually exclusive sheets that the overlay and Escape dismiss', async () => {
     // These tests are about the Sessions surface; an address names it.
     window.history.replaceState(null, '', '/#/p/project-1/sessions')
     vi.stubGlobal('matchMedia', vi.fn().mockImplementation((query: string) => ({
@@ -1306,32 +1356,42 @@ describe('Kubecode workspace', () => {
     } as unknown as KubecodeApi
     const { container } = render(<KubecodeApp api={api} />)
 
-    await screen.findByRole('button', { name: 'Demo' })
+    // A phone opens on the place: the navigation is an official Sheet opened on demand.
+    const toggle = await screen.findByRole('button', { name: 'Toggle navigation' })
+    expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.queryByRole('dialog', { name: 'Workspaces' })).toBeNull()
+    toggle.focus()
+    fireEvent.click(toggle)
+    const sheet = await screen.findByRole('dialog', { name: 'Workspaces' })
+    expect(sheet).toHaveAttribute('data-slot', 'sheet-content')
+    expect(within(sheet).getByRole('navigation', { name: 'Workspaces' })).toBeInTheDocument()
     expect(container.querySelector('.kubecode-workspace')).toHaveAttribute('data-narrow', 'true')
+    expect(screen.queryByRole('button', { name: 'Close side panels', hidden: true })).toBe(
+      within(sheet).getByRole('button', { name: 'Close side panels' }),
+    )
 
-    const sessionsToggle = screen.getByRole('button', { name: 'Toggle navigation' })
+    // Escape is the Sheet's own: it closes the navigation.
+    fireEvent.keyDown(sheet, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Workspaces' })).toBeNull())
+    const sessionsToggle = await screen.findByRole('button', { name: 'Toggle navigation' })
     const contextToggle = screen.getByRole('button', { name: 'Toggle context panel' })
-    const backdrop = screen.getByRole('button', { name: 'Close side panels' })
-    expect(backdrop).toBeInTheDocument()
+    expect(sessionsToggle).toHaveAttribute('aria-pressed', 'false')
+    // Closing it gives focus back to the toggle that opened it.
+    await waitFor(() => expect(sessionsToggle).toHaveFocus())
 
-    await waitFor(() => expect(contextToggle).toHaveAttribute('aria-pressed', 'false'))
-    expect(sessionsToggle).toHaveAttribute('aria-pressed', 'true')
-    expect(container.querySelector('.kubecode-context-workbench')).not.toBeInTheDocument()
-
+    contextToggle.focus()
     fireEvent.click(contextToggle)
-    expect(contextToggle).toHaveAttribute('aria-pressed', 'true')
-    expect(sessionsToggle).toHaveAttribute('aria-pressed', 'false')
+    const context = await screen.findByRole('dialog', { name: 'Context panel' })
+    expect(within(context).getByTestId('context-workbench')).toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: 'Workspaces' })).toBeNull()
 
-    fireEvent.click(backdrop)
-    expect(contextToggle).toHaveAttribute('aria-pressed', 'false')
-    expect(sessionsToggle).toHaveAttribute('aria-pressed', 'false')
-    expect(screen.queryByRole('button', { name: 'Close side panels' })).not.toBeInTheDocument()
-
-    fireEvent.keyDown(document, { key: 'Escape' })
-    expect(screen.queryByRole('button', { name: 'Close side panels' })).not.toBeInTheDocument()
+    fireEvent.click(within(context).getByRole('button', { name: 'Close side panels' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(screen.getByRole('button', { name: 'Toggle context panel' })).toHaveAttribute('aria-pressed', 'false')
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Toggle context panel' })).toHaveFocus())
   })
 
-  it('reconciles a persisted narrow layout that opens both overlays to a single overlay', async () => {
+  it('opens a phone on the place with both panels put away, keeping the remembered wide-screen layout', async () => {
     vi.stubGlobal('matchMedia', vi.fn().mockImplementation((query: string) => ({
       matches: query === '(max-width: 980px)',
       media: query,
@@ -1359,14 +1419,21 @@ describe('Kubecode workspace', () => {
     } as unknown as KubecodeApi
     const { container } = render(<KubecodeApp api={api} />)
 
-    await screen.findByRole('button', { name: 'Demo' })
-    const sessionsToggle = screen.getByRole('button', { name: 'Toggle navigation' })
+    const sessionsToggle = await screen.findByRole('button', { name: 'Toggle navigation' })
     const contextToggle = screen.getByRole('button', { name: 'Toggle context panel' })
-    expect((container.querySelector('.kubecode-session-sidebar') as HTMLElement).style.width).toBe('300px')
-
     await waitFor(() => expect(contextToggle).toHaveAttribute('aria-pressed', 'false'))
-    expect(sessionsToggle).toHaveAttribute('aria-pressed', 'true')
+    expect(sessionsToggle).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.queryByRole('dialog')).toBeNull()
     expect(container.querySelector('.kubecode-context-workbench')).not.toBeInTheDocument()
+    // The Sheet is not a preference: the wide-screen navigation stays remembered as open.
+    expect(JSON.parse(localStorage.getItem('kubecode:workbench-layout:v2') ?? '{}')).toMatchObject({
+      navigatorOpen: true,
+      navigatorWidth: 300,
+    })
+    // Opened, the Sheet sizes the navigation (it fills it).
+    fireEvent.click(sessionsToggle)
+    const sheet = await screen.findByRole('dialog', { name: 'Workspaces' })
+    expect((sheet.querySelector('.kubecode-session-sidebar') as HTMLElement).style.width).toBe('100%')
   })
 
   it('restores the saved pane layout for a project', async () => {
@@ -1392,7 +1459,13 @@ describe('Kubecode workspace', () => {
     expect(await screen.findByRole('button', { name: 'Demo' })).toBeInTheDocument()
     expect((container.querySelector('.kubecode-session-sidebar') as HTMLElement).style.width).toBe('357px')
     expect(screen.getByTestId('context-workbench').style.width).toBe('612px')
-    expect((container.querySelector('.kubecode-terminal-pane') as HTMLElement).style.height).toBe('389px')
+    // The terminal panel opens at its remembered height (jsdom lays nothing out,
+    // so the height itself is checked in the browser smoke run).
+    expect(container.querySelector('.kubecode-terminal-pane')).toHaveAttribute('data-open', 'true')
+    expect(JSON.parse(localStorage.getItem('kubecode:project-layout:v2:project-1') ?? '{}')).toMatchObject({
+      contextWidth: 612,
+      terminalHeight: 389,
+    })
   })
 
   it('opens execution history and focuses the Session search with the platform shortcut', async () => {
@@ -1405,7 +1478,7 @@ describe('Kubecode workspace', () => {
       gitStatus: vi.fn().mockResolvedValue({ is_repository: false, branch: null, files: [] }),
     } as unknown as KubecodeApi
 
-    const { container } = render(<KubecodeApp api={api} />)
+    render(<KubecodeApp api={api} />)
     await screen.findByRole('button', { name: 'Demo' })
     fireEvent.click(screen.getByRole('button', { name: 'Toggle navigation' }))
     expect(screen.queryByRole('navigation', { name: 'Workspaces' })).not.toBeInTheDocument()
@@ -1413,7 +1486,7 @@ describe('Kubecode workspace', () => {
     fireEvent.keyDown(document, { key: 'k', metaKey: true })
     // The navigation opens, then execution history, then the search inside it.
     const search = await screen.findByRole('textbox', { name: 'Search Sessions in all Workspaces' })
-    expect(container.querySelector('details.kubecode-history-nav')).toHaveAttribute('open')
+    expect(screen.getByRole('button', { name: 'History and execution' })).toHaveAttribute('aria-expanded', 'true')
     await waitFor(() => expect(search).toHaveFocus())
   })
 
@@ -1432,6 +1505,7 @@ describe('Kubecode workspace', () => {
     } as unknown as KubecodeApi
 
     render(<KubecodeApp api={api} />)
+    await openHistory()
     const search = await screen.findByRole('textbox', { name: 'Search Sessions in all Workspaces' })
     search.focus()
     fireEvent.keyDown(document, { key: 'p', ctrlKey: true, shiftKey: true })

@@ -1,5 +1,6 @@
 import { MessageAction, MessageActions, MessageContent } from '@/components/ai-elements/message'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { MoreActions, type MoreActionItem } from '@/components/workspace/MoreActions'
 import { ReferenceChip } from '@/components/workspace/ReferenceChip'
 import { Icon } from '@/kubecode/icons'
@@ -126,14 +127,15 @@ export function MessageItem({
     <ReferenceChip kind="task" kindLabel={t('kubecode.vocab.object.task')} title={task.title} onOpen={on.openTask} />
   )
   const focusKey = `message:${message.id}`
+  const ThreadIcon = WORKSPACE_OBJECT_ICONS.thread.Icon
   const own = message.author_kind === 'researcher'
   const time = date && (
     <time dateTime={date.toISOString()} title={date.toLocaleString(dateLocale)}>{shortTime(date, dateLocale)}</time>
   )
   // Whom it reached sits in the author line: "Investigate → General" (#229).
   const recipientLine = recipients.kind !== 'none' && (
-    <span className="kubecode-message-recipients">
-      <span aria-hidden="true" className="kubecode-message-recipients-arrow">→</span>
+    <span className="kubecode-message-recipients inline-flex min-w-0 flex-wrap items-center gap-1 text-xs text-muted-foreground">
+      <span aria-hidden="true" className="kubecode-message-recipients-arrow text-muted-foreground">→</span>
       <span className="sr-only">
         {recipients.kind === 'members' && recipients.handedOff ? t('kubecode.channel.handedOff') : t('kubecode.channel.to')}
       </span>
@@ -186,7 +188,7 @@ export function MessageItem({
             {message.intent_claimed_by ? ` · ${t('kubecode.channel.intent.claimed')}` : ''}
           </Badge>
         )}
-        <MessageActions className="kubecode-message-toolbar" data-coarse={coarse}>
+        <MessageActions className="ml-auto opacity-0 group-hover/message:opacity-100 group-focus-within/message:opacity-100 data-[coarse=true]:opacity-100 pointer-coarse:opacity-100 motion-safe:transition-opacity group-data-[from=self]/message:order-first group-data-[from=self]/message:ml-0 group-data-[from=self]/message:mr-auto" data-coarse={coarse}>
           {!coarse && on.reply && (
             <MessageAction
               className="kubecode-message-action"
@@ -214,14 +216,14 @@ export function MessageItem({
           </button>
         )}
         {proposal && (
-          <p className="kubecode-channel-proposal">
+          <div className="flex flex-wrap gap-1.5">
             <Badge variant="secondary">{t('kubecode.task.proposalBadge', { revision: Number(proposal[1]) })}</Badge>
             {message.task_id && onBoard && (
               <Badge data-on-board={onBoard(message.task_id)} variant={onBoard(message.task_id) ? 'secondary' : 'outline'}>
                 {onBoard(message.task_id) ? t('kubecode.task.onBoard') : t('kubecode.task.notOnBoardYet')}
               </Badge>
             )}
-          </p>
+          </div>
         )}
         <ConversationResponse className="kubecode-message-body" t={t}>{message.body}</ConversationResponse>
         {references.length > 0 ? (
@@ -233,15 +235,15 @@ export function MessageItem({
             onOpen={on.openReference}
           />
         ) : taskChip && (
-          <ul aria-label={t('kubecode.channel.references')} className="kubecode-message-references">
+          <ul aria-label={t('kubecode.channel.references')} className="m-0 flex min-w-0 list-none flex-wrap gap-1 p-0">
             <li>{taskChip}</li>
           </ul>
         )}
         {replies > 0 && on.openThread && (
-          <button className="kubecode-legacy-thread-link" type="button" onClick={on.openThread}>
-            <Icon role="identity" size="secondary" source={WORKSPACE_OBJECT_ICONS.thread.Icon} />
+          <Button className="self-start px-0 text-muted-foreground" size="sm" variant="link" onClick={on.openThread}>
+            <ThreadIcon aria-hidden="true" data-icon="inline-start" />
             {t('kubecode.channel.legacyThread.open', { count: replies, plural: replies === 1 ? 'y' : 'ies' })}
-          </button>
+          </Button>
         )}
         {delivery?.state === 'facts' && (
           <DeliveryStatus
@@ -254,10 +256,10 @@ export function MessageItem({
           />
         )}
         {delivery?.state === 'failed' && (
-          <p className="kubecode-message-delivery" data-delivery="failed">
+          <div className="kubecode-message-delivery" data-delivery="failed">
             <Badge variant="destructive">{t('kubecode.channel.notDelivered')}</Badge>
             <span>{delivery.text}</span>
-          </p>
+          </div>
         )}
         {(delivery?.state === 'queued' || delivery?.state === 'delivered') && (
           <p className="kubecode-message-delivery" data-delivery={delivery.state}>

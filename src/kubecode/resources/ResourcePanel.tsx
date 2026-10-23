@@ -1,7 +1,7 @@
 import { useCallback, useId, useState } from 'react'
 
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { StatusBadge } from '@/components/workspace/StatusBadge'
 import { Icon } from '@/kubecode/icons'
 import { WORKSPACE_COMMAND_ICONS, WORKSPACE_OBJECT_ICONS } from '@/kubecode/icons/workspaceIcons'
 
@@ -14,6 +14,7 @@ import { useWorkspaceNavigation } from '../app/location/WorkspaceNavigation'
 import { objectKindOf } from '../references/referenceLabels'
 import { useAttachToDraft } from './attachTarget'
 import { attachAnnouncement, MAX_DRAFT_REFERENCES } from './draftReferences'
+import { ReaderNotice } from './ReaderStates'
 import { RecordPreview, type DisplayedRecord } from './RecordPreview'
 import { fallbackTitle, formatVersion, goToTargetFor, kindLabelKey, previewEntryFor } from './referenceKinds'
 
@@ -102,8 +103,8 @@ export function ResourcePanel({ entry, projectId }: InspectorPanelProps<Extract<
       icon={<Icon role="navigation" source={WORKSPACE_OBJECT_ICONS[objectKindOf(kind)].Icon} />}
       meta={(
         <>
-          <StatusBadge tone="muted">{t(kindLabelKey(kind))}</StatusBadge>
-          {version && <StatusBadge tone="muted">{version}</StatusBadge>}
+          <Badge variant="secondary">{t(kindLabelKey(kind))}</Badge>
+          {version && <Badge variant="outline">{version}</Badge>}
         </>
       )}
       recovery={recovery && (
@@ -112,8 +113,8 @@ export function ResourcePanel({ entry, projectId }: InspectorPanelProps<Extract<
       status={removed ? 'unavailable' : 'ready'}
       title={title}
     >
-      {attachment && <p className="kubecode-research-muted" id={describedBy}>{reason}</p>}
-      {kind === 'research' && attachment && <p className="kubecode-research-notice">{t('kubecode.resources.taskNote')}</p>}
+      {attachment && <p className="text-xs text-muted-foreground" id={describedBy}>{reason}</p>}
+      {kind === 'research' && attachment && <ReaderNotice live={false}>{t('kubecode.resources.taskNote')}</ReaderNotice>}
       <p className="sr-only" role="status">{announcement}</p>
       <RecordPreview
         api={api}

@@ -64,8 +64,8 @@ describe('ResourcesView', () => {
     mount(fakeNavigation({
       location: { place: { view: 'resources' }, inspector: [{ kind: 'resource', ref: { kind: 'finding', id: 'f1' } }] },
     }))
-    expect(await screen.findByRole('option', { name: /Heads are redundant/ })).toHaveAttribute('aria-selected', 'true')
-    expect(screen.getByRole('option', { name: /results\.csv/ })).toHaveAttribute('aria-selected', 'false')
+    expect(await screen.findByRole('option', { name: /Heads are redundant/ })).toHaveAttribute('aria-current', 'true')
+    expect(screen.getByRole('option', { name: /results\.csv/ })).not.toHaveAttribute('aria-current')
   })
 
   it('says a message is waiting for a reference, opens a Task as its brief to add, and returns or stops', async () => {

@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 
-import { openExecutionHistory } from './shell'
+import { openExecutionHistory, toggleNavigation } from './shell'
 
 // A tiny valid SVG standing in for the server-rendered QR image.
 const QR_SVG = `data:image/svg+xml;base64,${Buffer.from(
@@ -148,6 +148,8 @@ test('@smoke WeChat settings connect, verify, and bind on desktop and mobile', a
 
     // Mobile width: the same section stays usable and contained.
     await page.setViewportSize({ width: 390, height: 844 })
+    // On a phone the navigation, with Settings in its header, is a Sheet opened on demand.
+    await toggleNavigation(page)
     await page.getByRole('button', { name: 'Settings', exact: true }).click()
     await page.getByRole('tab', { name: 'WeChat', exact: true }).click()
     await expect(page.getByRole('status').filter({ hasText: 'Connected' })).toBeVisible()

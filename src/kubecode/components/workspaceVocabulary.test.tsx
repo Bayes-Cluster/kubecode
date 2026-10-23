@@ -8,6 +8,7 @@ import { MoreActions } from '@/components/workspace/MoreActions'
 import { ReferenceChip } from '@/components/workspace/ReferenceChip'
 import { PauseButton, StopButton } from '@/components/workspace/SendButton'
 import { ViewHeader } from '@/components/workspace/ViewHeader'
+import { SidebarProvider } from '@/components/ui/sidebar'
 import { WorkspaceNav } from '@/kubecode/app/WorkspaceNav'
 import { WORKSPACE_COMMAND_ICONS, WORKSPACE_DESTINATION_ICONS } from '@/kubecode/icons/workspaceIcons'
 
@@ -101,18 +102,12 @@ describe('MemberIdentity (ADR 0227)', () => {
 })
 
 describe('ReferenceChip (ADR 0227)', () => {
-  it('composes the official Badge and Buttons (ADR 0247)', () => {
+  it('composes the official Attachment: its trigger opens, its action removes (#258)', () => {
     render(<ReferenceChip kind="file" kindLabel="File" removeLabel="Remove notes.md" title="notes.md" onOpen={vi.fn()} onRemove={vi.fn()} />)
     const open = screen.getByRole('button', { name: 'File notes.md' })
-    expect(open).toHaveAttribute('data-slot', 'button')
-    expect(screen.getByRole('button', { name: 'Remove notes.md' })).toHaveAttribute('data-slot', 'button')
-    expect(open.closest('[data-slot="badge"]')).not.toBeNull()
-  })
-
-  it('does not clip the focus ring of its Buttons', () => {
-    render(<ReferenceChip kind="file" kindLabel="File" removeLabel="Remove notes.md" title="notes.md" onOpen={vi.fn()} onRemove={vi.fn()} />)
-    const badge = screen.getByRole('button', { name: 'File notes.md' }).closest('[data-slot="badge"]')
-    expect(badge).toHaveClass('overflow-visible')
+    expect(open).toHaveAttribute('data-slot', 'attachment-trigger')
+    expect(screen.getByRole('button', { name: 'Remove notes.md' })).toHaveAttribute('data-slot', 'attachment-action')
+    expect(open.closest('[data-slot="attachment"]')).not.toBeNull()
   })
 
   it('names the object, its kind, and its version, and opens it', () => {
@@ -131,7 +126,7 @@ describe('ReferenceChip (ADR 0227)', () => {
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
     expect(screen.getByText('Changed since cited')).toBeInTheDocument()
     rerender(<ReferenceChip kind="file" kindLabel="File" state={{ kind: 'removed', label: 'No longer exists' }} title="notes.md" />)
-    expect(screen.getByText('notes.md').closest('[data-state]')).toHaveAttribute('data-state', 'removed')
+    expect(screen.getByText('notes.md').closest('[data-reference-state]')).toHaveAttribute('data-reference-state', 'removed')
   })
 
   it('names an openable chip with its changed or removed state too', () => {
@@ -285,6 +280,8 @@ describe('what the controls draw (ADR 0227)', () => {
         onOpenDm={vi.fn()}
         onOpenTarget={vi.fn()}
       />,
+      // The navigation renders inside the shell's official Sidebar.
+      { wrapper: SidebarProvider },
     )
     const expected = {
       'kubecode.channel.general': WORKSPACE_DESTINATION_ICONS.general,

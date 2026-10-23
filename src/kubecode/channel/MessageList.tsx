@@ -2,9 +2,11 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode }
 import type { StickToBottomContext } from 'use-stick-to-bottom'
 
 import { Conversation as ConversationScroller, ConversationContent, ConversationScrollButton } from '@/components/ai-elements/conversation'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { Separator } from '@/components/ui/separator'
+import { Spinner } from '@/components/ui/spinner'
 import { DEFAULT_APP_LOCALE, getLocaleDateLocale, type AppLocale, type Translator } from '@/lib/i18n'
 
 import type {
@@ -19,6 +21,7 @@ import type { MemberDirectory } from '../members/memberDirectory'
 import { authorView, messageRecipients, type IdentityView } from '../members/memberIdentity'
 import type { ReferenceLabelSource } from '../references/referenceLabels'
 import { ActivityGroup } from './ActivityGroup'
+import { revealActivity } from './activityReveal'
 import { notesDelivery, type MessageDeliverySource } from './delivery'
 import { excerptOf } from './generalDraft'
 import { MessageItem } from './MessageItem'
@@ -184,8 +187,7 @@ export function MessageList({
       onJumpMissing?.(messageId)
       return
     }
-    const group = target.closest('details')
-    if (group) group.open = true
+    revealActivity(target)
     stuck.current = false
     // Reading a linked message is leaving the latest: the conversation stops following it.
     conversation.current?.stopScroll()
@@ -320,13 +322,18 @@ export function MessageList({
             </Button>
           )}
           {feed.status === 'loading' && (
-            <p className="kubecode-research-muted" role="status">{t('kubecode.channel.loading')}</p>
+            <div className="flex items-center gap-2 self-center text-sm text-muted-foreground" role="status">
+              <Spinner aria-hidden="true" />
+              {t('kubecode.channel.loading')}
+            </div>
           )}
           {feed.status === 'error' && (
-            <p className="kubecode-research-error" role="alert">
-              {t('kubecode.channel.loadFailed')}{' '}
-              <Button size="xs" variant="ghost" onClick={feed.reload}>{t('kubecode.retry')}</Button>
-            </p>
+            <Alert className="kubecode-conversation-alert" role="alert" variant="destructive">
+              <AlertDescription className="flex flex-wrap items-center gap-2">
+                {t('kubecode.channel.loadFailed')}
+                <Button size="xs" variant="outline" onClick={feed.reload}>{t('kubecode.retry')}</Button>
+              </AlertDescription>
+            </Alert>
           )}
           {feed.status === 'ready' && feed.messages.length === 0 && (
             <Empty className="kubecode-conversation-empty">
@@ -339,10 +346,10 @@ export function MessageList({
           {items.map((item) => {
             if (item.kind === 'date') {
               return (
-                <div className="kubecode-date-separator" key={item.key} role="separator" aria-label={item.label}>
-                  <Separator className="kubecode-date-separator-rule" decorative />
+                <div aria-label={item.label} className="my-2 flex items-center gap-2 text-xs text-muted-foreground" key={item.key} role="separator">
+                  <Separator className="flex-1" decorative />
                   <span aria-hidden="true">{item.label}</span>
-                  <Separator className="kubecode-date-separator-rule" decorative />
+                  <Separator className="flex-1" decorative />
                 </div>
               )
             }

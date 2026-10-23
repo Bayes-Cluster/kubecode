@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { RiWechatLine } from '@remixicon/react'
 import {
   Archive,
@@ -11,11 +11,12 @@ import {
 } from 'lucide-react'
 
 import { AiAgentIcon } from '@/components/AiAgentIcon'
-import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
@@ -23,6 +24,20 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { Empty, EmptyDescription, EmptyHeader } from '@/components/ui/empty'
+import {
+  SidebarGroup,
+  SidebarGroupAction,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarMenu,
+  SidebarMenuAction,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
+} from '@/components/ui/sidebar'
 import type { Translator } from '@/lib/i18n'
 import { trackEvent } from '@/lib/telemetry'
 
@@ -252,12 +267,10 @@ export function SessionSidebarList({
   }
 
   return (
-    <div className="kubecode-session-browser">
-      <div className="kubecode-navigator-tools">
-        <span>{t('kubecode.sessionsLabel')}</span>
-        <SessionFilters preferences={preferences} setPreferences={setPreferences} t={t} />
-      </div>
-      <div className="kubecode-session-list">
+    <SidebarGroup aria-label={t('kubecode.sessionsLabel')} className="p-0" role="region">
+      <SidebarGroupLabel>{t('kubecode.sessionsLabel')}</SidebarGroupLabel>
+      <SessionFilters preferences={preferences} setPreferences={setPreferences} t={t} />
+      <SidebarGroupContent className="flex flex-col gap-2">
         {projectGroups.map(({ project, sessions, teams: projectTeams }) => {
           const projectConversations = conversations.filter(
             (conversation) => conversation.project_id === project.id,
@@ -268,79 +281,77 @@ export function SessionSidebarList({
             }
             onSelect(project.id, conversationId)
           }
+          const row = (conversation: Conversation, teamRole: TeamRole | null | undefined, nested = false) => (
+            <SessionRow
+              activeConversationId={activeConversationId}
+              archive={archive}
+              conversation={conversation}
+              fork={fork}
+              key={conversation.id}
+              nested={nested}
+              onSelect={open}
+              remove={remove}
+              t={t}
+              teamRole={teamRole}
+              wechat={wechat}
+            />
+          )
           return (
-            <section
-              aria-label={searching ? project.name : undefined}
-              className="kubecode-session-history-group"
-              key={project.id}
-            >
-              {searching ? (
-                <h3 className="kubecode-session-history-heading">{project.name}</h3>
-              ) : (
-                <Button
-                  className="kubecode-project-new-session"
-                  variant="ghost"
-                  onClick={() => onNewSession(project.id)}
-                >
-                  <Plus  size={16}/> {t('kubecode.newSession')}
-                </Button>
+            <section aria-label={searching ? project.name : undefined} key={project.id}>
+              {searching && (
+                <SidebarGroupLabel asChild>
+                  <h3>{project.name}</h3>
+                </SidebarGroupLabel>
               )}
-              {projectTeams.map((team) => (
-                <div aria-label={team.title} className="kubecode-session-team" key={team.id} role="group">
-                  <div className="kubecode-session-team-header">
-                    <Users  size={16}/>
-                    <span>{team.title}</span>
-                    <small>{team.members.length}</small>
-                  </div>
-                  <div className="kubecode-session-team-tree">
-                    {team.members.map(({ conversation, role }) => (
-                      <SessionRow
-                        activeConversationId={activeConversationId}
-                        archive={archive}
-                        conversation={conversation}
-                        fork={fork}
-                        key={conversation.id}
-                        nested={role !== 'leader'}
-                        onSelect={open}
-                        remove={remove}
-                        t={t}
-                        teamRole={role}
-                        wechat={wechat}
-                      />
-                    ))}
-                  </div>
-                </div>
-              ))}
-              {sessions.map((conversation) => (
-                <SessionRow
-                  activeConversationId={activeConversationId}
-                  archive={archive}
-                  conversation={conversation}
-                  fork={fork}
-                  key={conversation.id}
-                  onSelect={open}
-                  remove={remove}
-                  t={t}
-                  teamRole={conversation.team_role ?? teamByConversation.get(conversation.id)?.member.role}
-                  wechat={wechat}
-                />
-              ))}
+              <SidebarMenu>
+                {!searching && (
+                  <SidebarMenuItem>
+                    <SidebarMenuButton className="pointer-coarse:min-h-(--ws-touch-target)" onClick={() => onNewSession(project.id)}>
+                      <Plus aria-hidden="true" />
+                      <span>{t('kubecode.newSession')}</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                )}
+                {projectTeams.map((team) => {
+                  const leaders = team.members.filter((member) => member.role === 'leader')
+                  const teammates = team.members.filter((member) => member.role !== 'leader')
+                  return (
+                    <SidebarMenuItem aria-label={team.title} key={team.id} role="group">
+                      <div className="flex h-8 min-w-0 items-center gap-2 px-2 text-sm font-medium">
+                        <Users aria-hidden="true" className="shrink-0" />
+                        <span className="min-w-0 flex-1 truncate">{team.title}</span>
+                        <Badge variant="secondary">{team.members.length}</Badge>
+                      </div>
+                      {leaders.length > 0 && (
+                        <SidebarMenu>{leaders.map(({ conversation, role }) => row(conversation, role))}</SidebarMenu>
+                      )}
+                      {teammates.length > 0 && (
+                        <SidebarMenuSub>{teammates.map(({ conversation, role }) => row(conversation, role, true))}</SidebarMenuSub>
+                      )}
+                    </SidebarMenuItem>
+                  )
+                })}
+                {sessions.map((conversation) => row(
+                  conversation,
+                  conversation.team_role ?? teamByConversation.get(conversation.id)?.member.role,
+                ))}
+              </SidebarMenu>
               {!searching && projectTeams.length === 0 && sessions.length === 0 && (
-                <div className="kubecode-empty-small">
+                <SidebarEmpty>
                   {projectConversations.length
                     ? t('kubecode.noMatchingSessions')
                     : t('kubecode.noSessions')}
-                </div>
+                </SidebarEmpty>
               )}
             </section>
           )
         })}
         {projectGroups.length === 0 && (
-          <div className="kubecode-empty-small">
+          <SidebarEmpty>
             {searching ? t('kubecode.noMatchingSessions') : t('kubecode.selectProject')}
-          </div>
+          </SidebarEmpty>
         )}
-      </div>
+      </SidebarGroupContent>
       <DeleteTeamDialog
         onConfirm={async () => {
           if (!deleteTarget) return
@@ -354,7 +365,18 @@ export function SessionSidebarList({
         teamName={deleteTarget?.teamName ?? ''}
         teammateCount={deleteTarget?.teammateCount ?? 0}
       />
-    </div>
+    </SidebarGroup>
+  )
+}
+
+/** An empty execution history: the official Empty, compact for the navigation. */
+function SidebarEmpty({ children }: { children: ReactNode }) {
+  return (
+    <Empty className="p-4">
+      <EmptyHeader>
+        <EmptyDescription>{children}</EmptyDescription>
+      </EmptyHeader>
+    </Empty>
   )
 }
 
@@ -393,70 +415,52 @@ function SessionRow({
   const title = conversation.title || t('kubecode.untitledSession')
   const wechatBound = Boolean(wechat?.linked && wechat.boundConversationId === conversation.id)
   const unbindable = wechatUnbindableReason(conversation)
-  return (
-    <div
-      className="kubecode-session-row-shell"
-      data-archived={conversation.archived}
-      data-team-child={nested}
-    >
-      <Button
-        aria-label={wechatBound
-          ? `${title}, ${t('kubecode.wechat.activeSessionMarker')}`
-          : title}
-        className="kubecode-session-row"
-        data-active={conversation.id === activeConversationId}
-        variant="ghost"
-        onClick={() => onSelect(conversation.id)}
-      >
-        <AiAgentIcon agent={conversation.agent_id} size={18} />
-        <span className="kubecode-session-row-copy">
-          <span>{conversation.title || t('kubecode.untitledSession')}</span>
-        </span>
-        {wechatBound && (
-          <Icon
-            className="kubecode-session-wechat-marker"
-            role="status"
-            size="secondary"
-            source={RiWechatLine}
-          />
-        )}
-        {conversation.latest_run_status && (
+  const label = wechatBound ? `${title}, ${t('kubecode.wechat.activeSessionMarker')}` : title
+  const active = conversation.id === activeConversationId
+  const content = (
+    <>
+      <AiAgentIcon agent={conversation.agent_id} size={18} />
+      <span className="min-w-0 flex-1 truncate">{title}</span>
+      {wechatBound && (
+        <Icon
+          className="kubecode-session-wechat-marker"
+          role="status"
+          size="secondary"
+          source={RiWechatLine}
+        />
+      )}
+      {conversation.latest_run_status && (
+        <>
           <Icon
             role="status"
             size="secondary"
             source={RUN_STATUS_ICONS[conversation.latest_run_status].Icon}
           />
-        )}
-        <span
-          aria-label={conversation.latest_run_status
-            ? runStatusLabel(conversation.latest_run_status, t)
-            : undefined}
-          className="kubecode-navigator-status"
-          data-status={conversation.latest_run_status ?? undefined}
-          role={conversation.latest_run_status ? 'status' : undefined}
-        />
-      </Button>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            aria-label={t('kubecode.sessionListActions', {
-              title: conversation.title || t('kubecode.untitledSession'),
-            })}
-            className="kubecode-session-row-actions"
-            size="icon-xs"
-            variant="ghost"
-          >
-            <Ellipsis  size={16}/>
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start">
+          <span className="sr-only">{runStatusLabel(conversation.latest_run_status, t)}</span>
+        </>
+      )}
+    </>
+  )
+  const actions = (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <SidebarMenuAction
+          aria-label={t('kubecode.sessionListActions', { title })}
+          // Centred on the taller touch-sized row.
+          className="pointer-coarse:translate-y-[calc((var(--ws-touch-target)-2rem)/2)]"
+        >
+          <Ellipsis aria-hidden="true" />
+        </SidebarMenuAction>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start">
+        <DropdownMenuGroup>
           <DropdownMenuItem onSelect={() => void archive(conversation)}>
-            <Archive  size={16}/>
+            <Archive aria-hidden="true" />
             {conversation.archived ? t('kubecode.unarchiveSession') : t('kubecode.archiveSession')}
           </DropdownMenuItem>
           {conversation.provider_session_id && (
             <DropdownMenuItem onSelect={() => void fork(conversation)}>
-              <GitFork  size={16}/> {t('kubecode.forkSession')}
+              <GitFork aria-hidden="true" /> {t('kubecode.forkSession')}
             </DropdownMenuItem>
           )}
           {wechat?.linked && (wechatBound ? (
@@ -466,7 +470,7 @@ function SessionRow({
                 void wechat.unbind()
               }}
             >
-              <RiWechatLine size={16} /> {t('kubecode.wechat.stopUsingForWeChat')}
+              <RiWechatLine aria-hidden="true" /> {t('kubecode.wechat.stopUsingForWeChat')}
             </DropdownMenuItem>
           ) : (
             <DropdownMenuItem
@@ -476,7 +480,7 @@ function SessionRow({
                 void wechat.bind(conversation.id)
               }}
             >
-              <RiWechatLine size={16} />
+              <RiWechatLine aria-hidden="true" />
               {unbindable
                 ? t('kubecode.wechat.useForWeChatUnavailable', {
                   reason: t(`kubecode.wechat.unbindable.${unbindable}`),
@@ -484,17 +488,38 @@ function SessionRow({
                 : t('kubecode.wechat.useForWeChat')}
             </DropdownMenuItem>
           ))}
-          {(!teamRole || teamRole === 'leader') && (
-            <>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem variant="destructive" onSelect={() => void remove(conversation)}>
-                <Trash2  size={16}/> {t('kubecode.delete')}
-              </DropdownMenuItem>
-            </>
-          )}
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </div>
+        </DropdownMenuGroup>
+        {(!teamRole || teamRole === 'leader') && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem variant="destructive" onSelect={() => void remove(conversation)}>
+              <Trash2 aria-hidden="true" /> {t('kubecode.delete')}
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+  // A teammate sits under its Leader, in the official sub-menu.
+  if (nested) {
+    return (
+      <SidebarMenuSubItem data-archived={conversation.archived}>
+        <SidebarMenuSubButton asChild className="pointer-coarse:min-h-(--ws-touch-target) pr-8" isActive={active}>
+          <button aria-label={label} type="button" onClick={() => onSelect(conversation.id)}>
+            {content}
+          </button>
+        </SidebarMenuSubButton>
+        {actions}
+      </SidebarMenuSubItem>
+    )
+  }
+  return (
+    <SidebarMenuItem data-archived={conversation.archived}>
+      <SidebarMenuButton className="pointer-coarse:min-h-(--ws-touch-target)" aria-label={label} isActive={active} onClick={() => onSelect(conversation.id)}>
+        {content}
+      </SidebarMenuButton>
+      {actions}
+    </SidebarMenuItem>
   )
 }
 
@@ -521,11 +546,11 @@ function SessionFilters({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button aria-label={t('kubecode.sessionFilters')} size="icon-xs" variant="ghost">
-          <Filter  size={16}/>
-        </Button>
+        <SidebarGroupAction aria-label={t('kubecode.sessionFilters')} title={t('kubecode.sessionFilters')}>
+          <Filter aria-hidden="true" />
+        </SidebarGroupAction>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="kubecode-session-filter-menu">
+      <DropdownMenuContent align="end" className="w-56">
         <DropdownMenuLabel>{t('kubecode.filterByAgent')}</DropdownMenuLabel>
         <DropdownMenuRadioGroup
           value={preferences.agent}

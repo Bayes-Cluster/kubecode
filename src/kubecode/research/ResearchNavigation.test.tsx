@@ -1,6 +1,8 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
+import { SidebarProvider } from '@/components/ui/sidebar'
+
 import type { ResearchSummary, WorkspaceEvent } from '../api'
 import { detailFixture, fakeApi } from './researchFixtures'
 import { NewResearchDialog } from './NewResearchDialog'
@@ -17,9 +19,11 @@ describe('ResearchNavigator', () => {
   const base = { activeResearchId: null, items: [], onNew: vi.fn(), onReload: vi.fn(), onSelect: vi.fn(), t }
 
   it('covers loading, error with retry, and empty states', () => {
-    const { rerender } = render(<ResearchNavigator {...base} status="loading" />)
+    const { rerender } = render(<ResearchNavigator {...base} status="loading" />, { wrapper: SidebarProvider })
     expect(screen.getByRole('status')).toHaveTextContent('kubecode.research.loading')
+    expect(screen.getByRole('status').querySelector('svg.animate-spin')).not.toBeNull()
     rerender(<ResearchNavigator {...base} status="error" />)
+    expect(screen.getByRole('alert')).toHaveAttribute('data-slot', 'alert')
     fireEvent.click(screen.getByRole('button', { name: 'kubecode.retry' }))
     expect(base.onReload).toHaveBeenCalled()
     rerender(<ResearchNavigator {...base} status="ready" />)
@@ -38,8 +42,11 @@ describe('ResearchNavigator', () => {
         onSelect={onSelect}
         status="ready"
       />,
+      { wrapper: SidebarProvider },
     )
     expect(screen.getByRole('button', { name: /Second/ })).toHaveAttribute('aria-current', 'true')
+    expect(screen.getByRole('button', { name: /Second/ })).toHaveAttribute('data-slot', 'sidebar-menu-button')
+    expect(screen.getByRole('button', { name: 'kubecode.research.new' })).toHaveAttribute('data-slot', 'sidebar-group-action')
     expect(screen.getByRole('button', { name: /First/ })).not.toHaveAttribute('aria-current')
     expect(screen.getByText('kubecode.research.status.resolved')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /First/ }))
