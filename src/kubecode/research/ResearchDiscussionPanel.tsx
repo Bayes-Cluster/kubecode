@@ -125,7 +125,7 @@ export function ResearchDiscussionPanel({
         {sessions.length > 0 && (
           <ItemGroup>
             {sessions.map((link) => (
-              <Item key={link.ref_id} size="sm" variant="outline">
+              <Item key={link.ref_id} role="listitem" size="sm" variant="outline">
                 <ItemContent>
                   <ItemTitle className="[overflow-wrap:anywhere]">
                     {link.title || t('kubecode.untitledSession')}
@@ -221,7 +221,7 @@ export function ResearchDiscussionPanel({
         {entries.length > 0 && (
           <ItemGroup className="gap-2">
             {entries.map((item) => (
-              <Item data-kind={item.kind} key={item.id} size="sm" variant={item.kind === 'decision' ? 'outline' : 'muted'}>
+              <Item data-kind={item.kind} key={item.id} role="listitem" size="sm" variant={item.kind === 'decision' ? 'outline' : 'muted'}>
                 <ItemContent>
                   <ItemDescription className="flex flex-wrap items-center gap-2">
                     <StatusBadge tone={item.kind === 'decision' ? 'ok' : 'muted'}>

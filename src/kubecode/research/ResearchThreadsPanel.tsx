@@ -44,7 +44,7 @@ export function ResearchThreadsPanel({
       ) : (
         <ItemGroup>
           {linked.map((thread) => (
-            <Item key={thread.id} size="sm" variant="outline">
+            <Item key={thread.id} role="listitem" size="sm" variant="outline">
               <ItemMedia><MessageSquareText aria-hidden /></ItemMedia>
               <ItemContent>
                 <ItemTitle className="[overflow-wrap:anywhere]">{thread.title}</ItemTitle>

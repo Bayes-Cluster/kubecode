@@ -1,7 +1,7 @@
 import { Eye, EyeOff } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { Button } from '@/components/ui/button'
+import { Toggle } from '@/components/ui/toggle'
 import type { Translator } from '@/lib/i18n'
 
 import type { Entry, KubecodeApi } from './api'
@@ -124,21 +124,19 @@ export function ProjectFilePicker({
       emptyMessage={t('kubecode.noFilesFound')}
       footer={(
         <div className="kubecode-path-picker-footer">
-          <Button
+          <Toggle
             aria-label={includeExcluded
               ? t('kubecode.hideExcludedFiles')
               : t('kubecode.showExcludedFiles')}
-            aria-pressed={includeExcluded}
+            pressed={includeExcluded}
             size="sm"
-            type="button"
-            variant="ghost"
-            onClick={() => setIncludeExcluded((current) => !current)}
+            onPressedChange={setIncludeExcluded}
           >
-            {includeExcluded ? <Eye  size={16}/> : <EyeOff  size={16}/>}
+            {includeExcluded ? <Eye /> : <EyeOff />}
             {includeExcluded
               ? t('kubecode.hideExcludedFiles')
               : t('kubecode.showExcludedFiles')}
-          </Button>
+          </Toggle>
         </div>
       )}
       loading={loading}

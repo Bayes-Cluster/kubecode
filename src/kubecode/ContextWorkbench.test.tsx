@@ -731,6 +731,10 @@ describe('ContextWorkbench', () => {
 
     fireEvent.keyDown(document, { key: 'p', metaKey: true })
     const picker = await screen.findByRole('dialog', { name: 'Search files' })
+    const excluded = within(picker).getByRole('button', { name: 'Show hidden, ignored, and generated files' })
+    expect(excluded).toHaveAttribute('data-slot', 'toggle')
+    fireEvent.click(excluded)
+    expect(within(picker).getByRole('button', { name: 'Hide hidden, ignored, and generated files' })).toHaveAttribute('aria-pressed', 'true')
     fireEvent.click(await within(picker).findByRole('option', { name: /README\.md/ }))
 
     expect(await screen.findByText('# Demo')).toBeInTheDocument()
