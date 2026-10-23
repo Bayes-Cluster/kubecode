@@ -32,6 +32,7 @@ import { filterMentions, insertMention, mentionQueryAt, type MentionOption } fro
 import { Icon } from '@/kubecode/icons'
 import { WORKSPACE_COMMAND_ICONS } from '@/kubecode/icons/workspaceIcons'
 import { cn } from '@/lib/utils'
+import { useCoarsePointer } from './useCoarsePointer'
 
 export type ConversationComposerProps = {
   /** Accessible name of the text box. */
@@ -74,12 +75,6 @@ function assignRef<T>(ref: Ref<T> | undefined, value: T) {
 }
 
 /** A touch keyboard has no Shift key: there Enter breaks the line and the arrow sends. */
-function prefersTouchEntry(): boolean {
-  return typeof window !== 'undefined'
-    && typeof window.matchMedia === 'function'
-    && window.matchMedia('(pointer: coarse)').matches
-}
-
 /**
  * The composer of General and DMs on the official Prompt Input (ADR 0242):
  * `PromptInputTextarea`, `PromptInputTools`, `PromptInputSubmit`, and the
@@ -117,6 +112,7 @@ export function ConversationComposer({
     assignRef(textareaRef, node)
   }, [textareaRef])
   const composing = useRef(false)
+  const coarse = useCoarsePointer()
   const [caret, setCaret] = useState(0)
   const [active, setActive] = useState(0)
   const [navigated, setNavigated] = useState(false)
@@ -205,7 +201,7 @@ export function ConversationComposer({
       // The Prompt Input never submits by itself: the composer decides here.
       if (event.shiftKey || event.altKey) return
       // On a touch keyboard Enter is a line break; the arrow sends. A modifier chord still sends there.
-      if (prefersTouchEntry() && !event.ctrlKey && !event.metaKey) {
+      if (coarse && !event.ctrlKey && !event.metaKey) {
         event.preventDefault()
         const box = event.currentTarget
         const start = box.selectionStart ?? value.length
