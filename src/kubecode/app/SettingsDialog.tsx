@@ -6,6 +6,7 @@ import {
   Info,
   RotateCw,
   TerminalSquare,
+  X,
 } from 'lucide-react'
 import { trackEvent } from '@/lib/telemetry'
 
@@ -13,6 +14,7 @@ import { AiAgentIcon } from '@/components/AiAgentIcon'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogHeader,
@@ -206,9 +208,22 @@ export function SettingsDialog({
     trackEvent('kubecode_notification_preference_changed', { category, setting: 'sound', value: sound })
   }
 
+  const sectionList = (
+    <TabsList
+      aria-label={t('kubecode.settings')}
+      className={wide ? 'h-auto w-52 shrink-0 justify-start self-stretch rounded-none p-3' : 'h-auto min-w-0 flex-1 justify-start overflow-x-auto rounded-none p-2'}
+    >
+      {SETTINGS_SECTIONS.map((item) => (
+        <TabsTrigger className="flex-none" key={item} value={item}>
+          {sectionTitle(item, false)}
+        </TabsTrigger>
+      ))}
+    </TabsList>
+  )
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex h-[min(620px,calc(100dvh-2rem))] w-[calc(100vw-2rem)] max-w-[980px] flex-col gap-0 overflow-hidden p-0 sm:max-w-[980px]">
+      <DialogContent showCloseButton={wide} className="flex h-[min(620px,calc(100dvh-2rem))] w-[calc(100vw-2rem)] max-w-[980px] flex-col gap-0 overflow-hidden p-0 sm:max-w-[980px]">
         <DialogHeader className="sr-only">
           <DialogTitle>{t('kubecode.settings')}</DialogTitle>
           <DialogDescription>{t('kubecode.settingsDescription')}</DialogDescription>
@@ -219,16 +234,17 @@ export function SettingsDialog({
           value={section}
           onValueChange={(value) => setSection(value as SettingsSection)}
         >
-          <TabsList
-            aria-label={t('kubecode.settings')}
-            className={wide ? 'h-auto w-52 shrink-0 justify-start self-stretch rounded-none p-3' : 'h-auto w-full shrink-0 justify-start overflow-x-auto rounded-none p-2 pr-12'}
-          >
-            {SETTINGS_SECTIONS.map((item) => (
-              <TabsTrigger className="flex-none" key={item} value={item}>
-                {sectionTitle(item, false)}
-              </TabsTrigger>
-            ))}
-          </TabsList>
+          {wide ? sectionList : (
+            // On phones the close button gets its own column so the scrolling strip never runs under it.
+            <div className="flex shrink-0 items-center gap-1 bg-muted pr-2">
+              {sectionList}
+              <DialogClose asChild>
+                <Button aria-label={t('kubecode.vocab.command.close')} size="icon-sm" variant="ghost">
+                  <X />
+                </Button>
+              </DialogClose>
+            </div>
+          )}
           {SETTINGS_SECTIONS.map((item) => (
             <TabsContent className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4 md:p-8" key={item} value={item}>
               <div className="flex flex-col gap-6">

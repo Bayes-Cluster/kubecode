@@ -4,7 +4,7 @@ import { useEffect, useId, useState } from 'react'
 import { IconButton } from '@/components/workspace/IconButton'
 import { StatusBadge } from '@/components/workspace/StatusBadge'
 
-import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel, FieldLegend, FieldSet } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
@@ -71,24 +71,23 @@ export function MemberDefaultsPanel({ agents, api, onLoaded, t }: MemberDefaults
   }, [api])
 
   if (!saved) {
-    return (
-      <div>
-        <p className="kubecode-research-muted" role={loadFailed ? 'alert' : 'status'}>
-          {loadFailed ? t('kubecode.members.defaults.loadFailed') : t('kubecode.members.loading')}
-        </p>
-        {loadFailed && (
-          <Button
-            size="xs"
-            variant="outline"
-            onClick={() => {
-              setLoadFailed(false)
-              api.memberDefaults().then(adopt, () => setLoadFailed(true))
-            }}
-          >
-            {t('kubecode.members.retryLoad')}
-          </Button>
-        )}
-      </div>
+    const retry = () => {
+      setLoadFailed(false)
+      api.memberDefaults().then(adopt, () => setLoadFailed(true))
+    }
+    return loadFailed ? (
+      <Alert variant="destructive">
+        <CircleAlert />
+        <AlertTitle>{t('kubecode.members.defaults.loadFailed')}</AlertTitle>
+        <AlertDescription>
+          <Button size="sm" variant="outline" onClick={retry}>{t('kubecode.members.retryLoad')}</Button>
+        </AlertDescription>
+      </Alert>
+    ) : (
+      <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
+        <Spinner aria-hidden="true" />
+        {t('kubecode.members.loading')}
+      </p>
     )
   }
 

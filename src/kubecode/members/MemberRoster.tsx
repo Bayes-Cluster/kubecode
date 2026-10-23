@@ -305,10 +305,10 @@ export function MemberRoster({
 
   return (
     <section aria-label={t('kubecode.members.title')} className="flex flex-col gap-4">
-      <Item size="sm">
-        <ItemContent>
+      <Item className="flex-wrap" size="sm">
+        <ItemContent className="min-w-48">
           <ItemTitle><h3>{t('kubecode.members.current.title')}</h3></ItemTitle>
-          <ItemDescription>{t('kubecode.members.current.description')}</ItemDescription>
+          <ItemDescription className="line-clamp-none">{t('kubecode.members.current.description')}</ItemDescription>
         </ItemContent>
         <ItemActions>
           <Button disabled={busy} size="sm" variant="outline" onClick={startAdd}>

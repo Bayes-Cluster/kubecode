@@ -24,7 +24,7 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 | --- | ---: |
 | migrated | 81 |
 | partial | 85 |
-| handcrafted | 66 |
+| handcrafted | 67 |
 | specialist-engine | 4 |
 | exception | 1 |
 | not-applicable | 8 |
@@ -41,7 +41,7 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 | #258/#262 | 2 |
 | #259 | 46 |
 | #260 | 28 |
-| #261 | 33 |
+| #261 | 34 |
 | #262 | 34 |
 
 ## Shell
@@ -369,6 +369,7 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 ## Session
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
+| New Session dialog (agent/mode choice grid, fields, empty placeholders) | `src/kubecode/app/NewSessionDialog.tsx:174-278` | handcrafted role=group choice buttons, raw label wrappers, kubecode-empty-small | ToggleGroup, Field, Empty | WorkbenchShell, Session start | #261 | handcrafted | Listed in the #260 scope; handed to #261 because its baseline CSS and the Session-start flow belong to G |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Message turn (bubble, copy/edit/retry/branch) | `src/components/AiMessage.tsx:11-31,446` | AI Elements Message + Collapsible/Badge/Button | AI Elements Message | Session timeline | #261 | migrated | — |
 | User prompt inline editor | `src/components/AiMessage.tsx:131-160` | official Textarea/Button in handcrafted wrapper | Textarea + Button (or PromptInput) | AiMessage | #261 | partial | — |
@@ -444,7 +445,7 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| New file/folder EntryDialog | `src/kubecode/ContextWorkbench.tsx:870-1000,588-595` | official Dialog + Input | Dialog + Field | ContextWorkbench | #262 | partial | — |
+| New file/folder EntryDialog | `src/kubecode/ContextWorkbench.tsx:870-1000,588-595` | official Dialog + Input | Dialog + Field | ContextWorkbench | #262 | partial | Owns the `.kubecode-path-picker-heading` DialogTitle/DialogDescription overrides (re-owned from #260) |
 | Quick open with ProjectFilePicker/PathPicker | `src/kubecode/ContextWorkbench.tsx:600-624; src/kubecode/ProjectFilePicker.tsx:29` | official Dialog wrapping handcrafted combobox/listbox | CommandDialog/Command | ContextWorkbench, ComposerAddMenu, ProjectDialog | #262 | partial | — |
 
 ## Editor

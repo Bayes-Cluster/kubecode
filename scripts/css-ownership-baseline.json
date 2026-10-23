@@ -194,49 +194,49 @@
       "text": ".kubecode-path-picker-heading [data-slot='dialog-title'] { font-size: 15px; }",
       "context": ".kubecode-path-picker-heading [data-slot='dialog-title']",
       "kind": "official-internal",
-      "owner": "#260"
+      "owner": "#262"
     },
     {
       "file": "src/kubecode/kubecode.css",
       "text": ".kubecode-path-picker-heading [data-slot='dialog-description'] { font-size: 12px; }",
       "context": ".kubecode-path-picker-heading [data-slot='dialog-description']",
       "kind": "official-internal",
-      "owner": "#260"
+      "owner": "#262"
     },
     {
       "file": "src/kubecode/kubecode.css",
       "text": "scrollbar-color: transparent transparent !important;",
       "context": ".kubecode-message-history, .kubecode-composer-editor, .kubecode-virtual-message-history, .kubecode-virtual-message-history [data-virtuoso-scroller='true']",
       "kind": "important",
-      "owner": "#260"
+      "owner": "#257"
     },
     {
       "file": "src/kubecode/kubecode.css",
       "text": "scrollbar-width: none !important;",
       "context": ".kubecode-message-history, .kubecode-composer-editor, .kubecode-virtual-message-history, .kubecode-virtual-message-history [data-virtuoso-scroller='true']",
       "kind": "important",
-      "owner": "#260"
+      "owner": "#257"
     },
     {
       "file": "src/kubecode/kubecode.css",
       "text": "display: none !important;",
       "context": ".kubecode-message-history::-webkit-scrollbar, .kubecode-composer-editor::-webkit-scrollbar, .kubecode-virtual-message-history::-webkit-scrollbar, .kubecode-virtual-message-history [data-virtuoso-scroller='true']::-webkit-scrollbar",
       "kind": "important",
-      "owner": "#260"
+      "owner": "#257"
     },
     {
       "file": "src/kubecode/kubecode.css",
       "text": "height: 0 !important;",
       "context": ".kubecode-message-history::-webkit-scrollbar, .kubecode-composer-editor::-webkit-scrollbar, .kubecode-virtual-message-history::-webkit-scrollbar, .kubecode-virtual-message-history [data-virtuoso-scroller='true']::-webkit-scrollbar",
       "kind": "important",
-      "owner": "#260"
+      "owner": "#257"
     },
     {
       "file": "src/kubecode/kubecode.css",
       "text": "width: 0 !important;",
       "context": ".kubecode-message-history::-webkit-scrollbar, .kubecode-composer-editor::-webkit-scrollbar, .kubecode-virtual-message-history::-webkit-scrollbar, .kubecode-virtual-message-history [data-virtuoso-scroller='true']::-webkit-scrollbar",
       "kind": "important",
-      "owner": "#260"
+      "owner": "#257"
     },
     {
       "file": "src/kubecode/kubecode.css",
