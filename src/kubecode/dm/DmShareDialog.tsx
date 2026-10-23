@@ -1,14 +1,21 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 
 import { MarkdownContent } from '@/components/MarkdownContent'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Field, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet } from '@/components/ui/field'
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { DecisionButton } from '@/components/workspace/DecisionButton'
 import { ReferenceChip } from '@/components/workspace/ReferenceChip'
@@ -24,6 +31,8 @@ import { newClientMessageId } from '../session/sessionModel'
 
 /** Turns one share may carry (the server enforces the same bound). */
 const MAX_TURNS = 6
+/** The Select cannot hold an empty value: "No Task" has its own. */
+const NO_TASK = '__none__'
 
 export type DmShareDialogProps = {
   api: KubecodeApi
@@ -53,30 +62,42 @@ function DmSharePreviewCard({ preview, research, t }: { preview: DmSharePreview;
     : managerView
   const task = preview.task_id ? research.find((item) => item.id === preview.task_id) : undefined
   return (
-    <section aria-label={t('kubecode.dm.sharePreview')} className="kubecode-dm-preview">
-      <Identity size="sm" view={researcherView(t)} />
-      <p className="kubecode-message-recipients">
-        <span className="kubecode-message-recipients-label">{t('kubecode.channel.to')}</span>
-        {shown && <Identity size="sm" view={shown} />}
-      </p>
-      {preview.task_id && (
-        <ReferenceChip
-          kind="task"
-          kindLabel={t('kubecode.vocab.object.task')}
-          title={task?.title ?? t('kubecode.reference.untitled', { kind: t('kubecode.vocab.object.task') })}
-        />
-      )}
-      <div className="kubecode-message-body">
+    <Card aria-label={t('kubecode.dm.sharePreview')} className="kubecode-dm-preview gap-3 py-3" role="region">
+      <CardHeader className="flex flex-wrap items-center gap-2 px-3">
+        <Identity size="sm" view={researcherView(t)} />
+        <p className="kubecode-message-recipients">
+          <span className="kubecode-message-recipients-label">{t('kubecode.channel.to')}</span>
+          {shown && <Identity size="sm" view={shown} />}
+        </p>
+        {preview.task_id && (
+          <ReferenceChip
+            kind="task"
+            kindLabel={t('kubecode.vocab.object.task')}
+            title={task?.title ?? t('kubecode.reference.untitled', { kind: t('kubecode.vocab.object.task') })}
+          />
+        )}
+      </CardHeader>
+      <CardContent className="kubecode-message-body px-3">
         <MarkdownContent content={preview.text} images="text" />
-      </div>
-      {manager && reachable
-        ? <p className="kubecode-research-muted">{t('kubecode.dm.shareRecipients', { name: manager.name })}</p>
-        : <p className="kubecode-composer-warning" role="status">{t('kubecode.channel.noRecipient')}</p>}
-      <details>
-        <summary>{t('kubecode.dm.shareExactText')}</summary>
-        <pre>{preview.text}</pre>
-      </details>
-    </section>
+      </CardContent>
+      <CardFooter className="flex flex-col items-stretch gap-2 px-3">
+        {manager && reachable
+          ? <p className="text-sm text-muted-foreground">{t('kubecode.dm.shareRecipients', { name: manager.name })}</p>
+          : (
+            <Alert role="status">
+              <AlertDescription>{t('kubecode.channel.noRecipient')}</AlertDescription>
+            </Alert>
+          )}
+        <Collapsible>
+          <CollapsibleTrigger asChild>
+            <Button size="xs" variant="ghost">{t('kubecode.dm.shareExactText')}</Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent forceMount className="data-[state=closed]:hidden">
+            <pre className="whitespace-pre-wrap break-words text-xs">{preview.text}</pre>
+          </CollapsibleContent>
+        </Collapsible>
+      </CardFooter>
+    </Card>
   )
 }
 
@@ -97,6 +118,7 @@ export function DmShareDialog({
   t,
   turns,
 }: DmShareDialogProps) {
+  const fieldId = useId()
   const [chosen, setChosen] = useState<string[]>([])
   const [note, setNote] = useState('')
   const [taskId, setTaskId] = useState('')
@@ -164,42 +186,60 @@ export function DmShareDialog({
           <DialogTitle>{t('kubecode.dm.shareTitle', { name: member.name })}</DialogTitle>
           <DialogDescription>{t('kubecode.dm.shareHelp')}</DialogDescription>
         </DialogHeader>
-        <fieldset className="kubecode-dm-turns">
-          <legend>{t('kubecode.dm.shareChoose')}</legend>
-          <p className="kubecode-research-muted">{t('kubecode.dm.shareCount', { count: chosen.length, max: MAX_TURNS })}</p>
-          {turns.length === 0 && <p className="kubecode-research-muted">{t('kubecode.dm.empty')}</p>}
-          {turns.map((turn) => (
-            <label key={turn.run_id}>
-              <input
-                checked={chosen.includes(turn.run_id)}
-                disabled={!chosen.includes(turn.run_id) && chosen.length >= MAX_TURNS}
-                type="checkbox"
-                onChange={() => toggle(turn.run_id)}
-              />
-              <span>{turn.user.slice(0, 120) || turn.run_id.slice(0, 8)}</span>
-            </label>
-          ))}
-        </fieldset>
-        <label className="kubecode-dm-field">
-          <span>{t('kubecode.dm.shareNote')}</span>
-          <Textarea rows={2} value={note} onChange={(event) => changed(() => setNote(event.target.value))} />
-        </label>
-        {research.length > 0 && (
-          <label className="kubecode-dm-field">
-            <span>{t('kubecode.dm.shareTask')}</span>
-            <select
-              className="kubecode-channel-select"
-              value={taskId}
-              onChange={(event) => changed(() => setTaskId(event.target.value))}
-            >
-              <option value="">{t('kubecode.dm.shareNoTask')}</option>
-              {research.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
-            </select>
-          </label>
-        )}
+        <FieldGroup className="gap-4">
+          <FieldSet className="kubecode-dm-turns">
+            <FieldLegend variant="label">{t('kubecode.dm.shareChoose')}</FieldLegend>
+            <FieldDescription>{t('kubecode.dm.shareCount', { count: chosen.length, max: MAX_TURNS })}</FieldDescription>
+            {turns.length === 0 && <FieldDescription>{t('kubecode.dm.empty')}</FieldDescription>}
+            {turns.map((turn) => {
+              const checked = chosen.includes(turn.run_id)
+              const id = `${fieldId}-turn-${turn.run_id}`
+              return (
+                <Field key={turn.run_id} orientation="horizontal">
+                  <Checkbox
+                    checked={checked}
+                    disabled={!checked && chosen.length >= MAX_TURNS}
+                    id={id}
+                    onCheckedChange={() => toggle(turn.run_id)}
+                  />
+                  <FieldLabel className="min-w-0 font-normal [overflow-wrap:anywhere]" htmlFor={id}>
+                    {turn.user.slice(0, 120) || turn.run_id.slice(0, 8)}
+                  </FieldLabel>
+                </Field>
+              )
+            })}
+          </FieldSet>
+          <Field>
+            <FieldLabel htmlFor={`${fieldId}-note`}>{t('kubecode.dm.shareNote')}</FieldLabel>
+            <Textarea id={`${fieldId}-note`} rows={2} value={note} onChange={(event) => changed(() => setNote(event.target.value))} />
+          </Field>
+          {research.length > 0 && (
+            <Field>
+              <FieldLabel htmlFor={`${fieldId}-task`}>{t('kubecode.dm.shareTask')}</FieldLabel>
+              <Select
+                value={taskId || NO_TASK}
+                onValueChange={(next) => changed(() => setTaskId(next === NO_TASK ? '' : next))}
+              >
+                <SelectTrigger className="w-full" id={`${fieldId}-task`}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectItem value={NO_TASK}>{t('kubecode.dm.shareNoTask')}</SelectItem>
+                    {research.map((item) => <SelectItem key={item.id} value={item.id}>{item.title}</SelectItem>)}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </Field>
+          )}
+        </FieldGroup>
         {preview && <DmSharePreviewCard preview={preview} research={research} t={t} />}
-        {error && <p className="kubecode-research-error" role="alert">{error}</p>}
-        <div className="kubecode-work-command-row">
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+        <DialogFooter>
           {preview ? (
             <DecisionButton
               busy={busy}
@@ -235,7 +275,7 @@ export function DmShareDialog({
           <Button size="sm" variant="ghost" onClick={() => close(false)}>
             {t('kubecode.members.cancel')}
           </Button>
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )

@@ -278,6 +278,12 @@ describe('ChannelWorkspace', () => {
     s.calls.listChannelMessages.mockRejectedValue(new Error('down'))
     view(s)
     await waitFor(() => expect(screen.getAllByText(/The conversation could not be loaded/).length).toBeGreaterThan(0))
+    // Each failure is the official Alert with its Retry (#257).
+    await waitFor(() => {
+      const alert = screen.getAllByRole('alert').find((node) => /could not be loaded/.test(node.textContent ?? ''))
+      expect(alert).toHaveAttribute('data-slot', 'alert')
+      expect(within(alert as HTMLElement).getByRole('button', { name: 'Retry' })).toBeInTheDocument()
+    })
     const bare = { ...s.api, listChannels: undefined, listChannelMessages: undefined } as unknown as KubecodeApi
     render(shell(<ChannelWorkspace api={bare} connectionState="live" conversations={[]} events={[]} projectId="p1" research={[]} t={t} />))
   })
@@ -433,7 +439,7 @@ describe('ChannelWorkspace Tasks and references', () => {
     fireEvent.change(box(), { target: { value: 'unrelated' } })
     send()
     expect(await screen.findByText("Sent. It isn't about Pruning, so it isn't shown here.")).toBeInTheDocument()
-    fireEvent.click(within(screen.getByText(/isn't shown here/).closest('p') as HTMLElement).getByRole('button', { name: 'Show everything' }))
+    fireEvent.click(within(screen.getByText(/isn't shown here/).closest('[data-slot="alert"]') as HTMLElement).getByRole('button', { name: 'Show everything' }))
     expect(onFilterChange).toHaveBeenLastCalledWith(null)
     v.rerenderWith({ filter: null })
     expect(await screen.findByText('unrelated')).toBeInTheDocument()
