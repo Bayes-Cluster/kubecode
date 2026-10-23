@@ -113,7 +113,7 @@ test('@smoke workspace navigation returns to each place, through the inspector s
     for (const role of ['button', 'link'] as const) {
       await expect(mainPane.getByRole(role, { name: /^back\b|sessions/i }).and(page.locator(':not([aria-pressed])'))).toHaveCount(0)
     }
-    await expect(page.locator('.kubecode-history-nav')).toHaveJSProperty('open', false)
+    await expect(page.getByRole('button', { name: 'History and execution' })).toHaveAttribute('aria-expanded', 'false')
     const nav = workspaceNav(page)
     const order = await Promise.all([
       nav.getByRole('button', { name: 'General' }).first(),
@@ -258,8 +258,8 @@ test('@smoke workspace navigation returns to each place, through the inspector s
       await expect.poll(() => scrollOf(page, scroller)).toBe(left)
     }
     await page.setViewportSize({ width: 1440, height: 900 })
-    // The sheet was put away on the narrow window; on a wide one the navigation is a column again.
-    await toggleNavigation(page)
+    // The Sheet was put away on the narrow window; it never changed the wide-screen
+    // layout, so on a wide one the navigation is a column again.
     await expect(workspaceNav(page)).toBeVisible()
     await openGeneral(page)
     await expect(composer).toHaveValue(draft)
