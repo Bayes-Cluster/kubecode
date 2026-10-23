@@ -255,7 +255,8 @@ describe('useWorkspaceEventStream', () => {
 
     act(() => stream?.onopen?.(new Event('open')))
     expect(result.current.connectionState).toBe('live')
-    expect(result.current.lastSuccessfulSyncAt).toBeNull()
+    // The stream opened at the loaded cursor: Live is never paired with "Never".
+    expect(result.current.lastSuccessfulSyncAt).toEqual(expect.any(Number))
     act(() => stream?.onerror?.(new Event('error')))
     expect(result.current.connectionState).toBe('reconnecting')
     act(() => {
@@ -298,12 +299,14 @@ describe('useWorkspaceEventStream', () => {
     }))
     const stream = FakeEventSource.instances[0]
     act(() => stream?.onopen?.(new Event('open')))
+    const openedAt = result.current.lastSuccessfulSyncAt
     act(() => stream?.onerror?.(new Event('error')))
     act(() => stream?.onopen?.(new Event('open')))
 
     await act(async () => first.reject(new Error('offline snapshot failed')))
     expect(result.current.connectionState).toBe('reconnecting')
-    expect(result.current.lastSuccessfulSyncAt).toBeNull()
+    expect(openedAt).toEqual(expect.any(Number))
+    expect(result.current.lastSuccessfulSyncAt).toBe(openedAt)
 
     act(() => result.current.retry())
     expect(result.current.connectionState).toBe('resynchronizing')
