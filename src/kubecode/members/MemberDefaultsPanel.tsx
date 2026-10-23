@@ -1,12 +1,15 @@
-import { Lock, Plus, X } from 'lucide-react'
+import { CircleAlert, Lock, Plus, X } from 'lucide-react'
 import { useEffect, useId, useState } from 'react'
 
 import { IconButton } from '@/components/workspace/IconButton'
 import { StatusBadge } from '@/components/workspace/StatusBadge'
 
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Field, FieldDescription, FieldLabel, FieldLegend, FieldSet } from '@/components/ui/field'
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel, FieldLegend, FieldSet } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { Item, ItemActions, ItemContent, ItemDescription, ItemTitle } from '@/components/ui/item'
+import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 import type { Translator } from '@/lib/i18n'
 
@@ -68,24 +71,23 @@ export function MemberDefaultsPanel({ agents, api, onLoaded, t }: MemberDefaults
   }, [api])
 
   if (!saved) {
-    return (
-      <div>
-        <p className="kubecode-research-muted" role={loadFailed ? 'alert' : 'status'}>
-          {loadFailed ? t('kubecode.members.defaults.loadFailed') : t('kubecode.members.loading')}
-        </p>
-        {loadFailed && (
-          <Button
-            size="xs"
-            variant="outline"
-            onClick={() => {
-              setLoadFailed(false)
-              api.memberDefaults().then(adopt, () => setLoadFailed(true))
-            }}
-          >
-            {t('kubecode.members.retryLoad')}
-          </Button>
-        )}
-      </div>
+    const retry = () => {
+      setLoadFailed(false)
+      api.memberDefaults().then(adopt, () => setLoadFailed(true))
+    }
+    return loadFailed ? (
+      <Alert variant="destructive">
+        <CircleAlert />
+        <AlertTitle>{t('kubecode.members.defaults.loadFailed')}</AlertTitle>
+        <AlertDescription>
+          <Button size="sm" variant="outline" onClick={retry}>{t('kubecode.members.retryLoad')}</Button>
+        </AlertDescription>
+      </Alert>
+    ) : (
+      <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
+        <Spinner aria-hidden="true" />
+        {t('kubecode.members.loading')}
+      </p>
     )
   }
 
@@ -119,21 +121,25 @@ export function MemberDefaultsPanel({ agents, api, onLoaded, t }: MemberDefaults
   }
 
   return (
-    <section aria-label={t('kubecode.members.defaults.title')} className="kubecode-member-defaults">
-      <header className="kubecode-members-header">
-        <div>
-          <h3>{t('kubecode.members.defaults.title')}</h3>
-          <p className="kubecode-research-muted">{t('kubecode.members.defaults.description')}</p>
-        </div>
-        {dirty && <StatusBadge tone="warn">{t('kubecode.members.defaults.unsaved')}</StatusBadge>}
-      </header>
+    <section aria-label={t('kubecode.members.defaults.title')} className="flex flex-col gap-4">
+      <Item size="sm">
+        <ItemContent>
+          <ItemTitle><h3>{t('kubecode.members.defaults.title')}</h3></ItemTitle>
+          <ItemDescription>{t('kubecode.members.defaults.description')}</ItemDescription>
+        </ItemContent>
+        {dirty && (
+          <ItemActions>
+            <StatusBadge tone="warn">{t('kubecode.members.defaults.unsaved')}</StatusBadge>
+          </ItemActions>
+        )}
+      </Item>
       <form
-        className="kubecode-member-form"
         onSubmit={(event) => {
           event.preventDefault()
           if (!busy) void save()
         }}
       >
+        <FieldGroup>
         <Field>
           <FieldLabel htmlFor={`${fieldId}-provider`}>{t('kubecode.members.provider')}</FieldLabel>
           <ProviderSelect
@@ -149,8 +155,13 @@ export function MemberDefaultsPanel({ agents, api, onLoaded, t }: MemberDefaults
           <FieldLegend variant="label">{t('kubecode.members.defaults.config')}</FieldLegend>
           <FieldDescription>{t('kubecode.members.defaults.configHint')}</FieldDescription>
           {rows.map((row, index) => (
-            <div className="kubecode-member-config-row" key={index}>
+            <Field
+              data-invalid={row.key === lockedKey || undefined}
+              key={index}
+              orientation="horizontal"
+            >
               <Input
+                aria-describedby={row.key === lockedKey ? `${fieldId}-mode-locked` : undefined}
                 aria-invalid={row.key === lockedKey || undefined}
                 aria-label={`${t('kubecode.members.defaults.configKey')} ${index + 1}`}
                 value={row.key}
@@ -166,15 +177,21 @@ export function MemberDefaultsPanel({ agents, api, onLoaded, t }: MemberDefaults
                 label={`${t('kubecode.members.defaults.removeConfig')} ${index + 1}`}
                 onClick={() => setRows(rows.filter((_, i) => i !== index))}
               />
-            </div>
+            </Field>
           ))}
           {lockedKey !== null && (
-            <p className="kubecode-research-error" role="alert">
+            <FieldError id={`${fieldId}-mode-locked`}>
               {t('kubecode.members.defaults.modeLocked', { key: lockedKey.trim() })}
-            </p>
+            </FieldError>
           )}
-          <Button size="xs" type="button" variant="outline" onClick={() => setRows([...rows, { key: '', value: '' }])}>
-            <Plus aria-hidden size={14} />
+          <Button
+            className="self-start"
+            size="sm"
+            type="button"
+            variant="outline"
+            onClick={() => setRows([...rows, { key: '', value: '' }])}
+          >
+            <Plus data-icon="inline-start" />
             {t('kubecode.members.defaults.addConfig')}
           </Button>
         </FieldSet>
@@ -187,10 +204,10 @@ export function MemberDefaultsPanel({ agents, api, onLoaded, t }: MemberDefaults
             onChange={(event) => setInstructions(event.target.value)}
           />
         </Field>
-        <p className="kubecode-member-locked" role="note">
-          <Lock aria-hidden size={12} />
-          <span>{t('kubecode.members.defaults.boundary')}</span>
-        </p>
+        <Alert role="note">
+          <Lock />
+          <AlertDescription>{t('kubecode.members.defaults.boundary')}</AlertDescription>
+        </Alert>
         <FieldSet>
           <FieldLegend variant="label">{t('kubecode.members.defaults.templates')}</FieldLegend>
           <FieldDescription>{t('kubecode.members.defaults.templatesHint')}</FieldDescription>
@@ -208,13 +225,17 @@ export function MemberDefaultsPanel({ agents, api, onLoaded, t }: MemberDefaults
             </Field>
           ))}
         </FieldSet>
-        {message && (
-          <p className={message.tone === 'error' ? 'kubecode-research-error' : 'kubecode-research-muted'} role={message.tone === 'error' ? 'alert' : 'status'}>
-            {message.text}
-          </p>
-        )}
-        <div className="kubecode-work-command-row">
+        {message && (message.tone === 'error'
+          ? (
+            <Alert variant="destructive">
+              <CircleAlert />
+              <AlertDescription>{message.text}</AlertDescription>
+            </Alert>
+          )
+          : <FieldDescription role="status">{message.text}</FieldDescription>)}
+        <Field orientation="horizontal">
           <Button disabled={busy || !dirty || lockedKey !== null} size="sm" type="submit">
+            {busy && <Spinner aria-hidden="true" data-icon="inline-start" />}
             {t('kubecode.members.save')}
           </Button>
           {dirty && (
@@ -222,7 +243,8 @@ export function MemberDefaultsPanel({ agents, api, onLoaded, t }: MemberDefaults
               {t('kubecode.members.cancel')}
             </Button>
           )}
-        </div>
+        </Field>
+        </FieldGroup>
       </form>
     </section>
   )

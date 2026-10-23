@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Lock } from 'lucide-react'
 
 import { AiAgentIcon } from '@/components/AiAgentIcon'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Field, FieldGroup, FieldTitle } from '@/components/ui/field'
 import { StatusBadge } from '@/components/workspace/StatusBadge'
@@ -49,17 +50,17 @@ export function MemberPanel({ entry }: InspectorPanelProps<Extract<InspectorEntr
       icon={<AiAgentIcon agent={member.spec.agent_id} size={18} />}
       title={member.name}
     >
-      <div className="kubecode-member-profile">
+      <div className="flex flex-col gap-4">
         {/* The profile is already open: the name is not a way into it. */}
         <Identity view={{ ...memberView(member, t), memberId: undefined }} />
-        <FieldGroup className="kubecode-member-facts">
+        <FieldGroup className="gap-3">
           <Field orientation="horizontal">
             <FieldTitle>{t('kubecode.members.role')}</FieldTitle>
-            <span>{t(TEMPLATE_LABELS[member.template])}</span>
+            <span className="text-sm">{t(TEMPLATE_LABELS[member.template])}</span>
           </Field>
           <Field orientation="horizontal">
             <FieldTitle>{t('kubecode.members.provider')}</FieldTitle>
-            <span>{agentName(member.spec.agent_id)}</span>
+            <span className="text-sm">{agentName(member.spec.agent_id)}</span>
           </Field>
           {/* An active membership is not a status (ADR 0229 §1); only one that needs the researcher is. */}
           {member.state !== 'active' && (
@@ -72,32 +73,44 @@ export function MemberPanel({ entry }: InspectorPanelProps<Extract<InspectorEntr
             <FieldTitle>{t('kubecode.members.profile.execution')}</FieldTitle>
             {activity
               ? <StatusBadge tone={activity === 'running' ? 'info' : 'warn'}>{t(ACTIVITY_LABELS[activity])}</StatusBadge>
-              : <span>{t('kubecode.members.profile.idle')}</span>}
+              : <span className="text-sm">{t('kubecode.members.profile.idle')}</span>}
           </Field>
         </FieldGroup>
         {member.role === 'general' && (
-          <section aria-label={t('kubecode.members.profile.restrictions')} className="kubecode-member-restrictions">
-            <h4><Lock aria-hidden size={12} />{t('kubecode.members.profile.restrictions')}</h4>
-            <p>{t('kubecode.members.profile.restrictionsBody')}</p>
-            <p className="kubecode-research-muted">{t('kubecode.members.managerNote')}</p>
+          <section aria-label={t('kubecode.members.profile.restrictions')}>
+            <Alert>
+              <Lock />
+              <AlertTitle><h4>{t('kubecode.members.profile.restrictions')}</h4></AlertTitle>
+              <AlertDescription>
+                <p>{t('kubecode.members.profile.restrictionsBody')}</p>
+                <p>{t('kubecode.members.managerNote')}</p>
+              </AlertDescription>
+            </Alert>
           </section>
         )}
         {instructions && (
-          <section className="kubecode-member-instructions">
-            <h4>{t('kubecode.members.instructions')}</h4>
-            <p className="kubecode-channel-body" data-expanded={!long || expanded}>
-              {long && !expanded ? `${instructions.slice(0, LONG_INSTRUCTIONS)}…` : instructions}
-            </p>
-            {long && (
-              <Button size="xs" variant="ghost" onClick={() => setExpanded((value) => !value)}>
-                <Icon role="command" source={(expanded ? WORKSPACE_COMMAND_ICONS.collapse : WORKSPACE_COMMAND_ICONS.expand).Icon} />
-                {expanded ? t('kubecode.vocab.command.collapse') : t('kubecode.vocab.command.expand')}
-              </Button>
-            )}
-          </section>
+            <Field>
+              <FieldTitle><h4>{t('kubecode.members.instructions')}</h4></FieldTitle>
+              <p className="text-sm break-words whitespace-pre-wrap">
+                {long && !expanded ? `${instructions.slice(0, LONG_INSTRUCTIONS)}…` : instructions}
+              </p>
+              {long && (
+                  <Button
+                    aria-expanded={expanded}
+                    className="self-start"
+                    size="xs"
+                    variant="ghost"
+                    onClick={() => setExpanded((value) => !value)}
+                  >
+                    <Icon role="command" source={(expanded ? WORKSPACE_COMMAND_ICONS.collapse : WORKSPACE_COMMAND_ICONS.expand).Icon} />
+                    {expanded ? t('kubecode.vocab.command.collapse') : t('kubecode.vocab.command.expand')}
+                  </Button>
+              )}
+            </Field>
         )}
         {!inMembers && (
           <Button
+            className="self-start"
             size="sm"
             variant="ghost"
             onClick={() => navigation.openPlace({ view: 'members' }, { inspect: { kind: 'member', id: member.id } })}

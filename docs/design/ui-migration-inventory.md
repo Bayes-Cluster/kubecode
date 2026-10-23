@@ -22,9 +22,9 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 
 | Status | Rows |
 | --- | ---: |
-| migrated | 118 |
-| partial | 73 |
-| handcrafted | 38 |
+| migrated | 138 |
+| partial | 56 |
+| handcrafted | 36 |
 | specialist-engine | 4 |
 | exception | 4 |
 | not-applicable | 8 |
@@ -41,7 +41,7 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 | #258/#262 | 1 |
 | #259 | 46 |
 | #260 | 28 |
-| #261 | 33 |
+| #261 | 34 |
 | #262 | 35 |
 
 ## Shell
@@ -328,47 +328,48 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | View shell + Current/Defaults tabs | `src/kubecode/members/MembersView.tsx:69-91` | official Tabs in handcrafted section | shadcn/ui Tabs | members route | #260 | migrated | — |
-| Roster header (h3 + description + Add member) | `src/kubecode/members/MemberRoster.tsx:294-303` | handcrafted header/h3 + Button | Item header or Card CardHeader/CardAction | MembersView | #260 | partial | — |
-| Member list rows | `src/kubecode/members/MemberRoster.tsx:310-400` | official Item in handcrafted ul; StatusBadge and IconButton | ItemGroup + Item, Badge, Button + Tooltip | MembersView | #260 | partial | — |
+| Roster header (h3 + description + Add member) | `src/kubecode/members/MemberRoster.tsx:294-303` | Item (ItemContent/ItemTitle/ItemDescription/ItemActions) + Button | Item header or Card CardHeader/CardAction | MembersView | #260 | migrated | — |
+| Member list rows | `src/kubecode/members/MemberRoster.tsx:310-400` | Item variant outline in ul (li needs a list parent, so ItemGroup role=list div is not used); StatusBadge, IconButton | ItemGroup + Item, Badge, Button + Tooltip | MembersView | #260 | migrated | Legacy .kubecode-member-row CSS removed |
 | Row actions: restart/replace provider, profile, DM | `src/kubecode/members/MemberRoster.tsx:355-400` | IconButton (official Button + Tooltip) | shadcn Button + Tooltip | MemberRoster | #260 | migrated | IconButton is the A-owned thin wrapper |
-| Load error state with Retry | `src/kubecode/members/MemberRoster.tsx:158-162` | handcrafted text + Button | shadcn Alert or Empty | MemberRoster | #260 | partial | — |
-| Add/edit member form | `src/kubecode/members/MemberRoster.tsx:170-255` | official Field, Input, Select, Textarea, Button; lock note span | shadcn Field, FieldGroup | MemberRoster | #260 | migrated | — |
+| Load error state with Retry | `src/kubecode/members/MemberRoster.tsx:158-162` | Alert destructive with Retry; Spinner loading status | shadcn Alert or Empty | MemberRoster | #260 | migrated | — |
+| Add/edit member form | `src/kubecode/members/MemberRoster.tsx:170-255` | FieldGroup + Field, Input, Select, Textarea, Alert role=note for the manager lock, Field horizontal actions + Spinner | shadcn Field, FieldGroup | MemberRoster | #260 | migrated | — |
 | Replace provider inline form | `src/kubecode/members/MemberRoster.tsx:270-290` | official Field + ProviderSelect + Button | shadcn Field + Select + Button | MemberRoster | #260 | migrated | — |
 | ProviderSelect | `src/kubecode/members/ProviderSelect.tsx:22-33` | official Select | shadcn Select | MemberRoster, MemberDefaultsPanel | #260 | migrated | — |
-| Defaults panel header + unsaved badge | `src/kubecode/members/MemberDefaultsPanel.tsx:122-129` | handcrafted header/h3 + StatusBadge | Card header or Item; Badge | MembersView, SettingsDialog | #260 | partial | — |
-| Defaults fields, key/value rows, template FieldSet, Save/Discard | `src/kubecode/members/MemberDefaultsPanel.tsx:137-225` | official Field/FieldSet, Input, Textarea, Button; handcrafted row layout | FieldSet/FieldGroup, InputGroup, Button | MembersView, SettingsDialog | #260 | partial | — |
-| MemberPanel inspector content | `src/kubecode/members/MemberPanel.tsx:36-100` | InspectorPanel + Field/FieldTitle, Button, StatusBadge; handcrafted sections | Field horizontal, Collapsible, Badge | inspector registry | #260 | partial | — |
-| ManagerSetupNotice | `src/kubecode/members/ManagerSetupNotice.tsx:56-75` | official Alert + Button (CSS redraw listed in the CSS baseline) | shadcn Alert | General | #260 | migrated | — |
+| Defaults panel header + unsaved badge | `src/kubecode/members/MemberDefaultsPanel.tsx:122-129` | Item header + StatusBadge | Card header or Item; Badge | MembersView, SettingsDialog | #260 | migrated | — |
+| Defaults fields, key/value rows, template FieldSet, Save/Discard | `src/kubecode/members/MemberDefaultsPanel.tsx:137-225` | FieldGroup/FieldSet, Field horizontal key/value rows with data-invalid + FieldError (aria-describedby), Alert note, Button + Spinner | FieldSet/FieldGroup, InputGroup, Button | MembersView, SettingsDialog | #260 | migrated | — |
+| MemberPanel inspector content | `src/kubecode/members/MemberPanel.tsx:36-100` | Field horizontal facts, Alert for manager restrictions, Button aria-expanded for long instructions | Field horizontal, Collapsible, Badge | inspector registry | #260 | migrated | InspectorPanel shell stays #256 |
+| ManagerSetupNotice | `src/kubecode/members/ManagerSetupNotice.tsx:56-75` | official Alert + Button; CSS redraw removed | shadcn Alert | General | #260 | migrated | — |
 
 ## Workspace setup
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| ProjectDialog: mode switch, PathPicker, hidden toggle, error, loading/empty | `src/kubecode/app/ProjectDialog.tsx:153-200; src/kubecode/PathPicker.tsx:97-125` | official Dialog + Buttons; handcrafted mode switch, path list, error div | Dialog, ToggleGroup, Command, Alert, Toggle | WorkbenchShell, navigator, first run | #260 | partial | — |
+| ProjectDialog: mode switch, PathPicker, hidden toggle, error, loading/empty | `src/kubecode/app/ProjectDialog.tsx:153-200; src/kubecode/PathPicker.tsx:97-125` | Dialog + ToggleGroup (create/import) + PathPicker on Command (cmdk) + Toggle (hidden dirs) + Alert destructive | Dialog, ToggleGroup, Command, Alert, Toggle | WorkbenchShell, navigator, first run | #260 | migrated | PathPicker keeps its props for ProjectFilePicker/ContextWorkbench |
 
 ## Settings
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| SettingsDialog shell + section nav | `src/kubecode/app/SettingsDialog.tsx:174-191` | official Dialog; handcrafted aside nav of Buttons | Dialog + Tabs vertical / Sidebar | WorkbenchShell | #260 | partial | — |
-| General rows: color scheme, theme, fonts, size | `src/kubecode/app/SettingsDialog.tsx:192-285` | official Select/Input in handcrafted setting rows | Field orientation=horizontal | SettingsDialog | #260 | partial | — |
+| SettingsDialog shell + section nav | `src/kubecode/app/SettingsDialog.tsx:174-191` | Dialog + Tabs orientation=vertical (horizontal scroll strip below md) | Dialog + Tabs vertical / Sidebar | WorkbenchShell | #260 | migrated | — |
+| General rows: color scheme, theme, fonts, size | `src/kubecode/app/SettingsDialog.tsx:192-285` | FieldGroup + Field responsive, FieldLabel htmlFor + FieldDescription aria-describedby, Select/Input | Field orientation=horizontal | SettingsDialog | #260 | migrated | — |
 | Language switch | none (locale from browser) | not present | shadcn Select if added | n/a | #260 | not-applicable | No language selector component in src/kubecode at origin/main |
-| Notifications rows | `src/kubecode/app/SettingsDialog.tsx:286-377` | official Select/Switch/Button in handcrafted rows | Field horizontal + Switch/Select | SettingsDialog | #260 | partial | — |
-| Agents: teammate chat Switch; readiness toolbar | `src/kubecode/app/SettingsDialog.tsx:378-417` | official Switch/Button in handcrafted rows | Field horizontal, Button | SettingsDialog | #260 | partial | — |
-| Agents: per-agent diagnostic details + rows | `src/kubecode/app/SettingsDialog.tsx:420-457,606-628` | native details/summary + custom rows | Collapsible/Accordion + Item | SettingsDialog | #260 | handcrafted | — |
-| RuntimeStatusPanel | `src/kubecode/app/SettingsDialog.tsx:542-604` | handcrafted status spans + dl; Button | Spinner/Skeleton, Alert, Item/Card | SettingsDialog | #260 | handcrafted | — |
-| Member defaults row + panel | `src/kubecode/app/SettingsDialog.tsx:465-480` | handcrafted row + Button + panel | Field horizontal | SettingsDialog | #260 | partial | — |
-| WeChat panel: status, connect, QR, verification, binding messages | `src/kubecode/app/WeChatSettingsPanel.tsx:200-345,410-420` | official Button/Input; handcrafted rows, figure, label, status spans | Field, Alert, Spinner, InputOTP (not installed) | SettingsDialog | #260 | partial | — |
-| WeChat disconnect confirm | `src/kubecode/app/WeChatSettingsPanel.tsx:360-375` | official Dialog | shadcn AlertDialog (not installed) | WeChatSettingsPanel | #260 | partial | — |
+| Notifications rows | `src/kubecode/app/SettingsDialog.tsx:286-377` | Field responsive + Switch/Select; test result StatusBadge role=status | Field horizontal + Switch/Select | SettingsDialog | #260 | migrated | — |
+| Agents: teammate chat Switch; readiness toolbar | `src/kubecode/app/SettingsDialog.tsx:378-417` | Field responsive + Switch; FieldSet + Buttons with Spinner | Field horizontal, Button | SettingsDialog | #260 | migrated | — |
+| Agents: per-agent diagnostic details + rows | `src/kubecode/app/SettingsDialog.tsx:420-457,606-628` | Accordion type=multiple + Item rows + StatusBadge | Collapsible/Accordion + Item | SettingsDialog | #260 | migrated | — |
+| RuntimeStatusPanel | `src/kubecode/app/SettingsDialog.tsx:542-604` | FieldSet + Button/Spinner, Alert (error/unavailable), Item outline counts | Spinner/Skeleton, Alert, Item/Card | SettingsDialog | #260 | migrated | — |
+| Member defaults row + panel | `src/kubecode/app/SettingsDialog.tsx:465-480` | Field responsive + Button + FieldSeparator + MemberDefaultsPanel | Field horizontal | SettingsDialog | #260 | migrated | — |
+| WeChat panel: status, connect, QR, verification, binding messages | `src/kubecode/app/WeChatSettingsPanel.tsx:200-345,410-420` | FieldSet/Field, Alert role=status for connection state, Item for QR, Field + Input for the code | Field, Alert, Spinner, InputOTP (not installed) | SettingsDialog | #260 | migrated | InputOTP not used: codes are variable length (maxLength 12) and InputOTP needs a fixed slot count; QR keeps a white backing for scanning |
+| WeChat disconnect confirm | `src/kubecode/app/WeChatSettingsPanel.tsx:360-375` | shadcn AlertDialog (added via CLI) | shadcn AlertDialog (not installed) | WeChatSettingsPanel | #260 | migrated | — |
 | WeChat active session Select | `src/kubecode/app/WeChatSettingsPanel.tsx:433-450` | official Select | shadcn Select | WeChatSettingsPanel | #260 | migrated | — |
-| QuickPromptsEditor | `src/kubecode/app/WeChatSettingsPanel.tsx:500-574` | official Textarea/Button in handcrafted rows; error span | Field + Textarea + Alert | WeChatSettingsPanel | #260 | partial | — |
-| Editor auto save Switch row | `src/kubecode/app/SettingsDialog.tsx:492-511` | official Switch in handcrafted row | Field horizontal + Switch | SettingsDialog | #260 | partial | — |
-| Terminal coming-soon placeholder | `src/kubecode/app/SettingsDialog.tsx:513-515` | handcrafted div | shadcn Empty | SettingsDialog | #260 | handcrafted | — |
-| DisableWorkspacesDialog | `src/kubecode/DisableWorkspacesDialog.tsx:100-110` | official Dialog | shadcn AlertDialog | WorkbenchShell | #260 | partial | — |
+| QuickPromptsEditor | `src/kubecode/app/WeChatSettingsPanel.tsx:500-574` | FieldSet + Field + Textarea + FieldError | Field + Textarea + Alert | WeChatSettingsPanel | #260 | migrated | — |
+| Editor auto save Switch row | `src/kubecode/app/SettingsDialog.tsx:492-511` | Field responsive + Switch | Field horizontal + Switch | SettingsDialog | #260 | migrated | — |
+| Terminal coming-soon placeholder | `src/kubecode/app/SettingsDialog.tsx:513-515` | shadcn Empty | shadcn Empty | SettingsDialog | #260 | migrated | — |
+| DisableWorkspacesDialog | `src/kubecode/DisableWorkspacesDialog.tsx:100-110` | shadcn AlertDialog + Field responsive/Select per worktree + Alert + Empty + Spinner | shadcn AlertDialog | WorkbenchShell | #260 | migrated | — |
 
 ## Session
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
+| New Session dialog (agent/mode choice grid, fields, empty placeholders) | `src/kubecode/app/NewSessionDialog.tsx:174-278` | handcrafted role=group choice buttons, raw label wrappers, kubecode-empty-small | ToggleGroup, Field, Empty | WorkbenchShell, Session start | #261 | handcrafted | Listed in the #260 scope; handed to #261 because its baseline CSS and the Session-start flow belong to G |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Message turn (bubble, copy/edit/retry/branch) | `src/components/AiMessage.tsx:11-31,446` | AI Elements Message + Collapsible/Badge/Button | AI Elements Message | Session timeline | #261 | migrated | — |
 | User prompt inline editor | `src/components/AiMessage.tsx:131-160` | official Textarea/Button in handcrafted wrapper | Textarea + Button (or PromptInput) | AiMessage | #261 | partial | — |
@@ -444,7 +445,7 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| New file/folder EntryDialog | `src/kubecode/ContextWorkbench.tsx:870-1000,588-595` | official Dialog + Input | Dialog + Field | ContextWorkbench | #262 | partial | — |
+| New file/folder EntryDialog | `src/kubecode/ContextWorkbench.tsx:870-1000,588-595` | official Dialog + Input | Dialog + Field | ContextWorkbench | #262 | partial | Owns the `.kubecode-path-picker-heading` DialogTitle/DialogDescription overrides (re-owned from #260) |
 | Quick open with ProjectFilePicker/PathPicker | `src/kubecode/ContextWorkbench.tsx:600-624; src/kubecode/ProjectFilePicker.tsx:29` | official Dialog wrapping handcrafted combobox/listbox | CommandDialog/Command | ContextWorkbench, ComposerAddMenu, ProjectDialog | #262 | partial | — |
 
 ## Editor

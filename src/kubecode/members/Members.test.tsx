@@ -216,7 +216,9 @@ describe('MemberRoster', () => {
 
   it('says so when the roster cannot be loaded', async () => {
     roster(api({ listMembers: vi.fn().mockRejectedValue(new Error('down')) }))
-    expect(await screen.findByRole('alert')).toHaveTextContent('kubecode.members.loadFailed')
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('kubecode.members.loadFailed')
+    expect(alert).toHaveAttribute('data-slot', 'alert')
   })
 })
 
@@ -271,6 +273,12 @@ describe('MemberRoster review regressions', () => {
     expect(instructions).toHaveValue('My own words')
   })
 
+  it('keeps the roster explanation readable in full instead of clamping it', async () => {
+    roster(api())
+    const description = await screen.findByText('kubecode.members.current.description')
+    expect(description).toHaveClass('line-clamp-none')
+  })
+
   it('offers to try again when the roster cannot be loaded and says when a refresh failed', async () => {
     const listMembers = vi.fn()
       .mockRejectedValueOnce(new Error('down'))
@@ -283,6 +291,17 @@ describe('MemberRoster review regressions', () => {
 })
 
 describe('MemberDefaultsPanel', () => {
+  it('shows loading with a spinner and a failed load as a destructive alert with retry', async () => {
+    const memberDefaults = vi.fn().mockRejectedValueOnce(new Error('down')).mockResolvedValue(defaults)
+    render(<MemberDefaultsPanel agents={agents} api={{ memberDefaults, saveMemberDefaults: vi.fn() } as unknown as KubecodeApi} t={t} />)
+    expect(screen.getByText('kubecode.members.loading').querySelector('svg.animate-spin')).not.toBeNull()
+    const alert = await screen.findByRole('alert')
+    expect(alert.closest('[data-slot="alert"]')).not.toBeNull()
+    expect(alert).toHaveTextContent('kubecode.members.defaults.loadFailed')
+    fireEvent.click(screen.getByRole('button', { name: 'kubecode.members.retryLoad' }))
+    expect(await screen.findByLabelText('kubecode.members.defaults.generalInstructions')).toBeInTheDocument()
+  })
+
   it('edits the server defaults with their revision and says a stale save was refused', async () => {
     const saveMemberDefaults = vi.fn()
       .mockRejectedValueOnce(new ApiError('member_revision_conflict', 'x', 409))
@@ -338,6 +357,7 @@ describe('MemberDefaultsPanel and the locked manager (ADR 0226)', () => {
     fireEvent.change(await screen.findByLabelText('kubecode.members.defaults.configKey 1'), { target: { value: 'mode' } })
     expect(screen.getByRole('alert')).toHaveTextContent('kubecode.members.defaults.modeLocked:{"key":"mode"}')
     expect(screen.getByLabelText('kubecode.members.defaults.configKey 1')).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByLabelText('kubecode.members.defaults.configKey 1')).toHaveAccessibleDescription('kubecode.members.defaults.modeLocked:{"key":"mode"}')
     expect(screen.getByRole('button', { name: 'kubecode.members.save' })).toBeDisabled()
     // Discarding returns to what was saved.
     fireEvent.click(screen.getByRole('button', { name: 'kubecode.members.cancel' }))
