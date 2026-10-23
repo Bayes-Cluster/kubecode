@@ -213,6 +213,7 @@ export function AddContextDialog({
                 <div className="sticky bottom-0 flex flex-wrap items-center gap-2 bg-background pt-2">
                   <Button
                     aria-describedby={reason ? reasonId : undefined}
+                    className="max-sm:min-h-[44px] pointer-coarse:min-h-[44px]"
                     disabled={reason !== null}
                     type="button"
                     onClick={attachShown}

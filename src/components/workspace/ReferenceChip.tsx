@@ -1,3 +1,5 @@
+import { useId } from 'react'
+
 import {
   Attachment,
   AttachmentAction,
@@ -71,11 +73,14 @@ export function ReferenceChip({
   title,
   version,
 }: ReferenceChipProps) {
-  const name = [kindLabel, title, version, state?.label].filter(Boolean).join(' ')
+  const id = useId()
+  // The trigger is named by the chip's own words, part by part, preceded by the kind.
+  const labelledBy = [`${id}-kind`, `${id}-title`, version && `${id}-version`, state && `${id}-state`].filter(Boolean).join(' ')
   const opens = onOpen !== undefined && state?.kind !== 'unavailable'
   return (
+    // On touch the covering trigger, inside the 1px border, is at least 44px tall.
     <Attachment
-      className={cn('kubecode-reference-chip min-w-0', className)}
+      className={cn('kubecode-reference-chip min-w-0 pointer-coarse:min-h-[46px]', className)}
       data-kind={kind}
       data-reference-state={state?.kind ?? 'current'}
       size="xs"
@@ -85,8 +90,9 @@ export function ReferenceChip({
         <Icon role="identity" size="secondary" source={WORKSPACE_OBJECT_ICONS[kind].Icon} />
       </AttachmentMedia>
       <AttachmentContent>
-        <span className="sr-only">{kindLabel} </span>
+        <span className="sr-only" id={`${id}-kind`}>{kindLabel} </span>
         <AttachmentTitle
+          id={`${id}-title`}
           className={cn('whitespace-normal [overflow-wrap:anywhere]', state?.kind === 'removed' && 'line-through')}
           title={title}
         >
@@ -94,17 +100,20 @@ export function ReferenceChip({
         </AttachmentTitle>
         {(version || state) && (
           <AttachmentDescription className="flex flex-wrap items-center gap-1 whitespace-normal">
-            {version && <span>{version}</span>}
-            {state && <Badge variant={STATE_BADGE[state.kind]}>{state.label}</Badge>}
+            {version && <span id={`${id}-version`}>{version}</span>}
+            {state && <Badge id={`${id}-state`} variant={STATE_BADGE[state.kind]}>{state.label}</Badge>}
           </AttachmentDescription>
         )}
       </AttachmentContent>
-      {opens && <AttachmentTrigger aria-label={name} className="kubecode-reference-chip-open" onClick={onOpen} />}
+      {opens && (
+        // The trigger covers the chip.
+        <AttachmentTrigger aria-labelledby={labelledBy} className="kubecode-reference-chip-open" onClick={onOpen} />
+      )}
       {onRemove && (
         <AttachmentActions>
           <AttachmentAction
             aria-label={removeLabel}
-            className="kubecode-reference-chip-remove pointer-coarse:size-11"
+            className="kubecode-reference-chip-remove pointer-coarse:size-[44px]"
             type="button"
             onClick={onRemove}
           >

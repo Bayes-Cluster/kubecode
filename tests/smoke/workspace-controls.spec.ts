@@ -90,7 +90,9 @@ async function controlsWithoutFocusRing(page: Page): Promise<string[]> {
         probe.remove()
         return value
       })
-      const style = getComputedStyle(element)
+      // An official Attachment draws its ring around the whole chip, not on its covering trigger.
+      const ringed = element.matches('[data-slot="attachment-trigger"]') ? element.closest('[data-slot="attachment"]') ?? element : element
+      const style = getComputedStyle(ringed)
       return {
         focused: document.activeElement === element,
         ring: rings.some((ring) => style.boxShadow.includes(ring)),

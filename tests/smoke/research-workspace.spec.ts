@@ -290,7 +290,7 @@ test('@smoke research workspace carries a Task from discussion to an accepted ne
   await expect(page.getByRole('complementary', { name: 'Task details' }).getByRole('tab', { name: /Results/ })).toHaveAttribute('aria-selected', 'true')
   await expect(review.getByText('Structured pruning kept accuracy at 0.91')).toBeVisible()
   const cited = review.getByRole('button', { name: /results\.csv/ })
-  await expect(cited).toContainText('Changed since cited')
+  await expect(cited).toHaveAccessibleName(/Changed since cited/)
   await review.getByRole('radio', { name: 'Valid negative result' }).check()
   // It cannot be accepted at its current version before that version was shown.
   await expect(review.getByRole('button', { name: 'Accept the version you saw' })).toBeDisabled()

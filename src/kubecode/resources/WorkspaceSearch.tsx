@@ -237,7 +237,7 @@ export function WorkspaceSearch({
                   aria-label={counted
                     ? t(counted.more ? 'kubecode.search.sectionCountMore' : 'kubecode.search.sectionCount', { section: label, count: counted.count })
                     : label}
-                  className="shrink-0 pointer-coarse:min-h-11"
+                  className="shrink-0 pointer-coarse:min-h-[44px]"
                   key={section}
                   value={section}
                 >

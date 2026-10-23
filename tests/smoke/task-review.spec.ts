@@ -138,7 +138,7 @@ test('@smoke a Task is reviewed at the version that was shown, sent back through
     await blocked.getByRole('button', { name: 'Cancel' }).click()
 
     // 6. A read that failed never counts as a look: the version cannot be accepted.
-    await expect(review.getByRole('button', { name: /results\.csv/ })).toContainText('Changed since cited')
+    await expect(review.getByRole('button', { name: /results\.csv/ })).toHaveAccessibleName(/Changed since cited/)
     const accept = review.getByRole('button', { name: 'Accept the version you saw' })
     await expect(accept).toBeDisabled()
     await review.getByRole('button', { name: 'Look at it' }).click()
