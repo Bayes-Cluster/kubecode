@@ -59,16 +59,16 @@
     {
       "file": "src/kubecode/kubecode.css",
       "text": "animation-duration: 0.01ms !important;",
-      "context": "@media (prefers-reduced-motion: reduce) / .kubecode-app *, .kubecode-app *::before, .kubecode-app *::after",
+      "context": "@media (prefers-reduced-motion: reduce) / *, *::before, *::after",
       "kind": "important",
-      "owner": "#255 (accessibility exception: prefers-reduced-motion)"
+      "owner": "#255, #263 (accessibility exception: prefers-reduced-motion, global so portalled overlays comply)"
     },
     {
       "file": "src/kubecode/kubecode.css",
       "text": "transition-duration: 0.01ms !important;",
-      "context": "@media (prefers-reduced-motion: reduce) / .kubecode-app *, .kubecode-app *::before, .kubecode-app *::after",
+      "context": "@media (prefers-reduced-motion: reduce) / *, *::before, *::after",
       "kind": "important",
-      "owner": "#255 (accessibility exception: prefers-reduced-motion)"
+      "owner": "#255, #263 (accessibility exception: prefers-reduced-motion, global so portalled overlays comply)"
     }
   ]
 }
