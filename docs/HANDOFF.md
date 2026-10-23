@@ -100,8 +100,7 @@ composer reads the coarse pointer through the shared hook.
 - **Navigation width after a project exists.** Not reproduced at 1440 px with
   fresh storage (the sidebar is 280 px). The audit run probably restored a
   width remembered from an earlier, narrower viewport; no code change.
-- **Session title bar below 360 px.** The agent glyph and usage meter now
-  give way and the controls never shrink, but the title still has little
+- **Session title bar below 360 px.** The agent glyph now gives way and the controls never shrink, but the title still has little
   room in the Team view at 320 px. Moving the Session controls out of the
   title bar on phones is a design change for a later issue.
 
