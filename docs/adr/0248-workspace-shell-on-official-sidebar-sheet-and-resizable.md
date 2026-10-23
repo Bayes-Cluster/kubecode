@@ -110,6 +110,29 @@ the resizable group, panel and separator elements off-screen, because the
 library otherwise takes every pointerdown at (0, 0) for a separator drag and
 prevents it. Real sizes are checked in the browser smoke run.
 
+### 6. Page and inspector containers for slices C to H
+
+- **Page.** A destination renders inside the Resizable "place" panel, whose
+  inner element is a flex row with `overflow: hidden`. The page root is a flex
+  child that fills it (`flex-1 min-w-0 min-h-0`), owns its own scrolling, and
+  is titled by `DestinationHeader` (level 2). A page never sizes itself from
+  the viewport and never renders the navigation, the title bar or a resize
+  handle.
+- **Inspector.** A view that hosts the inspector wraps its content in
+  `WithInspector` and receives the shell's `InspectorPane`. Each entry renders
+  exactly one `InspectorPanel`: one `ViewHeader` (level 3) with the Back and
+  Close the pane computes, and `status` `ready`, `loading` (an official
+  `Spinner` status) or `unavailable` (an official `Empty` status with an
+  optional recovery). A panel never renders its own aside, Back or Close, and
+  moves through `useInspectorEntry` (`push`, `replace`, `back`, `close`).
+- **The inspector stack stays an adapter.** No registry component is a
+  non-modal inspector in the page flow that keeps lower entries mounted and
+  parked: `Sheet` is modal and portalled, a right-hand `Sidebar` has one level
+  and `Resizable` has no stack. `DetailPane` keeps the smallest adapter: focus
+  on open, focus back to the opener (or its `data-focus-key` successor) on
+  close, and Escape pops one level unless an input, a combobox or a listbox
+  holds it. `DetailPane.test.tsx` and `InspectorPane.test.tsx` cover it.
+
 ## Consequences
 
 - Cmd/Ctrl+B toggles the navigation anywhere in the page, including over the
