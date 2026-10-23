@@ -90,12 +90,13 @@ describe('WorkspaceSearch', () => {
     const search = vi.fn().mockResolvedValue(page([item('research', 'r1', 'Prune heads'), item('finding', 'f1', 'Heads')]))
     mount(search)
     const [first, second] = await screen.findAllByRole('option')
-    // Each result is a shadcn Item that keeps the listbox option semantics (ADR 0244).
-    expect(first).toHaveAttribute('data-slot', 'item')
+    // Each result is an official Command item: cmdk owns the listbox option semantics (#258).
+    expect(first).toHaveAttribute('data-slot', 'command-item')
+    expect(screen.getByRole('listbox', { name: 'Results' })).toBeInTheDocument()
     const input = screen.getByRole('combobox')
     act(() => second.focus())
     expect(input).toHaveFocus()
-    expect(input).toHaveAttribute('aria-activedescendant', second.id)
+    await waitFor(() => expect(input).toHaveAttribute('aria-activedescendant', second.id))
     fireEvent.keyDown(input, { key: 'ArrowUp' })
     expect(input).toHaveAttribute('aria-activedescendant', first.id)
   })
@@ -237,6 +238,41 @@ describe('WorkspaceSearch', () => {
     expect(screen.getByRole('combobox')).toHaveValue('h')
     expect(within(screen.getByRole('group', { name: 'Search in' })).getByRole('button', { name: /^Files/ })).toHaveAttribute('aria-pressed', 'false')
     expect(screen.getByRole('combobox')).toHaveAttribute('aria-activedescendant', screen.getByRole('option', { name: /Tails/ }).id)
+  })
+
+  it('keeps the server ranking: results are neither filtered nor re-sorted by the words', async () => {
+    const search = vi.fn().mockResolvedValue(page([item('finding', 'f2', 'Zeta'), item('finding', 'f1', 'Alpha')]))
+    mount(search)
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'unrelated words' } })
+    await waitFor(() => expect(search).toHaveBeenLastCalledWith('p1', expect.objectContaining({ query: 'unrelated words' })))
+    const options = await screen.findAllByRole('option')
+    expect(options.map((option) => option.textContent)).toEqual([expect.stringContaining('Zeta'), expect.stringContaining('Alpha')])
+  })
+
+  it('with words typed, Home and End stay in the text and leave the active row alone', async () => {
+    const search = vi.fn().mockResolvedValue(page([item('finding', 'f1', 'Heads'), item('finding', 'f2', 'Tails')]))
+    mount(search)
+    const input = screen.getByRole('combobox')
+    fireEvent.change(input, { target: { value: 'h' } })
+    const [, second] = await screen.findAllByRole('option')
+    fireEvent.keyDown(input, { key: 'ArrowDown' })
+    expect(input).toHaveAttribute('aria-activedescendant', second.id)
+    fireEvent.keyDown(input, { key: 'Home' })
+    expect(input).toHaveAttribute('aria-activedescendant', second.id)
+  })
+
+  it('says a later page failed and tries it again, keeping the results it has', async () => {
+    const search = vi.fn()
+      .mockResolvedValueOnce(page([item('finding', 'f1', 'Heads')], { next_cursor: 'c2' }))
+      .mockRejectedValueOnce(new Error('down'))
+      .mockResolvedValueOnce(page([item('finding', 'f2', 'Tails')]))
+    mount(search)
+    await screen.findByRole('option')
+    fireEvent.click(screen.getByRole('button', { name: 'Load more' }))
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: /Heads/ })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    expect(await screen.findByRole('option', { name: /Tails/ })).toBeInTheDocument()
   })
 
   it('names the Task a result belongs to', async () => {

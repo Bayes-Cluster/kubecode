@@ -22,9 +22,9 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 
 | Status | Rows |
 | --- | ---: |
-| migrated | 119 |
-| partial | 68 |
-| handcrafted | 43 |
+| migrated | 172 |
+| partial | 33 |
+| handcrafted | 26 |
 | specialist-engine | 4 |
 | exception | 5 |
 | not-applicable | 8 |
@@ -38,11 +38,11 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 | #256-#262 | 1 |
 | #257 | 28 |
 | #258 | 19 |
-| #258/#262 | 2 |
+| #258/#262 | 1 |
 | #259 | 48 |
 | #260 | 28 |
-| #261 | 33 |
-| #262 | 34 |
+| #261 | 34 |
+| #262 | 35 |
 
 ## Shell
 
@@ -144,53 +144,53 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Workspace search launcher popover + trigger | `src/kubecode/resources/WorkspaceSearchLauncher.tsx:4,53-70` | official Popover with raw button trigger + CSS redraw | shadcn/ui Command in Popover / CommandDialog; Button trigger | title bar search slot | #258 | partial | — |
+| Workspace search launcher popover + trigger | `src/kubecode/resources/WorkspaceSearchLauncher.tsx:4,53-70` | official Popover + outline Button trigger | shadcn/ui Command in Popover / CommandDialog; Button trigger | title bar search slot | #258 | migrated | #258: Button trigger; Popover sized by layout classes |
 
 ## Workspace search
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Search combobox input | `src/kubecode/resources/WorkspaceSearch.tsx:164-176` | official Input with handcrafted role=combobox ARIA + CSS redraw | shadcn/ui Command (CommandInput, installed) | ResourcesView, launcher, AddContextDialog | #258 | partial | — |
-| Section filter group | `src/kubecode/resources/WorkspaceSearch.tsx:222-240` | handcrafted div role=group of Buttons + CSS | shadcn/ui ToggleGroup (not installed) or Tabs | same as search | #258 | partial | — |
-| Scope note / notice text | `src/kubecode/resources/WorkspaceSearch.tsx:252,266` | handcrafted p role=note/status | shadcn/ui Alert or Field description | same as search | #258 | handcrafted | — |
-| Empty/loading/error/no-sections states | `src/kubecode/resources/WorkspaceSearch.tsx:271-284,334` | handcrafted p with muted/error CSS | shadcn/ui Empty, Spinner/Skeleton, Alert | same as search | #258 | handcrafted | — |
-| Results listbox + options | `src/kubecode/resources/WorkspaceSearch.tsx:295-319` | handcrafted ul role=listbox wrapping official Item | shadcn/ui Command (CommandList/CommandGroup/CommandItem) with Item | ResourcesView, launcher, AddContextDialog | #258 | partial | — |
+| Search combobox input | `src/kubecode/resources/WorkspaceSearch.tsx:164-176` | official Command (CommandInput) | shadcn/ui Command (CommandInput, installed) | ResourcesView, launcher, AddContextDialog | #258 | migrated | #258, ADR 0250: cmdk owns combobox/IME/active row; shouldFilter=false keeps server ranking |
+| Section filter group | `src/kubecode/resources/WorkspaceSearch.tsx:222-240` | official ToggleGroup type=multiple + Badge counts | shadcn/ui ToggleGroup (not installed) or Tabs | same as search | #258 | migrated | #258: toggle-group added with shadcn CLI 4.22.1 |
+| Scope note / notice text | `src/kubecode/resources/WorkspaceSearch.tsx:252,266` | Field-style muted note + shared ReaderNotice (Alert) | shadcn/ui Alert or Field description | same as search | #258 | migrated | #258: ReaderStates.tsx |
+| Empty/loading/error/no-sections states | `src/kubecode/resources/WorkspaceSearch.tsx:271-284,334` | shared ReaderEmpty/ReaderLoading/ReaderNotice (Empty, Spinner, Alert) | shadcn/ui Empty, Spinner/Skeleton, Alert | same as search | #258 | migrated | #258: ReaderStates.tsx |
+| Results listbox + options | `src/kubecode/resources/WorkspaceSearch.tsx:295-319` | official Command (CommandList/CommandGroup/CommandItem) with Item parts | shadcn/ui Command (CommandList/CommandGroup/CommandItem) with Item | ResourcesView, launcher, AddContextDialog | #258 | migrated | #258, ADR 0250 §2: pointermove adapter for focus-returned rows (cmdk gap, tested) |
 
 ## Resources route
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Attach bar (target banner, Attach/Cancel) | `src/kubecode/resources/ResourcesView.tsx:56-69` | handcrafted div role=status + official Buttons | shadcn/ui Alert with action or Item | Resources route | #258 | partial | — |
+| Attach bar (target banner, Attach/Cancel) | `src/kubecode/resources/ResourcesView.tsx:56-69` | official Alert with Buttons | shadcn/ui Alert with action or Item | Resources route | #258 | migrated | #258 |
 | Destination header | `src/kubecode/resources/ResourcesView.tsx:49` | workspace DestinationHeader | n/a (layout) | Resources route | #255 | not-applicable | — |
 
 ## Resource inspector
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| ResourcePanel shell/actions/badges/recovery | `src/kubecode/resources/ResourcePanel.tsx:80-118` | InspectorPanel + official Button + StatusBadge; sr-only status | shadcn/ui Sheet/Card, Badge, Button | Inspector registry | #258 | partial | — |
+| ResourcePanel shell/actions/badges/recovery | `src/kubecode/resources/ResourcePanel.tsx:80-118` | InspectorPanel + Button + Badge + ReaderNotice | shadcn/ui Sheet/Card, Badge, Button | Inspector registry | #258 | migrated | #258; InspectorPanel shell itself is #256 |
 
 ## Record preview
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Loading/removed/failed/notice states | `src/kubecode/resources/RecordPreview.tsx:145-196,228-234` | handcrafted p role=status/alert + CSS | shadcn/ui Skeleton/Spinner, Empty, Alert | ResourcePanel, EvidenceViewer | #258 | handcrafted | — |
+| Loading/removed/failed/notice states | `src/kubecode/resources/RecordPreview.tsx:145-196,228-234` | shared ReaderLoading/ReaderEmpty/ReaderNotice | shadcn/ui Skeleton/Spinner, Empty, Alert | ResourcePanel, EvidenceViewer | #258 | migrated | #258 |
 | Code/markdown body | `src/kubecode/resources/RecordPreview.tsx:6-7` | official AI Elements CodeBlock + Streamdown | AI Elements CodeBlock / MessageResponse | ResourcePanel, EvidenceViewer | #258 | migrated | — |
-| Sections and related-records list | `src/kubecode/resources/RecordPreview.tsx:201,245-252` | handcrafted section/ul/li with buttons | shadcn/ui Item/ItemGroup | ResourcePanel, EvidenceViewer | #258 | handcrafted | — |
+| Sections and related-records list | `src/kubecode/resources/RecordPreview.tsx:201,245-252` | Item/ItemGroup; related records are Item buttons with focus keys | shadcn/ui Item/ItemGroup | ResourcePanel, EvidenceViewer | #258 | migrated | #258 |
 
 ## References
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| ResourceReferenceChip wrapper | `src/kubecode/resources/ResourceReferenceChip.tsx:31` | wraps ReferenceChip | AI Elements InlineCitation / ReferenceChip | composer, messages, results | #258 | partial | ReferenceChip itself moved onto Badge + Button in #255 |
-| ReferenceSources collapsible list | `src/kubecode/resources/ReferenceSources.tsx:3,39-45` | official AI Elements Sources + handcrafted ul/li and chevron CSS | AI Elements Sources + Source | MessageItem, TaskResults | #258 | partial | — |
-| Message references list | `src/kubecode/channel/MessageItem.tsx:236` | handcrafted ul of ReferenceChip | AI Elements InlineCitation / Sources or Badge | MessageItem | #258 | partial | — |
+| ResourceReferenceChip wrapper | `src/kubecode/resources/ResourceReferenceChip.tsx:31` | ReferenceChip on official Attachment | AI Elements InlineCitation / ReferenceChip | composer, messages, results | #258 | migrated | #258, ADR 0250 §5: props unchanged; InlineCitation not used (no citation spans from the backend) |
+| ReferenceSources collapsible list | `src/kubecode/resources/ReferenceSources.tsx:3,39-45` | AI Elements Sources + ReferenceChip list | AI Elements Sources + Source | MessageItem, TaskResults | #258 | migrated | #258, ADR 0250 §6: Source is an external link, so each source is a ReferenceChip |
+| Message references list | `src/kubecode/channel/MessageItem.tsx:236` | handcrafted ul of ReferenceChip | AI Elements InlineCitation / Sources or Badge | MessageItem | #258 | partial | #258: ReferenceSources and ReferenceChip migrated; the task-only list in MessageItem is in a #257 file, requested of #257 |
 
 ## Attach flows
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| AddContextDialog (search, preview, back step, footer, refusal/error) | `src/kubecode/resources/AddContextDialog.tsx:4,138-230` | official Dialog + Button; handcrafted list/preview/footer divs and error p | shadcn/ui Dialog, Command, DialogFooter, Alert | ResourcePanel, MessageComposer | #258 | partial | — |
-| ComposerAddMenu reference picker (file, git diff, work, turns, terminal) | `src/kubecode/ComposerAddMenu.tsx:166-420,598,640` | handcrafted Tailwind popover panels, role=dialog/combobox, Button/Input | shadcn/ui Popover + Command; AI Elements PromptInputActionMenu | SessionComposer | #258 | handcrafted | — |
+| AddContextDialog (search, preview, back step, footer, refusal/error) | `src/kubecode/resources/AddContextDialog.tsx:4,138-230` | official Dialog + Command + DialogFooter + ReaderNotice; container-query layout classes | shadcn/ui Dialog, Command, DialogFooter, Alert | ResourcePanel, MessageComposer | #258 | migrated | #258 |
+| ComposerAddMenu reference picker (file, git diff, work, turns, terminal) | `src/kubecode/ComposerAddMenu.tsx; src/kubecode/ComposerProjectWorkPicker.tsx` | official Popover (dismissal, focus return, stacking; inner panels and the work preview peel Escape one layer at a time) + Item rows (touch-sized) + Command for the capability search and the Project work list + shared ReaderStates | shadcn/ui Popover + Command; AI Elements PromptInputActionMenu | SessionComposer | #258 | migrated | #258: no handcrafted combobox remains; the capability row content is shared with the inline composer listbox (row 194, specialist engine) through CapabilityRowContent |
 | Inline wikilink/mention context input | `src/kubecode/ComposerContextInput.tsx:3; src/components/InlineWikilinkInput.tsx:939` | specialist engine (contenteditable inline token editor) | AI Elements PromptInputTextarea + PromptInputCommand (no inline-token equivalent) | SessionComposer | #258 | specialist-engine | Inline tokens within editable text (944-line engine) have no registry equivalent |
 | Composer attach-from-workspace / attach file | `src/kubecode/channel/MessageComposer.tsx:339,368,394,423` | AI Elements PromptInput attachments + workspace menu | AI Elements PromptInput attachments; ui/attachment | MessageComposer | #257 | partial | — |
 
@@ -199,56 +199,56 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | EvidencePanel shell + cannot-accept alert | `src/kubecode/work/EvidencePanel.tsx:3,59,69` | InspectorPanel + official Alert | shadcn/ui Alert | Inspector registry | #258 | migrated | — |
-| EvidenceViewer (follow related record) | `src/kubecode/work/EvidenceViewer.tsx:54,66` | delegates to RecordPreview | see RecordPreview | EvidencePanel | #258 | partial | — |
+| EvidenceViewer (follow related record) | `src/kubecode/work/EvidenceViewer.tsx:54,66` | delegates to RecordPreview | see RecordPreview | EvidencePanel | #258 | migrated | #258 |
 
 ## General
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Message list scroller + scroll-to-bottom | `src/kubecode/channel/MessageList.tsx:4,268` | AI Elements Conversation wrapped in kubecode-message-list div | AI Elements Conversation/ConversationContent/ConversationScrollButton | ChannelWorkspace, DmPane | #257 | migrated | — |
-| Message list loading / error states | `src/kubecode/channel/MessageList.tsx:294,297` | handcrafted p muted/error | shadcn Skeleton/Spinner; Alert (destructive) | ChannelWorkspace, DmPane | #257 | handcrafted | — |
+| Message list loading / error states | `src/kubecode/channel/MessageList.tsx:294,297` | handcrafted p muted/error | shadcn Skeleton/Spinner; Alert (destructive) | ChannelWorkspace, DmPane | #257 | migrated | Spinner (loading) and Alert destructive with Retry (#257) |
 | Empty conversation state | `src/kubecode/channel/MessageList.tsx:303-308` | official Empty + kubecode-conversation-empty class | shadcn Empty | ChannelWorkspace | #257 | migrated | — |
-| Date separator | `src/kubecode/channel/MessageList.tsx:313` | handcrafted div role=separator | shadcn Separator with label | MessageList | #257 | partial | — |
-| Activity group (collapsed system activity) | `src/kubecode/channel/ActivityGroup.tsx:13` | handcrafted details | shadcn Collapsible or AI Elements Task/ChainOfThought | MessageList | #257 | handcrafted | — |
-| Message item: content/actions/header | `src/kubecode/channel/MessageItem.tsx:1,163` | official MessageContent/MessageActions + CSS redraw; handcrafted header | AI Elements Message/MessageContent/MessageActions | MessageList | #257 | partial | — |
+| Date separator | `src/kubecode/channel/MessageList.tsx:313` | handcrafted div role=separator | shadcn Separator with label | MessageList | #257 | migrated | Separator pair with label; layout via Tailwind (#257) |
+| Activity group (collapsed system activity) | `src/kubecode/channel/ActivityGroup.tsx:13` | handcrafted details | shadcn Collapsible or AI Elements Task/ChainOfThought | MessageList | #257 | migrated | Collapsible; notes forceMount+hidden as anchors; revealActivity adapter (ADR 0249) |
+| Message item: content/actions/header | `src/kubecode/channel/MessageItem.tsx:1,163` | official MessageContent/MessageActions + CSS redraw; handcrafted header | AI Elements Message/MessageContent/MessageActions | MessageList | #257 | migrated | Message/MessageContent/MessageActions; hover background, toolbar opacity CSS and content padding redraw removed; reveal via Tailwind group-hover/focus-within/pointer-coarse (#257). Remaining: self/member side layout rules from ADR 0239 |
 | Message overflow menu (hidden actions) | `src/kubecode/channel/MessageItem.tsx:3` | MoreActions over shadcn DropdownMenu | shadcn DropdownMenu | MessageItem | #255 | migrated | — |
-| Recipients line with arrow | `src/kubecode/channel/MessageItem.tsx:135-137` | handcrafted spans | shadcn Badge / Message header (no direct component) | MessageItem | #257 | handcrafted | — |
-| Proposal text, delivery status (queued/failed) | `src/kubecode/channel/MessageItem.tsx:217,257,263` | handcrafted p with data-delivery | shadcn Badge; Alert for failed | MessageItem | #257 | handcrafted | — |
+| Recipients line with arrow | `src/kubecode/channel/MessageItem.tsx:135-137` | handcrafted spans | shadcn Badge / Message header (no direct component) | MessageItem | #257 | migrated | Tailwind utilities on the Message header; legacy recipients CSS removed (#257) |
+| Proposal text, delivery status (queued/failed) | `src/kubecode/channel/MessageItem.tsx:217,257,263` | handcrafted p with data-delivery | shadcn Badge; Alert for failed | MessageItem | #257 | migrated | Badge rows; legacy CSS removed (#257) |
 | Message response markdown | `src/kubecode/channel/ConversationResponse.tsx:4,11` | official MessageResponse/Streamdown with inert-image span | AI Elements MessageResponse | MessageItem, DmPane | #257 | migrated | Inert image span is security hardening (streamdown-hardening.ts) |
 | ConversationMessage wrapper | `src/kubecode/channel/ConversationMessage.tsx:3` | official component | AI Elements Message | MessageItem, OutboxRows | #257 | migrated | — |
-| Outbox rows (pending/failed sends, retry) | `src/kubecode/channel/OutboxRows.tsx:25-39` | Message, Badge, Spinner inside handcrafted ul/li and status spans | AI Elements Message + Badge/Spinner/Alert; Queue | ChannelWorkspace | #257 | partial | — |
+| Outbox rows (pending/failed sends, retry) | `src/kubecode/channel/OutboxRows.tsx:25-39` | Message, Badge, Spinner inside handcrafted ul/li and status spans | AI Elements Message + Badge/Spinner/Alert; Queue | ChannelWorkspace | #257 | migrated | Message + Spinner; failure is a destructive Alert; ul/li are Tailwind layout only; all kubecode-outbox CSS removed (#257). Queue not used: rows are pending Messages (ADR 0242) |
 | Header + task filter Select + filter chip | `src/kubecode/channel/ChannelWorkspace.tsx:315-345` | official Select in handcrafted filter div; DestinationHeader | shadcn Select + Badge | ChannelWorkspace | #257 | migrated | — |
-| Load error / outside-channel notice / sr announcement | `src/kubecode/channel/ChannelWorkspace.tsx:355,394,401` | handcrafted p role=alert/status | shadcn Alert | ChannelWorkspace | #257 | handcrafted | — |
+| Load error / outside-channel notice / sr announcement | `src/kubecode/channel/ChannelWorkspace.tsx:355,394,401` | handcrafted p role=alert/status | shadcn Alert | ChannelWorkspace | #257 | migrated | Alert destructive / Alert role=status (#257) |
 | Conversation dock | `src/kubecode/channel/ChannelWorkspace.tsx:403` | handcrafted layout div | not-applicable (layout) | ChannelWorkspace, DmPane | #257 | not-applicable | — |
-| @mention popup | `src/kubecode/channel/ConversationComposer.tsx:230-254` | PromptInputCommand in absolutely positioned div; Avatar rows | AI Elements PromptInputCommand within shadcn Popover | ConversationComposer | #257 | partial | — |
-| Composer hints/warnings/notice/gate, replying-to, About row | `src/kubecode/channel/MessageComposer.tsx:276-362` | handcrafted span/p | shadcn Alert / Badge; PromptInputHeader | ChannelWorkspace | #257 | handcrafted | — |
+| @mention popup | `src/kubecode/channel/ConversationComposer.tsx:230-254` | PromptInputCommand in absolutely positioned div; Avatar rows | AI Elements PromptInputCommand within shadcn Popover | ConversationComposer | #257 | migrated | PromptInputCommand in official Popover anchored to the composer (ADR 0249) |
+| Composer hints/warnings/notice/gate, replying-to, About row | `src/kubecode/channel/MessageComposer.tsx:276-362` | handcrafted span/p | shadcn Alert / Badge; PromptInputHeader | ChannelWorkspace | #257 | migrated | Alert (status / destructive) for notices, blocked and gate; replying-to and About row as PromptInputHeader content with Tailwind; legacy CSS removed (#257) |
 | Composer add (+) menu and clear-reply IconButton | `src/kubecode/channel/MessageComposer.tsx:306,385-400` | PromptInputActionMenu; IconButton | AI Elements PromptInputActionMenu; Button+Tooltip | MessageComposer | #257 | migrated | — |
 
 ## Legacy Threads
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Legacy thread link button in message | `src/kubecode/channel/MessageItem.tsx:241` | handcrafted button | shadcn Button variant=link | MessageItem | #257 | handcrafted | — |
+| Legacy thread link button in message | `src/kubecode/channel/MessageItem.tsx:241` | handcrafted button | shadcn Button variant=link | MessageItem | #257 | migrated | Button variant=link (#257) |
 | Channel navigator (General + threads list) | `src/kubecode/channel/ChannelNavigator.tsx:26-50` | SidebarGroup + SidebarMenuButton (isActive) + StatusBadge | Sidebar menu / Item | ChannelWorkspace | #256 | migrated | — |
-| Read-only legacy thread pane | `src/kubecode/channel/ThreadPane.tsx:134-212` | handcrafted aside/p/div with Button and ViewHeader | shadcn Sheet/Card + Alert + Button | ChannelWorkspace | #257 | partial | — |
+| Read-only legacy thread pane | `src/kubecode/channel/ThreadPane.tsx:134-212` | handcrafted aside/p/div with Button and ViewHeader | shadcn Sheet/Card + Alert + Button | ChannelWorkspace | #257 | partial | Read-only note and link error are Alert; topic/actions CSS removed (#257). Native link selects remain (thread linking is legacy, read-only surface) |
 
 ## General/DM
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Composer (PromptInput, send/stop) | `src/kubecode/channel/ConversationComposer.tsx:26,228,258-319` | PromptInput with kubecode-composer wrappers, stop text span and footer | AI Elements PromptInput/PromptInputSubmit/PromptInputFooter | MessageComposer, DmPane, #/controls | #257 | partial | — |
+| Composer (PromptInput, send/stop) | `src/kubecode/channel/ConversationComposer.tsx:26,228,258-319` | PromptInput with kubecode-composer wrappers, stop text span and footer | AI Elements PromptInput/PromptInputSubmit/PromptInputFooter | MessageComposer, DmPane, #/controls | #257 | migrated | PromptInput card overrides removed; official look (ADR 0249) |
 
 ## DM
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| DM pane conversation, turns, waiting shimmer, queued note | `src/kubecode/dm/DmPane.tsx:3-9,123-206` | Conversation/MessageContent/Shimmer with handcrafted turn/header divs | AI Elements Conversation/Message/Shimmer | DM route | #257 | partial | — |
-| DM loading/error/status/warning text | `src/kubecode/dm/DmPane.tsx:143,160,163,236` | handcrafted p | shadcn Spinner/Alert | DmPane | #257 | handcrafted | — |
+| DM pane conversation, turns, waiting shimmer, queued note | `src/kubecode/dm/DmPane.tsx:3-9,123-206` | Conversation/MessageContent/Shimmer with handcrafted turn/header divs | AI Elements Conversation/Message/Shimmer | DM route | #257 | migrated | Turns are ConversationMessage (official Message) pairs in a Tailwind flex column, as General; kubecode-dm-turn CSS removed; Shimmer; queued note is Badge (#257) |
+| DM loading/error/status/warning text | `src/kubecode/dm/DmPane.tsx:143,160,163,236` | handcrafted p | shadcn Spinner/Alert | DmPane | #257 | migrated | Spinner / Alert (#257) |
 | DmShareDialog shell | `src/kubecode/dm/DmShareDialog.tsx:160-165` | official Dialog | shadcn Dialog | DmPane | #257 | migrated | — |
-| DmShareDialog turn chooser (checkbox fieldset) | `src/kubecode/dm/DmShareDialog.tsx:166-180` | native fieldset + checkbox | shadcn Checkbox + FieldSet (Checkbox not installed) | DmShareDialog | #257 | handcrafted | — |
-| DmShareDialog note textarea | `src/kubecode/dm/DmShareDialog.tsx:181-184` | official Textarea in handcrafted label | shadcn Textarea + Field/FieldLabel | DmShareDialog | #257 | partial | — |
-| DmShareDialog task native select | `src/kubecode/dm/DmShareDialog.tsx:185-197` | native select | shadcn Select | DmShareDialog | #257 | handcrafted | — |
-| DmShareDialog preview card, error, action row | `src/kubecode/dm/DmShareDialog.tsx:56-74,199-215` | handcrafted section/p + MarkdownContent + DecisionButton/ReferenceChip | shadcn Card, Alert, DialogFooter; MessageResponse | DmShareDialog | #257 | partial | — |
+| DmShareDialog turn chooser (checkbox fieldset) | `src/kubecode/dm/DmShareDialog.tsx:166-180` | native fieldset + checkbox | shadcn Checkbox + FieldSet (Checkbox not installed) | DmShareDialog | #257 | migrated | FieldSet + Field + Checkbox; only max-h/overflow utilities; kubecode-dm-turns/field CSS removed (#257) |
+| DmShareDialog note textarea | `src/kubecode/dm/DmShareDialog.tsx:181-184` | official Textarea in handcrafted label | shadcn Textarea + Field/FieldLabel | DmShareDialog | #257 | migrated | Field + FieldLabel + Textarea |
+| DmShareDialog task native select | `src/kubecode/dm/DmShareDialog.tsx:185-197` | native select | shadcn Select | DmShareDialog | #257 | migrated | shadcn Select with No-Task sentinel |
+| DmShareDialog preview card, error, action row | `src/kubecode/dm/DmShareDialog.tsx:56-74,199-215` | handcrafted section/p + MarkdownContent + DecisionButton/ReferenceChip | shadcn Card, Alert, DialogFooter; MessageResponse | DmShareDialog | #257 | migrated | Card with its own surface (no kubecode-dm-preview redraw), Alert, Collapsible exact text, DialogFooter (#257) |
 
 ## Tasks
 
@@ -330,47 +330,48 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | View shell + Current/Defaults tabs | `src/kubecode/members/MembersView.tsx:69-91` | official Tabs in handcrafted section | shadcn/ui Tabs | members route | #260 | migrated | — |
-| Roster header (h3 + description + Add member) | `src/kubecode/members/MemberRoster.tsx:294-303` | handcrafted header/h3 + Button | Item header or Card CardHeader/CardAction | MembersView | #260 | partial | — |
-| Member list rows | `src/kubecode/members/MemberRoster.tsx:310-400` | official Item in handcrafted ul; StatusBadge and IconButton | ItemGroup + Item, Badge, Button + Tooltip | MembersView | #260 | partial | — |
+| Roster header (h3 + description + Add member) | `src/kubecode/members/MemberRoster.tsx:294-303` | Item (ItemContent/ItemTitle/ItemDescription/ItemActions) + Button | Item header or Card CardHeader/CardAction | MembersView | #260 | migrated | — |
+| Member list rows | `src/kubecode/members/MemberRoster.tsx:310-400` | Item variant outline in ul (li needs a list parent, so ItemGroup role=list div is not used); StatusBadge, IconButton | ItemGroup + Item, Badge, Button + Tooltip | MembersView | #260 | migrated | Legacy .kubecode-member-row CSS removed |
 | Row actions: restart/replace provider, profile, DM | `src/kubecode/members/MemberRoster.tsx:355-400` | IconButton (official Button + Tooltip) | shadcn Button + Tooltip | MemberRoster | #260 | migrated | IconButton is the A-owned thin wrapper |
-| Load error state with Retry | `src/kubecode/members/MemberRoster.tsx:158-162` | handcrafted text + Button | shadcn Alert or Empty | MemberRoster | #260 | partial | — |
-| Add/edit member form | `src/kubecode/members/MemberRoster.tsx:170-255` | official Field, Input, Select, Textarea, Button; lock note span | shadcn Field, FieldGroup | MemberRoster | #260 | migrated | — |
+| Load error state with Retry | `src/kubecode/members/MemberRoster.tsx:158-162` | Alert destructive with Retry; Spinner loading status | shadcn Alert or Empty | MemberRoster | #260 | migrated | — |
+| Add/edit member form | `src/kubecode/members/MemberRoster.tsx:170-255` | FieldGroup + Field, Input, Select, Textarea, Alert role=note for the manager lock, Field horizontal actions + Spinner | shadcn Field, FieldGroup | MemberRoster | #260 | migrated | — |
 | Replace provider inline form | `src/kubecode/members/MemberRoster.tsx:270-290` | official Field + ProviderSelect + Button | shadcn Field + Select + Button | MemberRoster | #260 | migrated | — |
 | ProviderSelect | `src/kubecode/members/ProviderSelect.tsx:22-33` | official Select | shadcn Select | MemberRoster, MemberDefaultsPanel | #260 | migrated | — |
-| Defaults panel header + unsaved badge | `src/kubecode/members/MemberDefaultsPanel.tsx:122-129` | handcrafted header/h3 + StatusBadge | Card header or Item; Badge | MembersView, SettingsDialog | #260 | partial | — |
-| Defaults fields, key/value rows, template FieldSet, Save/Discard | `src/kubecode/members/MemberDefaultsPanel.tsx:137-225` | official Field/FieldSet, Input, Textarea, Button; handcrafted row layout | FieldSet/FieldGroup, InputGroup, Button | MembersView, SettingsDialog | #260 | partial | — |
-| MemberPanel inspector content | `src/kubecode/members/MemberPanel.tsx:36-100` | InspectorPanel + Field/FieldTitle, Button, StatusBadge; handcrafted sections | Field horizontal, Collapsible, Badge | inspector registry | #260 | partial | — |
-| ManagerSetupNotice | `src/kubecode/members/ManagerSetupNotice.tsx:56-75` | official Alert + Button (CSS redraw listed in the CSS baseline) | shadcn Alert | General | #260 | migrated | — |
+| Defaults panel header + unsaved badge | `src/kubecode/members/MemberDefaultsPanel.tsx:122-129` | Item header + StatusBadge | Card header or Item; Badge | MembersView, SettingsDialog | #260 | migrated | — |
+| Defaults fields, key/value rows, template FieldSet, Save/Discard | `src/kubecode/members/MemberDefaultsPanel.tsx:137-225` | FieldGroup/FieldSet, Field horizontal key/value rows with data-invalid + FieldError (aria-describedby), Alert note, Button + Spinner | FieldSet/FieldGroup, InputGroup, Button | MembersView, SettingsDialog | #260 | migrated | — |
+| MemberPanel inspector content | `src/kubecode/members/MemberPanel.tsx:36-100` | Field horizontal facts, Alert for manager restrictions, Button aria-expanded for long instructions | Field horizontal, Collapsible, Badge | inspector registry | #260 | migrated | InspectorPanel shell stays #256 |
+| ManagerSetupNotice | `src/kubecode/members/ManagerSetupNotice.tsx:56-75` | official Alert + Button; CSS redraw removed | shadcn Alert | General | #260 | migrated | — |
 
 ## Workspace setup
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| ProjectDialog: mode switch, PathPicker, hidden toggle, error, loading/empty | `src/kubecode/app/ProjectDialog.tsx:153-200; src/kubecode/PathPicker.tsx:97-125` | official Dialog + Buttons; handcrafted mode switch, path list, error div | Dialog, ToggleGroup, Command, Alert, Toggle | WorkbenchShell, navigator, first run | #260 | partial | — |
+| ProjectDialog: mode switch, PathPicker, hidden toggle, error, loading/empty | `src/kubecode/app/ProjectDialog.tsx:153-200; src/kubecode/PathPicker.tsx:97-125` | Dialog + ToggleGroup (create/import) + PathPicker on Command (cmdk) + Toggle (hidden dirs) + Alert destructive | Dialog, ToggleGroup, Command, Alert, Toggle | WorkbenchShell, navigator, first run | #260 | migrated | PathPicker keeps its props for ProjectFilePicker/ContextWorkbench |
 
 ## Settings
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| SettingsDialog shell + section nav | `src/kubecode/app/SettingsDialog.tsx:174-191` | official Dialog; handcrafted aside nav of Buttons | Dialog + Tabs vertical / Sidebar | WorkbenchShell | #260 | partial | — |
-| General rows: color scheme, theme, fonts, size | `src/kubecode/app/SettingsDialog.tsx:192-285` | official Select/Input in handcrafted setting rows | Field orientation=horizontal | SettingsDialog | #260 | partial | — |
+| SettingsDialog shell + section nav | `src/kubecode/app/SettingsDialog.tsx:174-191` | Dialog + Tabs orientation=vertical (horizontal scroll strip below md) | Dialog + Tabs vertical / Sidebar | WorkbenchShell | #260 | migrated | — |
+| General rows: color scheme, theme, fonts, size | `src/kubecode/app/SettingsDialog.tsx:192-285` | FieldGroup + Field responsive, FieldLabel htmlFor + FieldDescription aria-describedby, Select/Input | Field orientation=horizontal | SettingsDialog | #260 | migrated | — |
 | Language switch | none (locale from browser) | not present | shadcn Select if added | n/a | #260 | not-applicable | No language selector component in src/kubecode at origin/main |
-| Notifications rows | `src/kubecode/app/SettingsDialog.tsx:286-377` | official Select/Switch/Button in handcrafted rows | Field horizontal + Switch/Select | SettingsDialog | #260 | partial | — |
-| Agents: teammate chat Switch; readiness toolbar | `src/kubecode/app/SettingsDialog.tsx:378-417` | official Switch/Button in handcrafted rows | Field horizontal, Button | SettingsDialog | #260 | partial | — |
-| Agents: per-agent diagnostic details + rows | `src/kubecode/app/SettingsDialog.tsx:420-457,606-628` | native details/summary + custom rows | Collapsible/Accordion + Item | SettingsDialog | #260 | handcrafted | — |
-| RuntimeStatusPanel | `src/kubecode/app/SettingsDialog.tsx:542-604` | handcrafted status spans + dl; Button | Spinner/Skeleton, Alert, Item/Card | SettingsDialog | #260 | handcrafted | — |
-| Member defaults row + panel | `src/kubecode/app/SettingsDialog.tsx:465-480` | handcrafted row + Button + panel | Field horizontal | SettingsDialog | #260 | partial | — |
-| WeChat panel: status, connect, QR, verification, binding messages | `src/kubecode/app/WeChatSettingsPanel.tsx:200-345,410-420` | official Button/Input; handcrafted rows, figure, label, status spans | Field, Alert, Spinner, InputOTP (not installed) | SettingsDialog | #260 | partial | — |
-| WeChat disconnect confirm | `src/kubecode/app/WeChatSettingsPanel.tsx:360-375` | official Dialog | shadcn AlertDialog (not installed) | WeChatSettingsPanel | #260 | partial | — |
+| Notifications rows | `src/kubecode/app/SettingsDialog.tsx:286-377` | Field responsive + Switch/Select; test result StatusBadge role=status | Field horizontal + Switch/Select | SettingsDialog | #260 | migrated | — |
+| Agents: teammate chat Switch; readiness toolbar | `src/kubecode/app/SettingsDialog.tsx:378-417` | Field responsive + Switch; FieldSet + Buttons with Spinner | Field horizontal, Button | SettingsDialog | #260 | migrated | — |
+| Agents: per-agent diagnostic details + rows | `src/kubecode/app/SettingsDialog.tsx:420-457,606-628` | Accordion type=multiple + Item rows + StatusBadge | Collapsible/Accordion + Item | SettingsDialog | #260 | migrated | — |
+| RuntimeStatusPanel | `src/kubecode/app/SettingsDialog.tsx:542-604` | FieldSet + Button/Spinner, Alert (error/unavailable), Item outline counts | Spinner/Skeleton, Alert, Item/Card | SettingsDialog | #260 | migrated | — |
+| Member defaults row + panel | `src/kubecode/app/SettingsDialog.tsx:465-480` | Field responsive + Button + FieldSeparator + MemberDefaultsPanel | Field horizontal | SettingsDialog | #260 | migrated | — |
+| WeChat panel: status, connect, QR, verification, binding messages | `src/kubecode/app/WeChatSettingsPanel.tsx:200-345,410-420` | FieldSet/Field, Alert role=status for connection state, Item for QR, Field + Input for the code | Field, Alert, Spinner, InputOTP (not installed) | SettingsDialog | #260 | migrated | InputOTP not used: codes are variable length (maxLength 12) and InputOTP needs a fixed slot count; QR keeps a white backing for scanning |
+| WeChat disconnect confirm | `src/kubecode/app/WeChatSettingsPanel.tsx:360-375` | shadcn AlertDialog (added via CLI) | shadcn AlertDialog (not installed) | WeChatSettingsPanel | #260 | migrated | — |
 | WeChat active session Select | `src/kubecode/app/WeChatSettingsPanel.tsx:433-450` | official Select | shadcn Select | WeChatSettingsPanel | #260 | migrated | — |
-| QuickPromptsEditor | `src/kubecode/app/WeChatSettingsPanel.tsx:500-574` | official Textarea/Button in handcrafted rows; error span | Field + Textarea + Alert | WeChatSettingsPanel | #260 | partial | — |
-| Editor auto save Switch row | `src/kubecode/app/SettingsDialog.tsx:492-511` | official Switch in handcrafted row | Field horizontal + Switch | SettingsDialog | #260 | partial | — |
-| Terminal coming-soon placeholder | `src/kubecode/app/SettingsDialog.tsx:513-515` | handcrafted div | shadcn Empty | SettingsDialog | #260 | handcrafted | — |
-| DisableWorkspacesDialog | `src/kubecode/DisableWorkspacesDialog.tsx:100-110` | official Dialog | shadcn AlertDialog | WorkbenchShell | #260 | partial | — |
+| QuickPromptsEditor | `src/kubecode/app/WeChatSettingsPanel.tsx:500-574` | FieldSet + Field + Textarea + FieldError | Field + Textarea + Alert | WeChatSettingsPanel | #260 | migrated | — |
+| Editor auto save Switch row | `src/kubecode/app/SettingsDialog.tsx:492-511` | Field responsive + Switch | Field horizontal + Switch | SettingsDialog | #260 | migrated | — |
+| Terminal coming-soon placeholder | `src/kubecode/app/SettingsDialog.tsx:513-515` | shadcn Empty | shadcn Empty | SettingsDialog | #260 | migrated | — |
+| DisableWorkspacesDialog | `src/kubecode/DisableWorkspacesDialog.tsx:100-110` | shadcn AlertDialog + Field responsive/Select per worktree + Alert + Empty + Spinner | shadcn AlertDialog | WorkbenchShell | #260 | migrated | — |
 
 ## Session
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
+| New Session dialog (agent/mode choice grid, fields, empty placeholders) | `src/kubecode/app/NewSessionDialog.tsx:174-278` | handcrafted role=group choice buttons, raw label wrappers, kubecode-empty-small | ToggleGroup, Field, Empty | WorkbenchShell, Session start | #261 | handcrafted | Listed in the #260 scope; handed to #261 because its baseline CSS and the Session-start flow belong to G |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Message turn (bubble, copy/edit/retry/branch) | `src/components/AiMessage.tsx:11-31,446` | AI Elements Message + Collapsible/Badge/Button | AI Elements Message | Session timeline | #261 | migrated | — |
 | User prompt inline editor | `src/components/AiMessage.tsx:131-160` | official Textarea/Button in handcrafted wrapper | Textarea + Button (or PromptInput) | AiMessage | #261 | partial | — |
@@ -446,7 +447,7 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| New file/folder EntryDialog | `src/kubecode/ContextWorkbench.tsx:870-1000,588-595` | official Dialog + Input | Dialog + Field | ContextWorkbench | #262 | partial | — |
+| New file/folder EntryDialog | `src/kubecode/ContextWorkbench.tsx:870-1000,588-595` | official Dialog + Input | Dialog + Field | ContextWorkbench | #262 | partial | Owns the `.kubecode-path-picker-heading` DialogTitle/DialogDescription overrides (re-owned from #260) |
 | Quick open with ProjectFilePicker/PathPicker | `src/kubecode/ContextWorkbench.tsx:600-624; src/kubecode/ProjectFilePicker.tsx:29` | official Dialog wrapping handcrafted combobox/listbox | CommandDialog/Command | ContextWorkbench, ComposerAddMenu, ProjectDialog | #262 | partial | — |
 
 ## Editor
@@ -508,7 +509,7 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 | ReferenceChip | `src/components/workspace/ReferenceChip.tsx` | official Badge (outline) + Button (ghost) open/remove | Badge / InlineCitation; Attachment | 8 consumers | #255 | migrated | — |
 | MemberIdentity / MemberAvatar | `src/components/workspace/MemberIdentity.tsx` | official Avatar/AvatarFallback, link Button, Badge | shadcn Avatar + Badge | 6 consumers | #255 | migrated | — |
 | ViewHeader | `src/components/workspace/ViewHeader.tsx:49-72` | header composition over tokens + IconButton | no registry page header; compose Item/Separator | DestinationHeader, InspectorPanel | #255 | exception | No shadcn page-header component exists; kept as a thin composition over tokens |
-| Attachment | `src/components/ui/attachment.tsx:1-204` | local component in ui/ | AI Elements PromptInput attachments | 1 consumer | #255 | partial | Not a shadcn/ui primitive; #258 decides between it and Prompt Input attachments |
+| Attachment | `src/components/ui/attachment.tsx:1-204` | local component in ui/ | AI Elements PromptInput attachments | 1 consumer | #255 | partial | #258 decision (ADR 0250 §5): ReferenceChip composes this Attachment; Prompt Input attachments are for uploaded files, which Kubecode has no service for |
 
 ## Config
 
@@ -524,7 +525,7 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 | Global overrides of Button/Input/SelectTrigger font-size and icon svg size | `src/kubecode/kubecode.css (former 84-90, 2270-2273)` | removed | Button size variants | every Button | #255 | migrated | — |
 | !important overrides | `src/kubecode/kubecode.css` | listed in scripts/css-ownership-baseline.json with owners | component variants/className | various pages | #255 with #257-#262 | partial | xterm viewport and prefers-reduced-motion are specialist/accessibility exceptions |
 | Per-page data-slot overrides (Tabs, Dialog, Select, Item, Field, Avatar, Progress, Alert, Empty, Plan, InputGroup) | `src/kubecode/kubecode.css` | listed in scripts/css-ownership-baseline.json with owners; pnpm lint blocks new ones | variants/className; remove slot redraws | Team, settings, tasks, needs-you, members, composer, conversation | #256-#262 | partial | — |
-| Area redraw selectors (ws-search, reference, record-preview, evidence, research, attach) | `src/kubecode/kubecode.css` | CSS redraw; ReferenceChip redraw removed in #255 | semantic tokens on official components | resources, research | #258/#262 | partial | — |
+| Area redraw selectors (ws-search, reference, record-preview, evidence, research, attach) | `src/kubecode/kubecode.css` | CSS redraw; ReferenceChip redraw removed in #255 | semantic tokens on official components | resources, research | #262 | partial | #258 removed ws-search, reference, record-preview, evidence and attach rules; research remains #262 |
 
 ## Portals
 

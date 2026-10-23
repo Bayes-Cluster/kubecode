@@ -107,8 +107,7 @@
 .kubecode-session-status,
 .kubecode-session-title,
 .kubecode-context-tabbar,
-.kubecode-editor-toolbar,
-.kubecode-mode-switch {
+.kubecode-editor-toolbar {
   align-items: center;
   display: flex;
 }
@@ -209,42 +208,6 @@
 
 .kubecode-session-choice-grid > button[data-active='true'] > svg {
   color: var(--accent-blue);
-}
-
-.kubecode-disable-workspaces-dialog {
-  max-width: 640px;
-}
-
-.kubecode-workspace-migration-list {
-  display: grid;
-  gap: 8px;
-  max-height: min(52vh, 440px);
-  overflow: auto;
-}
-
-.kubecode-workspace-migration-item {
-  align-items: center;
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  display: grid;
-  gap: 12px;
-  grid-template-columns: minmax(0, 1fr) 190px;
-  padding: 10px 12px;
-}
-
-.kubecode-workspace-migration-item > div {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
-
-.kubecode-workspace-migration-item span,
-.kubecode-workspace-migration-item code {
-  color: var(--text-muted);
-  font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .kubecode-recreated-context {
@@ -1556,184 +1519,8 @@
   transform: translateX(-50%);
 }
 
-.kubecode-settings-dialog {
-  box-sizing: border-box;
-  display: grid;
-  gap: 0;
-  grid-template-columns: 200px minmax(0, 1fr);
-  height: min(620px, 82vh);
-  max-width: 980px;
-  overflow: hidden;
-  padding: 0;
-  width: min(980px, 88vw);
-  font-family: var(--kubecode-ui-font, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
-}
-
-.kubecode-settings-nav {
-  background: var(--surface-sidebar);
-  border-right: 1px solid var(--border-subtle);
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 24px 12px;
-}
-.kubecode-settings-nav > strong { margin: 0 8px 12px; }
-.kubecode-settings-nav button { justify-content: flex-start; }
-
-.kubecode-settings-content { overflow-y: auto; padding: 28px 40px 40px; }
-.kubecode-settings-content h2 { font-size: 20px; margin: 0 0 24px; }
-.kubecode-settings-section-heading { font-size: 15px; margin: 28px 0 10px; }
-.kubecode-settings-group {
-  background: color-mix(in srgb, var(--surface-sidebar) 72%, var(--surface-app));
-  border: 1px solid var(--border-subtle);
-  border-radius: 12px;
-  overflow: hidden;
-}
-.kubecode-setting-row {
-  align-items: center;
-  background: transparent;
-  border-bottom: 1px solid var(--border-subtle);
-  display: flex;
-  justify-content: space-between;
-  min-height: 72px;
-  padding: 12px 16px;
-}
-.kubecode-setting-row:last-child { border-bottom: 0; }
-.kubecode-setting-row > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.kubecode-setting-row strong { align-items: center; display: flex; gap: 6px; }
-.kubecode-setting-row span { color: var(--text-secondary); font-size: 13px; overflow: hidden; text-overflow: ellipsis; }
-.kubecode-setting-row > span[data-available='true'] { color: var(--accent-green); }
-.kubecode-setting-row > span[data-available='false'] { color: var(--feedback-error-text); }
-.kubecode-setting-row .kubecode-notification-test-result[data-status='sent'] { color: var(--accent-green); }
-.kubecode-setting-row .kubecode-notification-test-result:not([data-status='sent']) { color: var(--feedback-error-text); }
-.kubecode-font-input { flex: 0 1 46%; max-width: 360px; min-width: 180px; }
-.kubecode-font-input-mono { font-family: var(--kubecode-code-font, ui-monospace, SFMono-Regular, Menlo, monospace); }
-.kubecode-theme-swatch {
-  background: var(--theme-preview);
-  border: 1px solid color-mix(in srgb, var(--border-strong) 72%, transparent);
-  border-radius: 4px;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, #fff 10%, transparent);
-  flex: 0 0 auto;
-  height: 14px;
-  width: 22px;
-}
-.kubecode-setting-row > .kubecode-notification-controls {
-  align-items: center;
-  flex-direction: row;
-  flex-shrink: 0;
-  gap: 10px;
-}
-.kubecode-settings-placeholder { color: var(--text-secondary); padding: 32px 0; }
-.kubecode-runtime-counts {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  margin: 0;
-}
-.kubecode-runtime-counts > div { padding: 14px 16px; }
-.kubecode-runtime-counts > div + div { border-left: 1px solid var(--border-subtle); }
-.kubecode-runtime-counts dt { color: var(--text-secondary); font-size: 12px; }
-.kubecode-runtime-counts dd { font-size: 20px; font-weight: 600; margin: 4px 0 0; }
 .kubecode-session-wechat-marker { color: var(--accent-green); flex-shrink: 0; }
-.kubecode-wechat-actions {
-  align-items: center;
-  display: flex;
-  flex-shrink: 0;
-  flex-wrap: wrap;
-  gap: 6px;
-  justify-content: flex-end;
-}
-.kubecode-wechat-status[data-tone='ok'] strong { color: var(--accent-green); }
-.kubecode-wechat-status[data-tone='problem'] strong { color: var(--feedback-error-text); }
-.kubecode-wechat-error span { color: var(--feedback-error-text); font-size: 13px; }
-.kubecode-wechat-qr {
-  align-items: center;
-  border-bottom: 1px solid var(--border-subtle);
-  display: flex;
-  gap: 16px;
-  margin: 0;
-  padding: 16px;
-}
-.kubecode-wechat-qr img {
-  background: #fff;
-  border-radius: 6px;
-  flex: 0 0 auto;
-  height: 200px;
-  padding: 8px;
-  width: 200px;
-}
-.kubecode-wechat-qr figcaption {
-  color: var(--text-secondary);
-  display: flex;
-  flex-direction: column;
-  font-size: 13px;
-  gap: 6px;
-  min-width: 0;
-}
-.kubecode-wechat-code { max-width: 160px; }
-.kubecode-wechat-quick-prompt { align-items: flex-start; gap: 12px; }
-.kubecode-wechat-quick-prompt textarea { flex: 1 1 auto; min-width: 0; }
-.kubecode-agent-doctor-actions {
-  align-items: center;
-  flex-direction: row !important;
-  flex-shrink: 0;
-  gap: 6px !important;
-}
-.kubecode-agent-diagnostic {
-  border-bottom: 1px solid var(--border-subtle);
-}
-.kubecode-agent-diagnostic:last-child { border-bottom: 0; }
-.kubecode-agent-diagnostic summary {
-  align-items: center;
-  cursor: pointer;
-  display: flex;
-  justify-content: space-between;
-  min-height: 64px;
-  padding: 10px 16px;
-}
-.kubecode-agent-diagnostic summary::marker { color: var(--text-secondary); }
-.kubecode-agent-diagnostic summary > span {
-  align-items: center;
-  display: flex;
-  gap: 7px;
-}
-.kubecode-agent-diagnostic summary > span[data-available='true'] { color: var(--accent-green); }
-.kubecode-agent-diagnostic summary > span[data-available='false'] { color: var(--feedback-error-text); }
-.kubecode-agent-diagnostic-body {
-  background: color-mix(in srgb, var(--surface-app) 54%, transparent);
-  border-top: 1px solid var(--border-subtle);
-  display: grid;
-  gap: 10px;
-  padding: 12px 16px 14px 36px;
-}
-.kubecode-agent-diagnostic-row {
-  align-items: flex-start;
-  display: flex;
-  gap: 9px;
-}
-.kubecode-agent-diagnostic-row > span {
-  display: flex;
-  margin-top: 2px;
-}
-.kubecode-agent-diagnostic-row > span[data-status='ready'] { color: var(--accent-green); }
-.kubecode-agent-diagnostic-row > span:not([data-status='ready']) { color: var(--feedback-error-text); }
-.kubecode-agent-diagnostic-row svg { height: 15px; width: 15px; }
-.kubecode-agent-diagnostic-row > div {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-.kubecode-agent-diagnostic-row small,
-.kubecode-agent-diagnostic-body > small,
-.kubecode-agent-auth-note {
-  color: var(--text-secondary);
-  font-size: 12px;
-}
-.kubecode-agent-diagnostic-row code {
-  color: var(--feedback-error-text);
-  font-size: 11px;
-  overflow-wrap: anywhere;
-  white-space: normal;
-}
+
 .kubecode-agent-startup-error {
   display: grid;
   gap: 8px;
@@ -1900,16 +1687,7 @@
 
 @media (max-width: 980px) {
   .kubecode-topbar { grid-template-columns: auto minmax(180px, 1fr) auto; }
-  .kubecode-settings-dialog { grid-template-columns: 164px minmax(0, 1fr); }
-  .kubecode-settings-content { padding: 24px; }
-  .kubecode-setting-row { align-items: stretch; flex-direction: column; gap: 12px; }
-  .kubecode-runtime-counts { grid-template-columns: 1fr; }
-  .kubecode-runtime-counts > div + div { border-left: 0; border-top: 1px solid var(--border-subtle); }
-  .kubecode-wechat-actions { justify-content: flex-start; }
-  .kubecode-wechat-qr { align-items: flex-start; flex-direction: column; }
-  .kubecode-wechat-code { max-width: none; width: 100%; }
-  .kubecode-font-input,
-  .kubecode-setting-row [data-slot='select-trigger'] { max-width: none; width: 100%; }
+
 }
 
 /* ============================================================
@@ -2212,93 +1990,7 @@
 }
 .kubecode-path-picker-heading [data-slot='dialog-title'] { font-size: 15px; }
 .kubecode-path-picker-heading [data-slot='dialog-description'] { font-size: 12px; }
-.kubecode-path-picker {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  min-height: 0;
-}
-.kubecode-path-picker-input {
-  background: transparent;
-  border: 0;
-  border-bottom: 1px solid var(--border-subtle);
-  border-radius: 0;
-  box-shadow: none;
-  flex: 0 0 48px;
-  font-family: var(--kubecode-code-font, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 14px;
-  height: 48px;
-  padding: 0 18px;
-}
-.kubecode-path-picker-input:focus-visible {
-  border-bottom-color: var(--border-strong);
-  box-shadow: none;
-  outline: none;
-}
-.kubecode-path-picker-results {
-  flex: 1 1 auto;
-  max-height: min(420px, 48vh);
-  min-height: 96px;
-  overflow: auto;
-  padding: 6px;
-}
-.kubecode-path-picker-row {
-  align-items: center;
-  background: transparent;
-  border: 0;
-  border-radius: 6px;
-  color: var(--text-primary);
-  cursor: pointer;
-  display: flex;
-  font: inherit;
-  gap: 10px;
-  min-height: 38px;
-  padding: 6px 10px;
-  text-align: left;
-  width: 100%;
-}
-.kubecode-path-picker-row:hover,
-.kubecode-path-picker-row[data-active='true'] {
-  background: var(--state-hover);
-}
-.kubecode-path-picker-row:focus-visible {
-  box-shadow: 0 0 0 1px var(--state-focus-ring) inset;
-  outline: none;
-}
-.kubecode-path-picker-row:disabled {
-  cursor: default;
-  opacity: 0.48;
-}
-.kubecode-path-picker-row > svg {
-  flex: 0 0 auto;
-  height: 18px;
-  width: 18px;
-}
-.kubecode-path-picker-row-copy {
-  display: grid;
-  flex: 1 1 auto;
-  gap: 1px;
-  min-width: 0;
-}
-.kubecode-path-picker-row-copy strong,
-.kubecode-path-picker-row-copy small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.kubecode-path-picker-row-copy strong { font-size: 13px; font-weight: 500; }
-.kubecode-path-picker-row-copy small {
-  color: var(--text-muted);
-  font-family: var(--kubecode-code-font, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 11px;
-  font-weight: 400;
-}
-.kubecode-path-picker-row-action { opacity: 0.5; }
-.kubecode-path-picker-empty {
-  color: var(--text-muted);
-  font-size: 13px;
-  padding: 18px 12px;
-}
+
 .kubecode-path-picker-footer {
   align-items: center;
   border-top: 1px solid var(--border-subtle);
@@ -2318,31 +2010,19 @@
   padding: 8px 12px;
   text-align: left;
 }
-.kubecode-project-path-dialog .kubecode-mode-switch {
-  border-bottom: 1px solid var(--border-subtle);
-  gap: 4px;
-  padding: 7px 10px;
-}
-.kubecode-project-path-dialog .kubecode-mode-switch button {
-  border: 0;
-  box-shadow: none;
-  height: 28px;
-}
 
 /* Agent Chat remains scrollable, but its timeline and Composer never expose chrome. */
 .kubecode-message-history,
 .kubecode-composer-editor,
 .kubecode-virtual-message-history,
-.kubecode-virtual-message-history [data-virtuoso-scroller='true'],
-.kubecode-path-picker-results {
+.kubecode-virtual-message-history [data-virtuoso-scroller='true'] {
   scrollbar-color: transparent transparent !important;
   scrollbar-width: none !important;
 }
 .kubecode-message-history::-webkit-scrollbar,
 .kubecode-composer-editor::-webkit-scrollbar,
 .kubecode-virtual-message-history::-webkit-scrollbar,
-.kubecode-virtual-message-history [data-virtuoso-scroller='true']::-webkit-scrollbar,
-.kubecode-path-picker-results::-webkit-scrollbar {
+.kubecode-virtual-message-history [data-virtuoso-scroller='true']::-webkit-scrollbar {
   display: none !important;
   height: 0 !important;
   width: 0 !important;
@@ -2367,25 +2047,7 @@
   /* The Workspace search stays as one icon (ADR 0231): leading, search, actions. */
   .kubecode-topbar { grid-template-columns: minmax(0, 1fr) auto auto; }
   .kubecode-titlebar-session-slot { max-width: calc(100vw - 190px); }
-  [data-slot='dialog-content'].kubecode-settings-dialog {
-    grid-template-columns: minmax(0, 1fr);
-    height: calc(100vh - 24px);
-    left: 12px;
-    max-width: none;
-    right: 12px;
-    translate: 0 -50%;
-    width: auto;
-  }
-  .kubecode-settings-nav {
-    border-bottom: 1px solid var(--border-subtle);
-    border-right: 0;
-    flex-direction: row;
-    overflow-x: auto;
-    padding: 10px 12px;
-  }
-  .kubecode-settings-nav > strong { display: none; }
-  .kubecode-settings-nav button { flex: 0 0 auto; }
-  .kubecode-settings-content { min-width: 0; padding: 20px 16px; }
+
 }
 
 /* Research workbench (ADR 0212) */
@@ -2581,38 +2243,6 @@
   gap: 8px;
   min-width: 0;
 }
-.kubecode-mention-menu {
-  background: var(--surface-popover);
-  border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  bottom: calc(100% + 4px);
-  box-shadow: 0 6px 18px rgb(0 0 0 / 12%);
-  left: 0;
-  list-style: none;
-  margin: 0;
-  max-height: 220px;
-  min-width: 220px;
-  overflow-y: auto;
-  padding: 4px;
-  position: absolute;
-  z-index: 20;
-}
-.kubecode-mention-menu li {
-  align-items: baseline;
-  border-radius: 4px;
-  cursor: pointer;
-  display: flex;
-  gap: 8px;
-  padding: 4px 8px;
-}
-.kubecode-mention-menu li[aria-selected='true'],
-.kubecode-mention-menu li:hover { background: var(--surface-button); }
-/* The chosen option is marked by more than its background. */
-.kubecode-mention-menu li[aria-selected='true'] { box-shadow: inset 2px 0 0 var(--primary); }
-@media (pointer: coarse) {
-  .kubecode-mention-menu li { min-height: 44px; }
-}
-.kubecode-mention-menu small { color: var(--text-secondary); margin-left: auto; }
 
 .kubecode-research-list,
 .kubecode-research-cards,
@@ -2964,52 +2594,12 @@
 
 .kubecode-channel-filter label { align-items: center; display: inline-flex; gap: var(--ws-space-2); min-width: 0; }
 
-.kubecode-channel-replying {
-  align-items: center;
-  background: var(--surface-subtle);
-  border-radius: var(--radius-md);
-  color: var(--text-secondary);
-  display: flex;
-  font-size: var(--kubecode-ui-font-small);
-  gap: 6px;
-  justify-content: space-between;
-  margin: 0;
-  padding: 2px 8px;
-}
 
-.kubecode-dm-turns {
-  border: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin: 0;
-  max-height: 220px;
-  overflow-y: auto;
-  padding: 0;
-}
 
-.kubecode-dm-turns label { align-items: flex-start; display: flex; gap: 8px; }
-.kubecode-dm-turns label span { overflow: hidden; text-overflow: ellipsis; }
 
-.kubecode-dm-field { display: flex; flex-direction: column; gap: 4px; }
 
-.kubecode-dm-preview {
-  background: var(--surface-subtle);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  padding: 8px;
-}
 
-.kubecode-dm-preview {
-  display: flex;
-  flex-direction: column;
-  gap: var(--ws-space-2);
-  min-width: 0;
-}
 
-.kubecode-dm-preview pre { margin: 0; max-height: 240px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
-.kubecode-dm-preview summary { color: var(--text-secondary); cursor: pointer; font: var(--ws-font-meta); }
-.kubecode-dm-share { max-height: calc(100dvh - 32px); overflow-y: auto; }
 
 .kubecode-channel-composer {
   display: flex;
@@ -3027,20 +2617,7 @@
   position: relative;
 }
 
-.kubecode-message {
-  border-radius: var(--radius-md);
-  display: flex;
-  flex-direction: column;
-  gap: var(--ws-space-1);
-  max-width: var(--ws-reading-width);
-  min-width: 0;
-  padding: var(--ws-space-2);
-}
 
-.kubecode-message[data-continued='true'] { padding-top: 0; }
-.kubecode-message:hover,
-.kubecode-message:focus-within { background: var(--surface-hover); }
-.kubecode-message[data-kind='system'] { color: var(--text-secondary); }
 
 .kubecode-message-header {
   align-items: center;
@@ -3060,51 +2637,14 @@
   width: 1px;
 }
 
-.kubecode-message-toolbar {
-  display: inline-flex;
-  gap: var(--ws-space-1);
-  margin-left: auto;
-  opacity: 0;
-}
 
-.kubecode-message:hover .kubecode-message-toolbar,
-.kubecode-message:focus-within .kubecode-message-toolbar,
-.kubecode-message-toolbar[data-coarse='true'] { opacity: 1; }
 
-.kubecode-message-content {
-  display: flex;
-  flex-direction: column;
-  gap: var(--ws-space-1);
-  min-width: 0;
-  padding-left: calc(var(--ws-avatar-md) + var(--ws-space-2));
-}
 
 .kubecode-message-body { min-width: 0; overflow-wrap: anywhere; }
 .kubecode-message-body .ai-markdown > :first-child { margin-top: 0; }
 .kubecode-message-body .ai-markdown > :last-child { margin-bottom: 0; }
 
-.kubecode-message-recipients {
-  align-items: center;
-  color: var(--text-secondary);
-  display: inline-flex;
-  flex-wrap: wrap;
-  font: var(--ws-font-meta);
-  gap: var(--ws-space-1);
-  margin: 0;
-  min-width: 0;
-}
-.kubecode-message-recipients-arrow { color: var(--text-tertiary, var(--text-secondary)); }
 
-.kubecode-message-references,
-.kubecode-composer-about ul {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--ws-space-1);
-  list-style: none;
-  margin: 0;
-  min-width: 0;
-  padding: 0;
-}
 
 .kubecode-message-delivery {
   align-items: center;
@@ -3116,58 +2656,7 @@
   margin: 0;
 }
 
-.kubecode-legacy-thread-link {
-  align-items: center;
-  align-self: flex-start;
-  background: transparent;
-  border: 0;
-  color: var(--text-secondary);
-  cursor: pointer;
-  display: inline-flex;
-  font: var(--ws-font-meta);
-  gap: var(--ws-space-1);
-  min-height: var(--ws-touch-target);
-  padding: 0;
-}
 
-.kubecode-legacy-thread-link:hover { color: var(--text-primary); }
-.kubecode-legacy-thread-note {
-  background: var(--surface-subtle);
-  border-radius: var(--radius-md);
-  color: var(--text-secondary);
-  font: var(--ws-font-meta);
-  margin: 0;
-  padding: var(--ws-space-2);
-}
-
-.kubecode-legacy-thread-topic { color: var(--text-secondary); overflow-wrap: anywhere; }
-.kubecode-legacy-thread-actions { display: flex; justify-content: flex-end; }
-
-.kubecode-activity-group {
-  color: var(--text-secondary);
-  font: var(--ws-font-meta);
-  padding: 0 var(--ws-space-2);
-}
-
-.kubecode-activity-group summary { cursor: pointer; min-height: var(--ws-touch-target); }
-.kubecode-activity-group ul { display: flex; flex-direction: column; gap: var(--ws-space-1); list-style: none; margin: 0; padding: 0 0 0 var(--ws-space-3); }
-.kubecode-activity-group li { display: flex; flex-wrap: wrap; gap: var(--ws-space-2); overflow-wrap: anywhere; }
-
-.kubecode-date-separator {
-  align-items: center;
-  color: var(--text-secondary);
-  display: flex;
-  font: var(--ws-font-meta);
-  gap: var(--ws-space-2);
-  margin: var(--ws-space-2) 0;
-}
-
-.kubecode-date-separator::before,
-.kubecode-date-separator::after {
-  border-top: 1px solid var(--border-subtle);
-  content: '';
-  flex: 1 1 auto;
-}
 
 .kubecode-inert-image {
   border: 1px dashed var(--border-subtle);
@@ -3176,23 +2665,11 @@
   padding: 0 var(--ws-space-1);
 }
 
-.kubecode-composer-about,
-.kubecode-composer-to {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  font: var(--ws-font-meta);
-  gap: var(--ws-space-2);
-  min-width: 0;
-}
 
-.kubecode-composer-about-label { color: var(--text-secondary); }
 
-.kubecode-composer-warning { color: var(--feedback-warning-text); font: var(--ws-font-meta); margin: 0; }
 .kubecode-composer-hint { color: var(--text-secondary); font: var(--ws-font-meta); margin: 0; }
-.kubecode-channel-outside { color: var(--text-secondary); font: var(--ws-font-meta); margin: 0; }
-.kubecode-mention-unavailable { color: var(--text-secondary); }
 
+.kubecode-dm-turn { display: flex; flex-direction: column; max-width: var(--ws-reading-width); }
 .kubecode-member-provider {
   align-items: center;
   color: var(--text-secondary);
@@ -3200,15 +2677,8 @@
   gap: var(--ws-space-1);
 }
 
-.kubecode-dm-turn { display: flex; flex-direction: column; max-width: var(--ws-reading-width); }
 
-@media (pointer: coarse) {
-  .kubecode-message-toolbar { opacity: 1; }
-}
 
-@media (max-width: 980px) {
-  .kubecode-message-content { padding-left: 0; }
-}
 
 /* -- Workspace navigation and the on-demand detail area (ADR 0224) ----------- */
 
@@ -3252,16 +2722,6 @@
 .kubecode-detail-pane > h4,
 .kubecode-detail-pane > p,
 .kubecode-detail-pane > button { margin-left: 14px; margin-right: 14px; }
-
-.kubecode-member-profile {
-  align-items: flex-start;
-  display: flex;
-  flex-direction: column;
-  gap: var(--ws-space-2);
-}
-.kubecode-member-profile > h4,
-.kubecode-member-profile > p { margin: 0; }
-.kubecode-detail-pane > .kubecode-member-profile { padding: 0 14px 14px; }
 
 /*
  * The inspector stack (ADR 0228 §3). Every entry is its own scroll container;
@@ -3333,7 +2793,6 @@
 
 /* A Task's details. */
 
-.kubecode-channel-proposal { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; }
 
 @media (max-width: 900px) {
   .kubecode-channel-workspace { flex-direction: column; overflow-y: auto; }
@@ -3624,19 +3083,6 @@
   overflow-wrap: anywhere;
 }
 
-/* A named reference to a Workspace object (on the official Badge, ADR 0247). */
-.kubecode-reference-chip-version { flex: 0 0 auto; }
-/* A long reference wraps instead of hiding its title or state behind a hover-only tooltip. */
-.kubecode-reference-chip-state { overflow-wrap: anywhere; }
-.kubecode-reference-chip-title {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.kubecode-reference-chip-version { color: var(--text-secondary); }
-.kubecode-reference-chip-state { color: var(--feedback-warning-text); }
-.kubecode-reference-chip[data-state='removed'] .kubecode-reference-chip-title { text-decoration: line-through; }
-.kubecode-reference-chip[data-state='removed'] .kubecode-reference-chip-state { color: var(--ws-danger-text); }
-
 /* The one header of a Workspace view or detail. */
 .kubecode-view-header {
   display: flex;
@@ -3756,158 +3202,11 @@
   color: var(--text-secondary);
   font: var(--ws-font-meta);
 }
-@media (pointer: coarse) {
-  .kubecode-reference-chip-remove { min-height: var(--ws-touch-target); min-width: var(--ws-touch-target); }
-  button.kubecode-reference-chip-open { min-height: var(--ws-touch-target); }
-}
-.kubecode-reference-chip[data-state='unavailable'] .kubecode-reference-chip-state { color: var(--text-secondary); }
 
 /* Text in the danger color must read at 4.5:1; the bright error red is for icons and borders. */
 .kubecode-app { --ws-danger-text: #C53030; }
 :root.dark .kubecode-app,
 :root[data-theme='dark'] .kubecode-app { --ws-danger-text: var(--feedback-error-text); }
-
-/* -- Workspace search, previews, and versioned references (ADR 0231) ------ */
-.kubecode-ws-search-host { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; min-width: 0; }
-.kubecode-ws-search {
-  background: var(--surface-app);
-  display: grid;
-  gap: var(--ws-space-2);
-  padding-bottom: var(--ws-space-2);
-  position: sticky;
-  top: 0;
-  z-index: 1;
-}
-.kubecode-ws-search-field { align-items: center; display: flex; gap: var(--ws-space-2); min-width: 0; }
-.kubecode-ws-search-field input { min-height: var(--ws-touch-target); }
-.kubecode-ws-search-sections { display: flex; flex-wrap: wrap; gap: var(--ws-space-1); }
-.kubecode-ws-search-section { min-height: var(--ws-touch-target); }
-.kubecode-ws-search-count {
-  color: var(--text-secondary);
-  font: var(--ws-font-meta);
-  font-variant-numeric: tabular-nums;
-}
-.kubecode-ws-search-scope,
-.kubecode-ws-search-notice { color: var(--text-secondary); font: var(--ws-font-meta); margin: 0; }
-.kubecode-ws-search-results { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
-.kubecode-ws-search-list { display: grid; gap: 2px; list-style: none; margin: 0; padding: 0; }
-.kubecode-ws-search-more { margin-top: var(--ws-space-1); width: 100%; }
-.kubecode-resource-row {
-  align-items: flex-start;
-  border-radius: 8px;
-  cursor: pointer;
-  display: flex;
-  gap: var(--ws-space-3);
-  min-height: var(--ws-touch-target);
-  padding: var(--ws-space-2) var(--ws-space-3);
-}
-.kubecode-resource-row:hover,
-.kubecode-resource-row[data-active] { background: var(--state-hover, color-mix(in srgb, var(--text-primary) 6%, transparent)); }
-.kubecode-resource-row[aria-selected='true'] { box-shadow: inset 2px 0 0 var(--state-focus-ring); }
-.kubecode-resource-row > svg { flex: 0 0 auto; margin-top: 2px; }
-.kubecode-resource-row-body { display: grid; gap: 2px; min-width: 0; }
-.kubecode-resource-row-title { font: var(--ws-font-subtitle); overflow-wrap: anywhere; }
-.kubecode-resource-row-meta { color: var(--text-secondary); font: var(--ws-font-meta); overflow-wrap: anywhere; }
-.kubecode-resource-row[data-availability='removed'] .kubecode-resource-row-title { text-decoration: line-through; }
-.kubecode-resource-row-summary {
-  color: var(--text-secondary);
-  font: var(--ws-font-meta);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.kubecode-attach-bar {
-  align-items: center;
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--ws-space-2);
-  margin-bottom: var(--ws-space-2);
-  padding: var(--ws-space-2) var(--ws-space-3);
-}
-.kubecode-attach-bar > span { flex: 1 1 16rem; }
-.kubecode-record-preview-meta { align-items: center; display: flex; flex-wrap: wrap; gap: var(--ws-space-2); }
-.kubecode-record-preview-meta strong { overflow-wrap: anywhere; }
-.kubecode-record-preview-related { list-style: none; margin: 0; padding: 0; }
-.kubecode-reference-chip-host { display: contents; }
-
-/* The titlebar search: a field-like button, then the popover. */
-.kubecode-ws-search-launcher {
-  align-items: center;
-  background: var(--surface-app);
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  color: var(--text-secondary);
-  display: flex;
-  gap: var(--ws-space-2);
-  max-width: 32rem;
-  min-height: var(--ws-touch-target);
-  min-width: 0;
-  padding: 0 var(--ws-space-3);
-  width: 100%;
-}
-.kubecode-ws-search-launcher:focus-visible { box-shadow: var(--ws-focus-ring); outline: 2px solid transparent; }
-.kubecode-ws-search-launcher-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.kubecode-ws-search-popover {
-  background: var(--surface-app);
-  border: 1px solid var(--border-subtle);
-  border-radius: 10px;
-  box-shadow: 0 12px 32px color-mix(in srgb, #000 18%, transparent);
-  display: flex;
-  max-height: min(70vh, 560px);
-  padding: var(--ws-space-3);
-  width: min(36rem, calc(100vw - 32px));
-  z-index: 60;
-}
-
-/* Add context: results and the preview side by side when the dialog is wide enough. */
-[data-slot='dialog-content'].kubecode-add-context-dialog {
-  container-type: inline-size;
-  max-height: calc(100vh - 32px);
-  overflow-y: auto;
-  width: min(960px, calc(100vw - 32px));
-}
-@media (min-width: 640px) {
-  [data-slot='dialog-content'].kubecode-add-context-dialog { max-width: min(960px, calc(100vw - 32px)); }
-}
-.kubecode-add-context { display: grid; gap: var(--ws-space-3); min-height: 0; }
-.kubecode-add-context-list,
-.kubecode-add-context-preview { display: flex; flex-direction: column; gap: var(--ws-space-2); min-height: 0; min-width: 0; }
-.kubecode-add-context-list .kubecode-ws-search-results { max-height: 50vh; }
-.kubecode-add-context-actions {
-  align-items: center;
-  background: var(--surface-app);
-  bottom: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--ws-space-2);
-  padding-top: var(--ws-space-2);
-  position: sticky;
-}
-.kubecode-add-context-actions button { min-height: var(--ws-touch-target); }
-.kubecode-add-context-footer { display: flex; justify-content: flex-end; }
-@container (min-width: 720px) {
-  .kubecode-add-context { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  .kubecode-add-context-back { display: none; }
-}
-@container (max-width: 719px) {
-  .kubecode-add-context[data-step='list'] .kubecode-add-context-preview,
-  .kubecode-add-context[data-step='preview'] .kubecode-add-context-list { display: none; }
-}
-@media (max-width: 640px) {
-  [data-slot='dialog-content'].kubecode-add-context-dialog {
-    border-radius: 0;
-    height: 100dvh;
-    max-height: none;
-    max-width: none;
-    width: 100vw;
-  }
-  .kubecode-add-context-actions button { min-height: 44px; }
-  /* The sections scroll in their own row, so the page never scrolls sideways. */
-  .kubecode-ws-search-sections { flex-wrap: nowrap; overflow-x: auto; }
-  .kubecode-ws-search-section { flex: 0 0 auto; }
-}
 
 /* -- What waits on the researcher, and what is working (ADR 0232) ------------- */
 
@@ -3918,12 +3217,6 @@
 /* One running item (ADR 0240): who, a queued count and Stop; the Task below. */
 
 .kubecode-delivery-status { display: flex; flex-direction: column; gap: var(--ws-space-1); }
-.kubecode-outbox { display: flex; flex-direction: column; gap: var(--ws-space-1); list-style: none; margin: 0; padding: var(--ws-space-1) var(--ws-space-3) 0; }
-.kubecode-outbox-row { display: flex; flex-direction: column; gap: var(--ws-space-1); }
-.kubecode-outbox-text { color: var(--text-secondary); overflow-wrap: anywhere; white-space: pre-wrap; }
-.kubecode-outbox-row[data-state='sending'] .kubecode-outbox-text { opacity: 0.75; }
-.kubecode-outbox-failure { align-items: center; display: flex; flex-wrap: wrap; font: var(--ws-font-meta); gap: var(--ws-space-2); }
-.kubecode-outbox-failure .kubecode-research-error { color: var(--ws-danger-text); }
 .kubecode-delivery-failure {
   align-items: center;
   display: flex;
@@ -3941,8 +3234,7 @@
 
 @media (pointer: coarse) {
   .kubecode-delivery-failure .kubecode-decision-button,
-.kubecode-delivery-failure button,
-.kubecode-outbox-failure button { min-height: var(--ws-touch-target); }
+  .kubecode-delivery-failure button { min-height: var(--ws-touch-target); }
 }
 
 /* ------------------------------------------------------------------
@@ -4172,120 +3464,6 @@
   min-height: 0;
   min-width: 0;
 }
-.kubecode-manager-setup {
-  align-items: flex-start;
-  background: var(--feedback-warning-bg);
-  border: 1px solid var(--feedback-warning-border);
-  border-radius: var(--ws-radius-lg);
-  color: var(--text-primary);
-  display: flex;
-  flex: 0 0 auto;
-  flex-wrap: wrap;
-  gap: var(--ws-space-3);
-  margin: var(--ws-space-3) var(--ws-space-4) 0;
-  padding: var(--ws-space-3) var(--ws-space-4);
-}
-.kubecode-manager-setup-actions { align-items: center; display: flex; flex-wrap: wrap; gap: var(--ws-space-2); }
-
-.kubecode-members-tabs { display: flex; flex-direction: column; gap: var(--ws-space-3); max-width: var(--ws-conversation-width); width: 100%; }
-.kubecode-members,
-.kubecode-member-defaults { display: flex; flex-direction: column; gap: var(--ws-space-3); }
-.kubecode-members-header {
-  align-items: flex-start;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--ws-space-2) var(--ws-space-3);
-  justify-content: space-between;
-}
-.kubecode-members-header > div { display: flex; flex: 1 1 240px; flex-direction: column; gap: var(--ws-space-1); min-width: 0; }
-.kubecode-members-header h3 { font: var(--ws-font-subtitle); margin: 0; }
-.kubecode-members-header p { margin: 0; }
-.kubecode-member-list {
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ws-radius-lg);
-  display: flex;
-  flex-direction: column;
-  list-style: none;
-  margin: 0;
-  overflow: hidden;
-  padding: 0;
-}
-.kubecode-member-row {
-  align-items: flex-start;
-  background: var(--surface-card);
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--ws-space-2) var(--ws-space-3);
-  padding: var(--ws-space-3);
-}
-.kubecode-member-row + .kubecode-member-row { border-top: 1px solid var(--border-subtle); }
-.kubecode-member-row[data-state='setup_required'] { box-shadow: inset 3px 0 0 var(--feedback-warning-border); }
-.kubecode-member-main { display: flex; flex: 1 1 280px; flex-direction: column; gap: var(--ws-space-1); min-width: 0; }
-.kubecode-member-main .kubecode-member-identity-text { flex-wrap: wrap; }
-.kubecode-member-actions { align-items: center; display: flex; flex: 0 0 auto; flex-wrap: wrap; gap: var(--ws-space-1); }
-.kubecode-member-row > .kubecode-member-form { flex: 1 1 100%; }
-.kubecode-member-locked {
-  align-items: flex-start;
-  color: var(--text-secondary);
-  display: flex;
-  font: var(--ws-font-meta);
-  gap: var(--ws-space-1);
-  margin: 0;
-}
-.kubecode-member-locked > svg { flex: 0 0 auto; margin-top: 3px; }
-.kubecode-member-form {
-  background: var(--surface-panel);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ws-radius-lg);
-  display: flex;
-  flex-direction: column;
-  gap: var(--ws-space-3);
-  padding: var(--ws-space-3) var(--ws-space-4);
-}
-.kubecode-member-defaults > .kubecode-member-form { background: var(--surface-card); }
-.kubecode-member-form label { display: flex; flex-direction: column; gap: var(--ws-space-1); }
-.kubecode-member-form label > span,
-.kubecode-member-form legend { color: var(--text-primary); font: var(--ws-font-meta); font-weight: 600; }
-.kubecode-member-form fieldset {
-  border: 0;
-  border-top: 1px solid var(--border-subtle);
-  display: flex;
-  flex-direction: column;
-  gap: var(--ws-space-2);
-  margin: 0;
-  min-width: 0;
-  padding: var(--ws-space-3) 0 0;
-}
-.kubecode-member-form fieldset > legend { float: left; padding: 0; width: 100%; }
-.kubecode-member-form fieldset > legend + * { clear: both; }
-.kubecode-member-form fieldset > button { align-self: flex-start; }
-.kubecode-member-form .kubecode-channel-select { max-width: 100%; min-width: 0; }
-.kubecode-member-form input[aria-invalid='true'] { border-color: var(--feedback-error-text); }
-.kubecode-member-config-row { align-items: center; display: grid; gap: var(--ws-space-2); grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; }
-.kubecode-member-restrictions {
-  background: var(--surface-panel);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ws-radius-md);
-  display: flex;
-  flex-direction: column;
-  gap: var(--ws-space-1);
-  padding: var(--ws-space-2) var(--ws-space-3);
-  width: 100%;
-}
-.kubecode-member-restrictions h4 { align-items: center; display: flex; font: var(--ws-font-meta); font-weight: 600; gap: var(--ws-space-1); margin: 0; }
-.kubecode-member-restrictions p { font: var(--ws-font-meta); margin: 0; }
-.kubecode-project-next { color: var(--text-secondary); font: var(--ws-font-meta); margin: 0; }
-
-@media (max-width: 760px) {
-  .kubecode-manager-setup { margin: var(--ws-space-2) var(--ws-space-3) 0; padding: var(--ws-space-3); }
-  .kubecode-manager-setup-actions { width: 100%; }
-  .kubecode-member-actions { width: 100%; }
-  .kubecode-member-form { padding: var(--ws-space-3); }
-  .kubecode-members-tabs [data-slot='tabs-list'] { max-width: 100%; overflow-x: auto; }
-}
-
-/* A message's cited materials as Sources (ADR 0236): aligned with the message text. */
-.kubecode-reference-sources { min-width: 0; }
 
 /*
  * General and DMs as one conversation (#232, ADR 0233): each message is an
@@ -4312,23 +3490,11 @@
 
 .kubecode-channel-messages > .kubecode-research-muted:only-child { margin-block: auto; text-align: center; }
 /* The dock's work sits on the composer's top edge: one compact row or a count. */
-
-.kubecode-conversation-dock .kubecode-outbox { padding: 0; }
-.kubecode-conversation-dock .kubecode-outbox-row {
-  background: var(--ws-surface-self);
-  border-radius: var(--ws-radius-md);
-  padding: var(--ws-space-2) var(--ws-space-3);
-}
-.kubecode-conversation-dock .kubecode-outbox-row[data-state='failed'] { box-shadow: inset 2px 0 0 var(--feedback-error-text); }
 .kubecode-conversation-dock .kubecode-channel-composer { gap: var(--ws-space-2); }
 
-.kubecode-composer-footer { display: flex; flex-direction: column; gap: var(--ws-space-1); }
 
 /* ADR 0239: a chat. The researcher's messages sit on the right as a tinted
    bubble with no avatar; members' messages sit on the left with theirs. */
-.kubecode-channel-messages .kubecode-message,
-.kubecode-dm-turn { max-width: none; }
-.kubecode-dm-turn { width: 100%; }
 
 .kubecode-conversation-dock {
   max-width: none;
@@ -4340,10 +3506,8 @@
 .kubecode-channel-messages { padding-block-end: var(--ws-space-4); scroll-padding-block-end: var(--ws-space-4); }
 /* A comfortable measure on a wide pane: a member's message about 90 characters, the researcher's 70. */
 
-.kubecode-composer-notice { margin: 0; }
 /* Empty, the card is one line over its tools (ADR 0240); it grows with the text up to a limit, then scrolls. */
 .kubecode-conversation-dock .kubecode-composer { gap: 2px; }
-.kubecode-conversation-dock .kubecode-composer-footer:empty { display: none; }
 
 @media (max-width: 767px) {
   .kubecode-channel-messages { padding-inline: var(--ws-space-3); }
@@ -4521,8 +3685,6 @@
 
 /* Inspector: the brief as a Plan, work as Task items, evidence as Sources of Item rows. */
 
-.kubecode-evidence-cannot-accept { margin-bottom: var(--ws-space-2); }
-
 /* Needs you: named Item groups, one row per thing to open; Empty when nothing waits. */
 
 /* ==== end S2 ==== */
@@ -4554,10 +3716,6 @@
   width: 2rem;
   z-index: 2;
 }
-.kubecode-date-separator { align-items: center; color: var(--text-secondary); display: flex; font: var(--ws-font-meta); gap: var(--ws-space-2); margin: var(--ws-space-2) 0; }
-.kubecode-date-separator::before,
-.kubecode-date-separator::after { content: none; }
-.kubecode-date-separator > .kubecode-date-separator-rule { flex: 1 1 auto; width: auto; }
 
 /* One message: an article around the official Message. Members on the left
    with their avatar, the researcher's own as a tinted bubble on the right. */
@@ -4589,7 +3747,6 @@
 .kubecode-message[data-from='self'] .kubecode-message-recipients > .kubecode-member-identity:last-child { flex: 0 1 auto; min-width: 0; }
 .kubecode-message[data-from='self'] .kubecode-message-recipients .kubecode-member-identity-text { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kubecode-message[data-from='self'] .kubecode-message-recipients .kubecode-member-identity-text > * + * { margin-inline-start: var(--ws-space-2); }
-.kubecode-message[data-from='self'] .kubecode-message-toolbar { margin-left: 0; margin-right: auto; order: -1; }
 .kubecode-message[data-from='self'] .kubecode-message-inner > :not(.kubecode-message-header) {
   background: var(--ws-surface-self);
   border-radius: var(--ws-radius-md);
@@ -4603,78 +3760,28 @@
 /* Cells keep words whole on a phone; the table scrolls inside its box instead (#229). */
 .kubecode-message-body :is(th, td) { overflow-wrap: normal; word-break: normal; }
 .kubecode-message-action { color: var(--text-secondary); }
-.kubecode-dm-turn { display: flex; flex-direction: column; width: 100%; }
 .kubecode-dm-waiting { align-items: center; color: var(--text-secondary); display: flex; font: var(--ws-font-meta); gap: var(--ws-space-2); margin: 0; }
 
 /* Identity: the official Avatar, toned by who someone is; the words say it. */
 .kubecode-conversation-avatar { flex: none; }
 .kubecode-member-identity[data-size='md'] > .kubecode-conversation-avatar { height: var(--ws-avatar-md); width: var(--ws-avatar-md); }
 .kubecode-member-identity[data-size='sm'] > .kubecode-conversation-avatar { height: var(--ws-avatar-sm); width: var(--ws-avatar-sm); }
-.kubecode-conversation-avatar > [data-slot='avatar-fallback'] { color: var(--text-primary); font: 600 11px/1 var(--font-sans, inherit); }
-.kubecode-conversation-avatar[data-role='manager'] > [data-slot='avatar-fallback'] { background: var(--accent-blue-light); box-shadow: inset 0 0 0 1px var(--accent-blue); }
-.kubecode-conversation-avatar[data-role='specialist'] > [data-slot='avatar-fallback'] { background: var(--accent-teal-light); box-shadow: inset 0 0 0 1px var(--accent-teal); }
 .kubecode-conversation-avatar[data-role='researcher'] > [data-slot='avatar-fallback'] { background: var(--accent-purple-light); box-shadow: inset 0 0 0 1px var(--accent-purple); }
-.kubecode-conversation-avatar[data-role='system'] > [data-slot='avatar-fallback'] { background: var(--surface-button); }
 .kubecode-identity-card { display: flex; flex-direction: column; gap: 2px; width: auto; max-width: 20rem; }
 .kubecode-identity-card-name { color: var(--text-primary); font: var(--ws-font-subtitle); }
 
-/* Sources: the references a message cites. */
-.kubecode-reference-sources { margin: 0; }
-.kubecode-reference-sources-trigger { align-items: center; color: var(--text-secondary); display: inline-flex; font: var(--ws-font-meta); gap: var(--ws-space-1); min-height: 24px; }
-.kubecode-reference-sources-trigger[data-state='open'] .kubecode-reference-sources-chevron { transform: rotate(180deg); }
-.kubecode-reference-sources-list { display: flex; flex-wrap: wrap; gap: var(--ws-space-1); list-style: none; margin: 0; padding: 0; }
-
 /* The composer: the official Prompt Input card, one line over its tools when empty (ADR 0240). */
 .kubecode-composer { display: flex; flex-direction: column; gap: 2px; position: relative; }
-.kubecode-prompt-input > [data-slot='input-group'] {
-  background: var(--ws-surface-composer);
-  border-color: transparent;
-  border-radius: var(--ws-radius-composer);
-  box-shadow: var(--ws-elevation-soft);
-}
-/* Reached by keyboard, the card shows the ring the soft elevation above would hide (#229). */
-.kubecode-prompt-input > [data-slot='input-group']:has(:focus-visible) {
-  border-color: var(--ring);
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 50%, transparent), var(--ws-elevation-soft);
-}
 .kubecode-composer-textarea {
   field-sizing: content;
-  font: var(--ws-font-reading);
   max-height: min(40dvh, 18rem);
   min-height: calc(1lh + 2 * var(--ws-space-2));
   overflow-y: auto;
-  padding: var(--ws-space-2) var(--ws-space-3) 0;
 }
-.kubecode-composer-row { padding: 0 var(--ws-space-2) var(--ws-space-2); }
 .kubecode-composer-controls { gap: var(--ws-space-1); }
 .kubecode-composer-context { align-items: flex-start; flex-direction: column; padding: var(--ws-space-2) var(--ws-space-3) 0; }
-.kubecode-composer-context .kubecode-channel-replying { margin: 0; }
-.kubecode-prompt-input .kubecode-composer-footer { align-self: stretch; display: flex; flex-direction: column; gap: var(--ws-space-1); padding: 0 var(--ws-space-3) var(--ws-space-2); }
-.kubecode-mention-menu {
-  background: var(--surface-popover);
-  border-radius: var(--ws-radius-md);
-  bottom: calc(100% + var(--ws-space-1));
-  box-shadow: var(--ws-elevation-soft);
-  left: 0;
-  max-height: 280px;
-  overflow: hidden;
-  padding: 0;
-  position: absolute;
-  right: 0;
-  z-index: 20;
-}
-.kubecode-mention-menu [cmdk-item] { gap: var(--ws-space-2); }
-.kubecode-mention-menu [cmdk-item] small { color: var(--text-secondary); margin-left: auto; }
-.kubecode-mention-menu [cmdk-item][data-selected='true'] { box-shadow: inset 2px 0 0 var(--primary); }
-@media (pointer: coarse) {
-  .kubecode-mention-menu [cmdk-item] { min-height: 44px; }
-}
 
 /* The unsent rows: each the researcher's message in its pending state, with its actions. */
-.kubecode-outbox-message { max-width: none; }
-.kubecode-outbox .kubecode-outbox-content { background: transparent; margin: 0; padding: 0; width: 100%; }
-.kubecode-outbox-status { align-items: center; color: var(--text-secondary); display: inline-flex; font: var(--ws-font-meta); gap: var(--ws-space-1); }
-.kubecode-outbox-actions { flex-wrap: wrap; }
 
 /* The running list in its popover: a Queue of Items, each two lines with one Stop (ADR 0238, 0240). */
 
@@ -4704,22 +3811,13 @@
 /* Resource results and member rows are Items inside the existing lists. */
 .kubecode-resource-row[data-slot='item'] { border-radius: var(--ws-radius-md); flex-wrap: nowrap; align-items: flex-start; }
 .kubecode-resource-row-body[data-slot='item-content'] { gap: 2px; }
+
 .kubecode-member-row[data-slot='item'] { align-items: flex-start; border: 0; border-radius: 0; }
 .kubecode-member-row[data-slot='item'] + .kubecode-member-row[data-slot='item'] { border-top: 1px solid var(--border-subtle); }
 /* Member facts are Fields; forms use Field, Select and Input. */
-.kubecode-member-facts[data-slot='field-group'] { gap: var(--ws-space-2); }
-.kubecode-member-facts [data-slot='field'] { gap: var(--ws-space-3); justify-content: space-between; }
-.kubecode-member-facts [data-slot='field-label'] { color: var(--text-secondary); font: var(--ws-font-meta); }
-.kubecode-member-form [data-slot='field'] { gap: var(--ws-space-1); }
-.kubecode-member-form [data-slot='field-label'] { flex-direction: row; font: var(--ws-font-meta); font-weight: 600; }
-.kubecode-member-form [data-slot='field-set'] { border-top: 1px solid var(--border-subtle); gap: var(--ws-space-2); padding-top: var(--ws-space-3); }
-.kubecode-member-form [data-slot='field-set'] > button { align-self: flex-start; }
-.kubecode-member-select { max-width: 100%; min-width: 12rem; }
+
 /* The manager setup notice is an Alert in the warning tone. */
-.kubecode-manager-setup[data-slot='alert'] { display: grid; background: var(--feedback-warning-bg); border-color: var(--feedback-warning-border); color: var(--text-primary); }
-.kubecode-manager-setup[data-slot='alert'] > svg { color: var(--feedback-warning-text); }
-.kubecode-manager-setup [data-slot='alert-description'] p { color: var(--text-secondary); margin: 0; }
-.kubecode-manager-setup[data-slot='alert'] > .kubecode-manager-setup-actions { grid-column: 2; margin-top: var(--ws-space-2); }
+
 /* ==== end S3 ==== */
 
 /* The inspector and its entries take focus only so keyboard reading starts there;

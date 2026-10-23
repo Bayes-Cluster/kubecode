@@ -21,6 +21,50 @@ function CapabilityIcon({ kind }: { kind: RankedComposerCapability['kind'] }) {
   return <Zap aria-hidden className="shrink-0" size={17} />
 }
 
+/**
+ * The content of one capability row, shared by the inline composer listbox and
+ * the add menu's official Command so both show a capability the same way.
+ */
+export function CapabilityRowContent({
+  item,
+  labels,
+  reasonId,
+}: {
+  item: RankedComposerCapability
+  labels: ComposerCapabilityPickerLabels
+  reasonId: string
+}) {
+  return (
+    <>
+      <CapabilityIcon kind={item.kind} />
+      <span className="min-w-0 flex-1">
+        <span className="flex min-w-0 flex-wrap items-center gap-1">
+          <strong className="min-w-0 max-w-full truncate text-sm font-medium">${item.name}</strong>
+          <span className="rounded-sm border border-border px-1 text-[10px] text-muted-foreground">
+            {labels.kind[item.kind]}
+          </span>
+          <span className="max-w-full truncate rounded-sm border border-border px-1 text-[10px] text-muted-foreground">
+            {item.source_label}
+          </span>
+          <span className="rounded-sm border border-border px-1 text-[10px] text-muted-foreground">
+            {labels.scope[item.scope]}
+          </span>
+        </span>
+        {item.description && (
+          <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+            {item.description}
+          </span>
+        )}
+        {!item.enabled && (
+          <span className="mt-0.5 block text-xs text-destructive" id={reasonId}>
+            {labels.disabledReason(item.disabled_reason)}
+          </span>
+        )}
+      </span>
+    </>
+  )
+}
+
 export function ComposerCapabilityPicker({
   embedded = false,
   id,
@@ -82,31 +126,7 @@ export function ComposerCapabilityPicker({
             role="option"
             type="button"
           >
-            <CapabilityIcon kind={item.kind} />
-            <span className="min-w-0 flex-1">
-              <span className="flex min-w-0 flex-wrap items-center gap-1">
-                <strong className="min-w-0 max-w-full truncate text-sm font-medium">${item.name}</strong>
-                <span className="rounded-sm border border-border px-1 text-[10px] text-muted-foreground">
-                  {labels.kind[item.kind]}
-                </span>
-                <span className="max-w-full truncate rounded-sm border border-border px-1 text-[10px] text-muted-foreground">
-                  {item.source_label}
-                </span>
-                <span className="rounded-sm border border-border px-1 text-[10px] text-muted-foreground">
-                  {labels.scope[item.scope]}
-                </span>
-              </span>
-              {item.description && (
-                <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-                  {item.description}
-                </span>
-              )}
-              {!item.enabled && (
-                <span className="mt-0.5 block text-xs text-destructive" id={reasonId}>
-                  {labels.disabledReason(item.disabled_reason)}
-                </span>
-              )}
-            </span>
+            <CapabilityRowContent item={item} labels={labels} reasonId={reasonId} />
           </button>
         )
       })}

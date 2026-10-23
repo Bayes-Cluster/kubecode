@@ -278,6 +278,12 @@ describe('ChannelWorkspace', () => {
     s.calls.listChannelMessages.mockRejectedValue(new Error('down'))
     view(s)
     await waitFor(() => expect(screen.getAllByText(/The conversation could not be loaded/).length).toBeGreaterThan(0))
+    // Each failure is the official Alert with its Retry (#257).
+    await waitFor(() => {
+      const alert = screen.getAllByRole('alert').find((node) => /could not be loaded/.test(node.textContent ?? ''))
+      expect(alert).toHaveAttribute('data-slot', 'alert')
+      expect(within(alert as HTMLElement).getByRole('button', { name: 'Retry' })).toBeInTheDocument()
+    })
     const bare = { ...s.api, listChannels: undefined, listChannelMessages: undefined } as unknown as KubecodeApi
     render(shell(<ChannelWorkspace api={bare} connectionState="live" conversations={[]} events={[]} projectId="p1" research={[]} t={t} />))
   })
@@ -336,7 +342,7 @@ describe('ChannelWorkspace replies (ADR 0229 §4)', () => {
     expect(screen.getAllByText('Replying to Analyst').some((element) => element.getAttribute('role') === 'status')).toBe(true)
     expect(toRow()).toBeNull()
     // The cited message's Task comes along, visibly.
-    expect(within(document.querySelector('.kubecode-composer-about') as HTMLElement).getByText('Pruning')).toBeInTheDocument()
+    expect(within(document.querySelector('[data-composer-about]') as HTMLElement).getByText('Pruning')).toBeInTheDocument()
     // Taking the mention out of the text sends the reply to the manager instead; the citation stays.
     fireEvent.change(box(), { target: { value: '' } })
     fireEvent.change(box(), { target: { value: 'yes, add it' } })
@@ -380,8 +386,7 @@ describe('ChannelWorkspace replies (ADR 0229 §4)', () => {
     view(s)
     await screen.findByText('about the start')
     // Routine notes are one quiet, expandable line; a decision about a Task is shown.
-    const activity = screen.getByText('Activity (2)').closest('details')
-    expect(activity).not.toHaveAttribute('open')
+    expect(screen.getByRole('button', { name: 'Activity (2)' })).toHaveAttribute('aria-expanded', 'false')
     expect(screen.getByTestId('message-64').tagName).toBe('ARTICLE')
     fireEvent.click(within(row(61)).getByRole('button', { name: /In reply to You: message 60/ }))
     expect(scroll).toHaveBeenCalled()
@@ -422,7 +427,7 @@ describe('ChannelWorkspace Tasks and references', () => {
     const onFilterChange = vi.fn()
     const v = view(s, { props: { filter: 'r1', onFilterChange } })
     await screen.findByText('about pruning')
-    expect(within(document.querySelector('.kubecode-composer-about') as HTMLElement).getByText('Pruning')).toBeInTheDocument()
+    expect(within(document.querySelector('[data-composer-about]') as HTMLElement).getByText('Pruning')).toBeInTheDocument()
     fireEvent.change(box(), { target: { value: 'one more thought' } })
     send()
     await waitFor(() => expect(s.posted).toHaveLength(1))
@@ -433,7 +438,7 @@ describe('ChannelWorkspace Tasks and references', () => {
     fireEvent.change(box(), { target: { value: 'unrelated' } })
     send()
     expect(await screen.findByText("Sent. It isn't about Pruning, so it isn't shown here.")).toBeInTheDocument()
-    fireEvent.click(within(screen.getByText(/isn't shown here/).closest('p') as HTMLElement).getByRole('button', { name: 'Show everything' }))
+    fireEvent.click(within(screen.getByText(/isn't shown here/).closest('[data-slot="alert"]') as HTMLElement).getByRole('button', { name: 'Show everything' }))
     expect(onFilterChange).toHaveBeenLastCalledWith(null)
     v.rerenderWith({ filter: null })
     expect(await screen.findByText('unrelated')).toBeInTheDocument()

@@ -14,8 +14,8 @@ const CONTROLS = [
   '.kubecode-stop-button',
   '.kubecode-pause-button',
   '.kubecode-decision-button:not(:disabled)',
-  '.kubecode-reference-chip-open:is(button)',
-  '.kubecode-reference-chip-remove',
+  '[data-reference-chip-action="open"]:is(button)',
+  '[data-reference-chip-action="remove"]',
   'button.kubecode-member-identity-name',
 ].join(', ')
 
@@ -90,7 +90,9 @@ async function controlsWithoutFocusRing(page: Page): Promise<string[]> {
         probe.remove()
         return value
       })
-      const style = getComputedStyle(element)
+      // An official Attachment draws its ring around the whole chip, not on its covering trigger.
+      const ringed = element.matches('[data-slot="attachment-trigger"]') ? element.closest('[data-slot="attachment"]') ?? element : element
+      const style = getComputedStyle(ringed)
       return {
         focused: document.activeElement === element,
         ring: rings.some((ring) => style.boxShadow.includes(ring)),

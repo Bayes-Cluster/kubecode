@@ -1,5 +1,6 @@
 import { useContext, useRef, useState } from 'react'
 
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import type { Translator } from '@/lib/i18n'
 
@@ -53,8 +54,9 @@ export function ResourcesView({ api, events, locale, projectId, t, workspaceName
         t={t}
       />
       {target && (
-        <div className="kubecode-attach-bar" role="status">
-          <span>{t('kubecode.resources.attachBanner', { place: t('kubecode.resources.placeGeneral') })}</span>
+        <Alert className="mb-2" role="status">
+          <AlertDescription className="flex flex-wrap items-center gap-2">
+          <span className="flex-[1_1_16rem]">{t('kubecode.resources.attachBanner', { place: t('kubecode.resources.placeGeneral') })}</span>
           <Button
             size="sm"
             type="button"
@@ -69,7 +71,8 @@ export function ResourcesView({ api, events, locale, projectId, t, workspaceName
           <Button size="sm" type="button" variant="ghost" onClick={() => setTarget(null)}>
             {t('kubecode.resources.stopAdding')}
           </Button>
-        </div>
+          </AlertDescription>
+        </Alert>
       )}
       <WorkspaceSearch
         api={api}

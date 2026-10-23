@@ -52,19 +52,23 @@ export function WorkspaceSearchLauncher({ api, events, locale, narrow, t, worksp
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button aria-label={label} className="kubecode-ws-search-launcher" type="button">
+        <Button aria-label={label} className="w-full max-w-lg min-w-0 justify-start" type="button" variant="outline">
           <Icon role="command" size="secondary" source={WORKSPACE_COMMAND_ICONS.search.Icon} />
-          <span className="kubecode-ws-search-launcher-text">{label}</span>
-        </button>
+          <span className="truncate">{label}</span>
+        </Button>
       </PopoverTrigger>
-      <PopoverContent align="center" aria-label={label} className="kubecode-ws-search-popover">
+      <PopoverContent
+        align="center"
+        aria-label={label}
+        className="flex max-h-[min(70vh,560px)] w-[min(36rem,calc(100vw-32px))] flex-col p-3"
+      >
         <WorkspaceSearch
           api={api}
           autoFocus
           events={events}
           footer={(
             <Button
-              className="kubecode-ws-search-more"
+              className="w-full"
               size="sm"
               type="button"
               variant="ghost"

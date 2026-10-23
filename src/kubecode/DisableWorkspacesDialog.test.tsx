@@ -45,6 +45,7 @@ describe('DisableWorkspacesDialog', () => {
     )
 
     await screen.findByText('Agent work')
+    expect(screen.getByRole('alertdialog', { name: 'Disable Workspaces' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Disable Workspaces' })).toBeDisabled()
     fireEvent.click(screen.getByRole('combobox', { name: 'Resolution for Agent work' }))
     fireEvent.click(await screen.findByText('Export patch'))

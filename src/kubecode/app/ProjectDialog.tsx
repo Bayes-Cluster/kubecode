@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ArrowUp, Eye, EyeOff } from 'lucide-react'
+import { ArrowUp, CircleAlert, Eye, EyeOff } from 'lucide-react'
 import { trackEvent } from '@/lib/telemetry'
 
-import { Button } from '@/components/ui/button'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
   Dialog,
   DialogContent,
@@ -10,6 +10,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Toggle } from '@/components/ui/toggle'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 
 import type { DirectoryListing, KubecodeApi, Project } from '../api'
 import { PathPicker, type PathPickerRow } from '../PathPicker'
@@ -120,7 +122,7 @@ export function ProjectDialog({
     }] : []
     if (listing?.parent) {
       nextRows.push({
-        icon: <ArrowUp  size={16}/>,
+        icon: <ArrowUp />,
         id: 'parent-directory',
         kind: 'directory',
         label: '..',
@@ -151,37 +153,47 @@ export function ProjectDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="kubecode-path-picker-dialog kubecode-project-path-dialog" showCloseButton={false}>
-        <DialogHeader className="kubecode-path-picker-heading">
+      <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col sm:max-w-xl" showCloseButton={false}>
+        <DialogHeader>
           <DialogTitle>{mode === 'create' ? t('kubecode.createProject') : t('kubecode.importProject')}</DialogTitle>
           <DialogDescription>{t('kubecode.projectPath')}</DialogDescription>
-          <p className="kubecode-project-next">{t('kubecode.projectDialog.next')}</p>
+          <p className="text-sm text-muted-foreground">{t('kubecode.projectDialog.next')}</p>
         </DialogHeader>
-        <div className="kubecode-mode-switch">
-          <Button variant={mode === 'create' ? 'default' : 'outline'} onClick={() => setMode('create')}>{t('kubecode.createProject')}</Button>
-          <Button variant={mode === 'import' ? 'default' : 'outline'} onClick={() => setMode('import')}>{t('kubecode.importProject')}</Button>
-        </div>
+        <ToggleGroup
+          aria-label={t('kubecode.projectPath')}
+          className="w-full"
+          type="single"
+          value={mode}
+          variant="outline"
+          onValueChange={(next) => {
+            if (next === 'create' || next === 'import') setMode(next)
+          }}
+        >
+          <ToggleGroupItem className="flex-1" value="create">{t('kubecode.createProject')}</ToggleGroupItem>
+          <ToggleGroupItem className="flex-1" value="import">{t('kubecode.importProject')}</ToggleGroupItem>
+        </ToggleGroup>
         <PathPicker
           ariaLabel={t('kubecode.projectPath')}
+          className="rounded-md border"
           emptyMessage={t('kubecode.noDirectoriesFound')}
           footer={(
-            <>
-              <div className="kubecode-path-picker-footer">
-                <Button
-                  aria-pressed={showHidden}
-                  size="sm"
-                  type="button"
-                  variant="ghost"
-                  onClick={() => setShowHidden((current) => !current)}
-                >
-                  {showHidden ? <Eye  size={16}/> : <EyeOff  size={16}/>}
-                  {t('kubecode.showHiddenDirectories')}
-                </Button>
-              </div>
+            <div className="flex flex-col gap-2 border-t p-2">
+              <Toggle
+                className="self-start"
+                pressed={showHidden}
+                size="sm"
+                onPressedChange={setShowHidden}
+              >
+                {showHidden ? <Eye /> : <EyeOff />}
+                {t('kubecode.showHiddenDirectories')}
+              </Toggle>
               {browserError && (
-                <div className="kubecode-path-picker-error" role="alert">{browserError}</div>
+                <Alert variant="destructive">
+                  <CircleAlert />
+                  <AlertDescription>{browserError}</AlertDescription>
+                </Alert>
               )}
-            </>
+            </div>
           )}
           loading={loadingDirectories}
           loadingMessage={t('kubecode.loading')}
