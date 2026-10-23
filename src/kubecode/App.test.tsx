@@ -158,7 +158,7 @@ describe('Kubecode workspace', () => {
     expect(titlebarActions).toContainElement(screen.getByRole('button', { name: 'Toggle navigation' }))
     expect(titlebarActions).toContainElement(screen.getByRole('button', { name: 'Toggle terminal' }))
     expect(titlebarActions).toContainElement(screen.getByRole('button', { name: 'Toggle context panel' }))
-    expect(Array.from(titlebarActions?.querySelectorAll('.kubecode-layout-toggle') ?? []).map(
+    expect(Array.from(titlebarActions?.querySelectorAll('[data-slot="toggle"]') ?? []).map(
       (button) => button.getAttribute('aria-label'),
     )).toEqual(['Toggle navigation', 'Toggle terminal', 'Toggle context panel'])
     expect(screen.getByRole('tab', { name: 'Explorer' })).toHaveAttribute('data-state', 'active')

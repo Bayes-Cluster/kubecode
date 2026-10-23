@@ -10,10 +10,23 @@ import {
 } from 'lucide-react'
 
 import { StatusBadge } from '@/components/workspace/StatusBadge'
+import { Badge } from '@/components/ui/badge'
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from '@/components/ui/breadcrumb'
 import { Button } from '@/components/ui/button'
+import { Separator } from '@/components/ui/separator'
+import { Toggle } from '@/components/ui/toggle'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { cn } from '@/lib/utils'
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -111,17 +124,23 @@ export function WorkbenchTitlebar({
       <div className="kubecode-topbar-leading">
         <div className="kubecode-titlebar-session-slot" ref={titlebarTargetRef}>
           {placeLabel !== null ? (
-            <span className="kubecode-titlebar-project kubecode-titlebar-place">
-              {project && !narrowLayout && (
-                <>
-                  <span className="kubecode-titlebar-workspace">{project.name}</span>
-                  <span aria-hidden="true" className="kubecode-titlebar-separator">/</span>
-                </>
-              )}
-              <span>{placeLabel}</span>
-            </span>
+            <Breadcrumb aria-label={t('kubecode.titlebarLocation')} className="min-w-0">
+              <BreadcrumbList className="flex-nowrap">
+                {project && !narrowLayout && (
+                  <>
+                    <BreadcrumbItem className="min-w-0">
+                      <span className="truncate">{project.name}</span>
+                    </BreadcrumbItem>
+                    <BreadcrumbSeparator />
+                  </>
+                )}
+                <BreadcrumbItem className="min-w-0">
+                  <BreadcrumbPage className="truncate">{placeLabel}</BreadcrumbPage>
+                </BreadcrumbItem>
+              </BreadcrumbList>
+            </Breadcrumb>
           ) : !conversation && (
-            <span className="kubecode-titlebar-project">
+            <span className="truncate text-sm font-medium">
               {project?.name ?? t('kubecode.appName')}
             </span>
           )}
@@ -137,31 +156,32 @@ export function WorkbenchTitlebar({
           t={t}
         />
         {error && (
-          <span
-            aria-label={error}
-            className="kubecode-topbar-error"
-            role="status"
-            title={error}
-          >
-            <CircleAlert fill="currentColor"  size={16}/>
-          </span>
+          <TooltipProvider>
+            <Tooltip>
+            <TooltipTrigger asChild>
+              <Badge aria-label={error} role="status" tabIndex={0} variant="destructive">
+                <CircleAlert aria-hidden="true" />
+              </Badge>
+            </TooltipTrigger>
+            <TooltipContent>{error}</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         )}
         {attention.total > 0 && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
                 aria-label={t('kubecode.attention.bell', { count: attention.total })}
-                className="kubecode-attention-trigger"
                 size="sm"
                 variant="ghost"
               >
-                <BellDot aria-hidden size={16} />
+                <BellDot aria-hidden data-icon="inline-start" />
                 <span aria-hidden="true">{attention.total}</span>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent
               align="end"
-              className="kubecode-attention-menu"
+              className="w-[min(20rem,calc(100vw-1rem))]"
               onCloseAutoFocus={(event) => {
                 const target = chosen.current
                 if (!target) return
@@ -178,10 +198,12 @@ export function WorkbenchTitlebar({
                       key={entry.key}
                       onSelect={() => { chosen.current = entry.target }}
                     >
-                      <span className="kubecode-attention-menu-entry">
-                        <strong>{entry.title}</strong>
-                        {entry.detail && <small>{entry.detail}</small>}
-                      </span>
+                      <div className="flex min-w-0 flex-1 flex-col">
+                        <span className="truncate font-medium">{entry.title}</span>
+                        {entry.detail && (
+                          <span className="truncate text-xs text-muted-foreground">{entry.detail}</span>
+                        )}
+                      </div>
                       <StatusBadge tone={entry.reason.tone}>{entry.reason.label}</StatusBadge>
                     </DropdownMenuItem>
                   ))}
@@ -208,7 +230,7 @@ export function WorkbenchTitlebar({
         )}
         {/* The navigation, then the secondary execution tools: the terminal, and Files and Git. */}
         <ToolToggle glyph={PanelLeft} label={t('kubecode.toggleNavigation')} pressed={sessionSidebarOpen} onClick={toggleNavigation} />
-        <span aria-hidden="true" className="kubecode-topbar-divider" />
+        <Separator className="mx-1 data-[orientation=vertical]:h-4" orientation="vertical" />
         <ToolToggle glyph={SquareTerminal} label={t('kubecode.toggleTerminal')} pressed={terminalOpen} onClick={toggleTerminal} />
         <ToolToggle glyph={FolderGit2} label={t('kubecode.toggleContext')} pressed={contextOpen} onClick={toggleContext} />
       </div>
@@ -240,30 +262,40 @@ function RuntimeConnectionMenu({
       <DropdownMenuTrigger asChild>
         <Button
           aria-label={t('kubecode.runtimeConnectionState', { state: stateLabel })}
-          className="kubecode-connection-trigger"
           data-state-value={connectionState}
           size="icon-xs"
           variant="ghost"
         >
-          <Circle aria-hidden="true" fill="currentColor"  size={16}/>
+          <Circle
+            aria-hidden="true"
+            className={cn(
+              connectionState === 'live' && 'text-success',
+              connectionState === 'reconnecting' && 'text-warning',
+              (connectionState === 'connecting' || connectionState === 'resynchronizing')
+                && 'text-muted-foreground motion-safe:animate-pulse',
+            )}
+            fill="currentColor"
+          />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="kubecode-connection-menu">
+      <DropdownMenuContent align="end" className="w-[min(18rem,calc(100vw-1rem))]">
         <DropdownMenuLabel>{t('kubecode.runtimeConnection')}</DropdownMenuLabel>
-        <div className="kubecode-connection-row" role="status">
-          <span>{t('kubecode.connectionStatus')}</span>
-          <strong>{stateLabel}</strong>
-        </div>
-        <div className="kubecode-connection-row">
-          <span>{t('kubecode.lastSuccessfulSync')}</span>
-          <time dateTime={lastSuccessfulSyncAt === null
-            ? undefined : new Date(lastSuccessfulSyncAt).toISOString()}>{lastSync}</time>
-        </div>
+        <DropdownMenuGroup>
+          <DropdownMenuLabel className="flex items-center justify-between gap-4 font-normal" role="status">
+            <span className="text-muted-foreground">{t('kubecode.connectionStatus')}</span>
+            <Badge variant={CONNECTION_BADGE[connectionState]}>{stateLabel}</Badge>
+          </DropdownMenuLabel>
+          <DropdownMenuLabel className="flex items-center justify-between gap-4 font-normal">
+            <span className="text-muted-foreground">{t('kubecode.lastSuccessfulSync')}</span>
+            <time dateTime={lastSuccessfulSyncAt === null
+              ? undefined : new Date(lastSuccessfulSyncAt).toISOString()}>{lastSync}</time>
+          </DropdownMenuLabel>
+        </DropdownMenuGroup>
         {connectionState === 'reconnecting' && (
           <>
             <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={onRetry}>
-              <RotateCw  size={16}/>
+              <RotateCw aria-hidden="true" />
               {t('kubecode.retry')}
             </DropdownMenuItem>
           </>
@@ -271,6 +303,13 @@ function RuntimeConnectionMenu({
       </DropdownMenuContent>
     </DropdownMenu>
   )
+}
+
+const CONNECTION_BADGE: Record<WorkspaceConnectionState, 'success' | 'warning' | 'secondary'> = {
+  connecting: 'secondary',
+  live: 'success',
+  reconnecting: 'warning',
+  resynchronizing: 'secondary',
 }
 
 /** A title-bar toggle for the navigation or an execution tool: one glyph, pressed while it is open. */
@@ -281,16 +320,14 @@ function ToolToggle({ glyph: Glyph, label, onClick, pressed }: {
   onClick: () => void
 }) {
   return (
-    <Button
+    <Toggle
       aria-label={label}
-      aria-pressed={pressed}
-      className="kubecode-layout-toggle"
-      size="icon-xs"
+      onPressedChange={onClick}
+      pressed={pressed}
+      size="sm"
       title={label}
-      variant="ghost"
-      onClick={onClick}
     >
-      <Glyph aria-hidden="true" size={16} />
-    </Button>
+      <Glyph aria-hidden="true" />
+    </Toggle>
   )
 }

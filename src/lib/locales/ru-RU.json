@@ -1288,6 +1288,7 @@
   "kubecode.settingsComingSoon": "Additional settings will be available here.",
   "kubecode.runtimeConnection": "Runtime connection",
   "kubecode.runtimeConnectionState": "Runtime connection: {state}",
+  "kubecode.titlebarLocation": "Расположение",
   "kubecode.connectionStatus": "Status",
   "kubecode.connectionState.connecting": "Connecting",
   "kubecode.connectionState.live": "Live",

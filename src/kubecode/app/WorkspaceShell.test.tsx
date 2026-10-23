@@ -676,7 +676,7 @@ describe('Workspace navigation and routes', () => {
     })
     window.history.replaceState(null, '', '/')
     render(<KubecodeApp api={api({ listConversations: vi.fn().mockRejectedValue(new Error('offline')) })} />)
-    await waitFor(() => expect(document.querySelector('.kubecode-topbar-error')).toHaveAttribute('aria-label', 'offline'))
+    await waitFor(() => expect(screen.getByRole('status', { name: 'offline' })).toHaveAttribute('data-variant', 'destructive'))
     await act(() => new Promise((resolve) => setTimeout(resolve, 50)))
     expect(storedLocations().workspaces['project-1']).toMatchObject({
       current: 'sessions',
@@ -721,7 +721,7 @@ describe('Workspace navigation and routes', () => {
     expect(await screen.findByRole('heading', { name: 'General', exact: true, level: 2 })).toBeInTheDocument()
     await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/general'))
     expect(screen.queryByText('Opening Workspace…')).not.toBeInTheDocument()
-    expect(document.querySelector('.kubecode-topbar-error')).toHaveAttribute('aria-label', 'gone')
+    expect(screen.getByRole('status', { name: 'gone' })).toHaveAttribute('data-variant', 'destructive')
   })
 
   it('restores the remembered place, never Sessions, from a damaged link', async () => {
@@ -973,7 +973,7 @@ describe('The Workspaces navigation', () => {
     const { container } = await start('#/p/project-1/board')
     expect(screen.getByRole('navigation', { name: 'Workspaces' })).toBeInTheDocument()
     await screen.findByRole('heading', { name: 'Kanban', level: 2 })
-    expect(container.querySelector('.kubecode-topbar-leading')).toHaveTextContent('Demo/Kanban')
+    expect(container.querySelector('.kubecode-topbar-leading')).toHaveTextContent('DemoKanban')
     expect(screen.queryByRole('textbox', { name: 'Search Sessions in all Workspaces' })?.closest('.kubecode-topbar')).toBeFalsy()
     expect(screen.getAllByRole('button', { name: 'Demo' })).toHaveLength(1)
     expect(history().open).toBe(false)

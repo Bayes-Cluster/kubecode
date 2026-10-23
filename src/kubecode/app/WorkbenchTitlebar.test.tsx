@@ -101,7 +101,10 @@ describe('WorkbenchTitlebar', () => {
   it('says which Workspace and place is on screen, and searches nothing it cannot name', () => {
     const { container } = titlebar({ placeLabel: 'Kanban' })
     const leading = container.querySelector('.kubecode-topbar-leading')
-    expect(leading).toHaveTextContent('Demo/Kanban')
+    const breadcrumb = screen.getByRole('navigation', { name: 'Location' })
+    expect(leading).toContainElement(breadcrumb)
+    expect(breadcrumb).toHaveTextContent('DemoKanban')
+    expect(screen.getByText('Kanban')).toHaveAttribute('aria-current', 'page')
     expect(screen.queryByRole('textbox', { name: 'Search Sessions in all Workspaces' })).not.toBeInTheDocument()
   })
 
@@ -146,7 +149,7 @@ describe('WorkbenchTitlebar', () => {
 
   it('toggles the navigation, the terminal, and the context panel in that order', () => {
     const { container, handlers } = titlebar()
-    expect(Array.from(container.querySelectorAll('.kubecode-layout-toggle')).map(
+    expect(Array.from(container.querySelectorAll('[data-slot="toggle"]')).map(
       (button) => button.getAttribute('aria-label'),
     )).toEqual(['Toggle navigation', 'Toggle terminal', 'Toggle context panel'])
     const navigation = screen.getByRole('button', { name: 'Toggle navigation' })
@@ -157,12 +160,25 @@ describe('WorkbenchTitlebar', () => {
 
   it('draws each execution tool with its own glyph and names it on hover', () => {
     const { container } = titlebar()
-    const toggles = Array.from(container.querySelectorAll('.kubecode-layout-toggle'))
+    const toggles = Array.from(container.querySelectorAll('[data-slot="toggle"]'))
     expect(toggles.map((button) => button.querySelector('svg')?.getAttribute('class'))).toEqual([
       expect.stringContaining('lucide-panel-left'),
       expect.stringContaining('lucide-square-terminal'),
       expect.stringContaining('lucide-folder-git'),
     ])
     expect(toggles.map((button) => button.getAttribute('title'))).toEqual(['Toggle navigation', 'Toggle terminal', 'Toggle context panel'])
+  })
+
+  it('reports a global error as a destructive badge that names it', () => {
+    titlebar({ error: 'Could not reach the server' })
+    const status = screen.getByRole('status', { name: 'Could not reach the server' })
+    expect(status).toHaveAttribute('data-variant', 'destructive')
+  })
+
+  it('lists the runtime connection state as menu items, not loose rows', async () => {
+    titlebar({ connectionState: 'reconnecting' })
+    fireEvent.pointerDown(screen.getByRole('button', { name: /Runtime connection/ }), { button: 0, ctrlKey: false })
+    expect(await screen.findByRole('menuitem', { name: /Retry/ })).toBeInTheDocument()
+    expect(document.querySelector('.kubecode-connection-row')).toBeNull()
   })
 })
