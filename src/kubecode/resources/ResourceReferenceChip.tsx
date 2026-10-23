@@ -27,7 +27,7 @@ export function ResourceReferenceChip({ basis, knownTitle, onOpen, onRemove, ref
   const removal = onRemove && removeLabel ? { onRemove, removeLabel } : {}
   return (
     // `display: contents`: the host only names the chip for focus moves (`data-reference`).
-    <span className="kubecode-reference-chip-host" data-reference={`${reference.kind}:${reference.id}`}>
+    <span className="contents" data-reference={`${reference.kind}:${reference.id}`}>
       <ReferenceChip {...label} {...removal} onOpen={onOpen} />
     </span>
   )

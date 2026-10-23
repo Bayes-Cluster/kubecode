@@ -310,27 +310,6 @@
     },
     {
       "file": "src/kubecode/kubecode.css",
-      "text": "[data-slot='dialog-content'].kubecode-add-context-dialog {",
-      "context": "[data-slot='dialog-content'].kubecode-add-context-dialog",
-      "kind": "official-internal",
-      "owner": "#258"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": "[data-slot='dialog-content'].kubecode-add-context-dialog { max-width: min(960px, calc(100vw - 32px)); }",
-      "context": "@media (min-width: 640px) / [data-slot='dialog-content'].kubecode-add-context-dialog",
-      "kind": "official-internal",
-      "owner": "#258"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": "[data-slot='dialog-content'].kubecode-add-context-dialog {",
-      "context": "@media (max-width: 640px) / [data-slot='dialog-content'].kubecode-add-context-dialog",
-      "kind": "official-internal",
-      "owner": "#258"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
       "text": ".kubecode-members-tabs [data-slot='tabs-list'] { max-width: 100%; overflow-x: auto; }",
       "context": "@media (max-width: 760px) / .kubecode-members-tabs [data-slot='tabs-list']",
       "kind": "official-internal",
@@ -454,27 +433,6 @@
       "context": ".kubecode-elicitation-fields [data-slot='field']",
       "kind": "official-internal",
       "owner": "#259"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-record-code pre { background: transparent !important; font-size: var(--ws-font-size-meta, 12px); padding: 6px 8px; white-space: pre-wrap; overflow-wrap: anywhere; }",
-      "context": ".kubecode-record-code pre",
-      "kind": "important",
-      "owner": "#258"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-resource-row[data-slot='item'] { border-radius: var(--ws-radius-md); flex-wrap: nowrap; align-items: flex-start; }",
-      "context": ".kubecode-resource-row[data-slot='item']",
-      "kind": "official-internal",
-      "owner": "#258"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-resource-row-body[data-slot='item-content'] { gap: 2px; }",
-      "context": ".kubecode-resource-row-body[data-slot='item-content']",
-      "kind": "official-internal",
-      "owner": "#258"
     },
     {
       "file": "src/kubecode/kubecode.css",

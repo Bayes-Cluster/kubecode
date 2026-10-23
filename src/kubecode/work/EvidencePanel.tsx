@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
 
-import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
 import { Icon } from '@/kubecode/icons'
 import { WORKSPACE_OBJECT_ICONS } from '@/kubecode/icons/workspaceIcons'
 
@@ -9,7 +9,7 @@ import { InspectorPanel } from '../app/inspector/InspectorPanel'
 import type { InspectorPanelProps } from '../app/inspector/inspectorPanels'
 import { isRoutableRecordKind, type InspectorEntry } from '../app/location/inspector'
 import { useWorkspaceNavigation } from '../app/location/WorkspaceNavigation'
-import { StatusBadge } from '@/components/workspace/StatusBadge'
+import { ReaderNotice } from '../resources/ReaderStates'
 import { fallbackTitle, formatVersion, kindLabelKey } from '../resources/referenceKinds'
 import { EvidenceViewer, type DisplayedEvidence, type EvidenceTarget } from './EvidenceViewer'
 
@@ -59,16 +59,14 @@ export function EvidencePanel({ entry, parentTask, projectId }: InspectorPanelPr
       icon={<Icon role="navigation" source={WORKSPACE_OBJECT_ICONS.evidence.Icon} />}
       meta={(
         <>
-          {routable && <StatusBadge tone="muted">{t(kindLabelKey(kind))}</StatusBadge>}
-          {shownVersion && <StatusBadge tone="muted">{t('kubecode.task.evidence.shownVersion', { revision: shownVersion })}</StatusBadge>}
+          {routable && <Badge variant="secondary">{t(kindLabelKey(kind))}</Badge>}
+          {shownVersion && <Badge variant="outline">{t('kubecode.task.evidence.shownVersion', { revision: shownVersion })}</Badge>}
         </>
       )}
       title={title}
     >
       {failed && parentTask && (
-        <Alert className="kubecode-evidence-cannot-accept" role="status">
-          <AlertDescription>{t('kubecode.task.evidence.cannotAccept')}</AlertDescription>
-        </Alert>
+        <ReaderNotice>{t('kubecode.task.evidence.cannotAccept')}</ReaderNotice>
       )}
       <EvidenceViewer
         api={api}

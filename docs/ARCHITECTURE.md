@@ -580,7 +580,7 @@ the next place is pushed, so Back lands on it. Workspace search, previews, and
 references (ADR 0231) live in `src/kubecode/resources/`: one search core
 (`useWorkspaceSearch`, `WorkspaceSearch`, explicit sections from
 `searchScope.ts`, its words, sections, active row and results kept in place
-memory only) hosted by `ResourcesView` (a preview-first library whose rows
+memory only, on the official `Command` without client filtering, ADR 0250) hosted by `ResourcesView` (a preview-first library whose rows
 open `ResourcePanel` in the inspector beside the list, never leaving it), the
 General composer's `AddContextDialog` (results beside the one `RecordPreview`;
 "Attach this version" or Enter for the current version), and the titlebar's

@@ -114,7 +114,7 @@ describe('EvidenceViewer', () => {
     const { onDisplayed } = mount({ kind: 'artifact', id: 'a1', revision: '3f' }, { readProjectContext }, { onFollow: undefined })
     fireEvent.click(await screen.findByRole('button', { name: 'Heads are redundant' }))
     await waitFor(() => expect(readProjectContext).toHaveBeenCalledTimes(2))
-    await screen.findByText('Heads are redundant', { selector: 'strong' })
+    await screen.findByText('Heads are redundant', { selector: '[data-slot=item-title]' })
     await settle()
     expect(onDisplayed).toHaveBeenCalledTimes(1)
     expect(onDisplayed).toHaveBeenCalledWith(expect.objectContaining({ kind: 'artifact', id: 'a1' }))

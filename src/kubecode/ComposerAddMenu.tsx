@@ -9,19 +9,23 @@ import {
   Sparkle,
   SquareTerminal
 } from 'lucide-react'
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState, type ComponentProps } from 'react'
 
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { Command, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
+import { Item, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@/components/ui/item'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import type { Translator } from '@/lib/i18n'
+import { cn } from '@/lib/utils'
 
 import type {
   ComposerCatalogSnapshot, Entry, GitDiffContextCandidate, KubecodeApi, ProjectContextItem,
 } from './api'
-import { ComposerCapabilityPicker, type ComposerCapabilityPickerLabels } from './ComposerCapabilityPicker'
+import { CapabilityRowContent, type ComposerCapabilityPickerLabels } from './ComposerCapabilityPicker'
 import { rankComposerCapabilities, type RankedComposerCapability } from './composerCapabilities'
 import { ComposerProjectWorkPicker } from './ComposerProjectWorkPicker'
 import { ProjectFilePicker } from './ProjectFilePicker'
+import { ReaderEmpty, ReaderLoading, ReaderNotice } from './resources/ReaderStates'
 import type { TerminalContextSource } from './TerminalWorkspace'
 import { MaterialFileIcon } from './icons/material/materialIcons'
 import { resolveFileIcon } from './icons/resolveFileIcon'
@@ -68,6 +72,15 @@ type ComposerAddMenuProps = {
   terminalSources?: TerminalContextSource[]
 }
 
+/** One choice in the add menu: an official Item rendered as a button. */
+function MenuRow({ className, ...props }: ComponentProps<'button'>) {
+  return (
+    <Item asChild className={cn('text-left pointer-coarse:min-h-11', className)} size="sm">
+      <button type="button" {...props} />
+    </Item>
+  )
+}
+
 export function ComposerAddMenu({
   api,
   capabilityCatalog,
@@ -100,10 +113,10 @@ export function ComposerAddMenu({
     status: 'error' | 'loading' | 'ready'
   }>({ candidates: [], status: 'loading' })
   const [query, setQuery] = useState('')
-  const [paletteLayout, setPaletteLayout] = useState({ bottom: 0, left: 0, width: 680 })
-  const [selectedCapabilityIndex, setSelectedCapabilityIndex] = useState(0)
+  // cmdk's highlighted row, kept so Tab can accept it the way Enter does.
+  const [activeCapability, setActiveCapability] = useState('')
+  const [paletteLayout, setPaletteLayout] = useState({ alignOffset: 0, width: 680 })
   const rootRef = useRef<HTMLDivElement>(null)
-  const capabilityListboxId = useId()
   const visibleCommands = useMemo(() => {
     const search = query.trim().toLocaleLowerCase()
     if (!search) return commands
@@ -120,41 +133,25 @@ export function ComposerAddMenu({
     () => rankComposerCapabilities(capabilityCatalog, '').length > 0,
     [capabilityCatalog],
   )
-  const enabledCapabilityIndexes = visibleCapabilities.flatMap((item, index) => (
-    item.enabled ? [index] : []
-  ))
-  const currentCapabilityIndex = visibleCapabilities[selectedCapabilityIndex]?.enabled
-    ? selectedCapabilityIndex
-    : enabledCapabilityIndexes[0] ?? 0
   const capabilityPickerVisible = Boolean(
     capabilityLabels && (hasCapabilities || capabilityStatus !== 'ready'),
   )
 
-  useEffect(() => {
-    if (!open) return
-    const closeOutside = (event: MouseEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false)
-    }
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false)
-    }
-    document.addEventListener('mousedown', closeOutside)
-    document.addEventListener('keydown', closeOnEscape)
-    return () => {
-      document.removeEventListener('mousedown', closeOutside)
-      document.removeEventListener('keydown', closeOnEscape)
-    }
-  }, [open])
-
   const close = () => {
     setOpen(false)
     setQuery('')
+    setActiveCapability('')
     setShowFiles(false)
     setShowGitDiffs(false)
     setShowSessionTurns(false)
     setShowProjectWork(false)
     setShowTerminals(false)
-    setSelectedCapabilityIndex(0)
+  }
+
+  const chooseCapability = (capability: RankedComposerCapability | undefined) => {
+    if (!capability?.enabled || !onCapability) return
+    onCapability(capability)
+    close()
   }
 
   const closeAndInsert = (text: string) => {
@@ -162,8 +159,27 @@ export function ComposerAddMenu({
     close()
   }
 
+  const resetPanels = () => {
+    setShowFiles(false)
+    setShowGitDiffs(false)
+    setShowSessionTurns(false)
+    setShowProjectWork(false)
+    setShowTerminals(false)
+  }
+
+  const inPanel = showFiles || showGitDiffs || showSessionTurns || showProjectWork || showTerminals
+
   return (
     <div className="relative" ref={rootRef}>
+      {/* The official Popover owns dismissal (outside press, Escape), focus return, and stacking. */}
+      <Popover
+        open={open}
+        onOpenChange={(next) => {
+          if (next) setOpen(true)
+          else close()
+        }}
+      >
+      <PopoverTrigger asChild>
       <Button
         aria-expanded={open}
         aria-label={t('kubecode.addContext')}
@@ -173,33 +189,41 @@ export function ComposerAddMenu({
         type="button"
         variant="ghost"
         onClick={() => {
-          if (!open) {
-            const composer = rootRef.current?.closest('[data-testid="agent-composer-surface"]')
-            const composerRect = composer?.getBoundingClientRect()
-            if (composerRect) {
-              setPaletteLayout({
-                bottom: window.innerHeight - composerRect.top + 12,
-                left: composerRect.left,
-                width: composerRect.width,
-              })
-            }
+          // Opened above the composer, as wide as it, starting at its left edge.
+          const composer = rootRef.current?.closest('[data-testid="agent-composer-surface"]')
+          const composerRect = composer?.getBoundingClientRect()
+          const triggerRect = rootRef.current?.getBoundingClientRect()
+          if (composerRect) {
+            setPaletteLayout({
+              alignOffset: composerRect.left - (triggerRect?.left ?? composerRect.left),
+              width: composerRect.width,
+            })
           }
-          setOpen((current) => !current)
-          setShowFiles(false)
-          setShowGitDiffs(false)
-          setShowSessionTurns(false)
-          setShowProjectWork(false)
-          setShowTerminals(false)
+          resetPanels()
         }}
       >
         <Plus size={19} />
       </Button>
-      {open && (
-        <section
+      </PopoverTrigger>
+        <PopoverContent
+          align="start"
+          alignOffset={paletteLayout.alignOffset}
           aria-label={t('kubecode.addContext')}
-          className="fixed z-[100] flex max-h-[min(520px,58vh)] flex-col overflow-hidden rounded-2xl border border-border bg-popover text-popover-foreground shadow-xl"
-          role="dialog"
-          style={paletteLayout}
+          className="flex max-h-[min(520px,58vh)] max-w-[calc(100vw-16px)] flex-col overflow-hidden p-0"
+          onEscapeKeyDown={(event) => {
+            // Radix sees Escape in the capture phase, before inner layers. Inside a
+            // panel, keep the popover open and let the layers peel one at a time.
+            if (inPanel || event.isComposing) event.preventDefault()
+          }}
+          onKeyDown={(event) => {
+            // Reached only when no inner layer (preview, typed query) consumed Escape.
+            if (event.key !== 'Escape' || !inPanel || event.nativeEvent.isComposing) return
+            event.preventDefault()
+            resetPanels()
+          }}
+          side="top"
+          sideOffset={12}
+          style={{ width: paletteLayout.width }}
         >
           {showFiles ? (
             <>
@@ -247,14 +271,14 @@ export function ComposerAddMenu({
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto p-2">
                 {gitDiffState.status === 'loading' ? (
-                  <p className="px-3 py-3 text-sm text-muted-foreground">{t('kubecode.loadingContext')}</p>
+                  <ReaderLoading>{t('kubecode.loadingContext')}</ReaderLoading>
                 ) : gitDiffState.status === 'error' ? (
-                  <p className="px-3 py-3 text-sm text-destructive">{t('kubecode.contextLoadFailed')}</p>
+                  <ReaderNotice failed>{t('kubecode.contextLoadFailed')}</ReaderNotice>
                 ) : gitDiffState.candidates.length === 0 ? (
-                  <p className="px-3 py-3 text-sm text-muted-foreground">{t('kubecode.gitDiffEmpty')}</p>
+                  <ReaderEmpty>{t('kubecode.gitDiffEmpty')}</ReaderEmpty>
                 ) : gitDiffState.candidates.map((candidate) => (
-                  <Button
-                    className="h-auto min-h-11 w-full justify-start gap-3 px-3 py-2 text-left"
+                  <MenuRow
+                    className="w-full"
                     disabled={!candidate.enabled}
                     key={candidate.path ?? 'all'}
                     onClick={() => {
@@ -262,23 +286,21 @@ export function ComposerAddMenu({
                       onGitDiff(candidate)
                       close()
                     }}
-                    type="button"
-                    variant="ghost"
                   >
-                    {candidate.path
+                    <ItemMedia variant="icon">{candidate.path
                       ? <MaterialFileIcon className="shrink-0" id={resolveFileIcon(candidate.path)} size={20} />
-                      : <GitCompare className="shrink-0" size={20} />}
-                    <span className="min-w-0 flex-1">
-                      <strong className="block truncate font-medium">
+                      : <GitCompare />}</ItemMedia>
+                    <ItemContent className="min-w-0">
+                      <ItemTitle>
                         {candidate.path?.split('/').at(-1) ?? gitDiffLabels.all}
-                      </strong>
-                      <small className="block whitespace-normal text-sm font-normal text-muted-foreground">
+                      </ItemTitle>
+                      <ItemDescription>
                         {candidate.enabled
                           ? gitDiffLabels.summary(candidate)
                           : gitDiffLabels.disabled(candidate.disabled_reason)}
-                      </small>
-                    </span>
-                  </Button>
+                      </ItemDescription>
+                    </ItemContent>
+                  </MenuRow>
                 ))}
               </div>
             </>
@@ -327,25 +349,23 @@ export function ComposerAddMenu({
                     {t('kubecode.userTurns')}
                   </h3>
                   {[...sessionTurnSources].reverse().map((source) => source.userPreview && (
-                    <Button
+                    <MenuRow
                       aria-label={t('kubecode.attachPriorUserTurn', { preview: source.userPreview })}
-                      className="h-auto w-full justify-start gap-2 px-3 py-2 text-left"
+                      className="w-full"
                       key={`user:${source.turnId}`}
                       onClick={() => {
                         onSessionTurnContext({ role: 'user', turnId: source.turnId })
                         close()
                       }}
-                      type="button"
-                      variant="ghost"
                     >
-                      <MessageSquareMore className="shrink-0" size={18} />
-                      <span className="min-w-0">
-                        <strong className="block font-medium">{t('kubecode.priorUserTurn')}</strong>
-                        <small className="block truncate text-sm font-normal text-muted-foreground">
+                      <ItemMedia variant="icon"><MessageSquareMore /></ItemMedia>
+                      <ItemContent className="min-w-0">
+                        <ItemTitle>{t('kubecode.priorUserTurn')}</ItemTitle>
+                        <ItemDescription className="truncate">
                           {source.userPreview}
-                        </small>
-                      </span>
-                    </Button>
+                        </ItemDescription>
+                      </ItemContent>
+                    </MenuRow>
                   ))}
                 </section>
                 <section aria-label={t('kubecode.agentResponses')} role="group">
@@ -353,27 +373,25 @@ export function ComposerAddMenu({
                     {t('kubecode.agentResponses')}
                   </h3>
                   {[...sessionTurnSources].reverse().map((source) => source.agentPreview && (
-                    <Button
+                    <MenuRow
                       aria-label={t('kubecode.attachPriorAgentResponse', {
                         preview: source.agentPreview,
                       })}
-                      className="h-auto w-full justify-start gap-2 px-3 py-2 text-left"
+                      className="w-full"
                       key={`agent:${source.turnId}`}
                       onClick={() => {
                         onSessionTurnContext({ role: 'agent', turnId: source.turnId })
                         close()
                       }}
-                      type="button"
-                      variant="ghost"
                     >
-                      <MessageSquareMore className="shrink-0" size={18} />
-                      <span className="min-w-0">
-                        <strong className="block font-medium">{t('kubecode.priorAgentResponse')}</strong>
-                        <small className="block truncate text-sm font-normal text-muted-foreground">
+                      <ItemMedia variant="icon"><MessageSquareMore /></ItemMedia>
+                      <ItemContent className="min-w-0">
+                        <ItemTitle>{t('kubecode.priorAgentResponse')}</ItemTitle>
+                        <ItemDescription className="truncate">
                           {source.agentPreview}
-                        </small>
-                      </span>
-                    </Button>
+                        </ItemDescription>
+                      </ItemContent>
+                    </MenuRow>
                   ))}
                 </section>
               </div>
@@ -401,9 +419,9 @@ export function ComposerAddMenu({
                         <SquareTerminal className="shrink-0" size={18} />
                         <span className="truncate">{pane}</span>
                       </div>
-                      <Button
+                      <MenuRow
                         aria-label={t('kubecode.attachSelectedTerminalOutput', { pane })}
-                        className="h-auto w-full justify-start px-8 py-2 text-left"
+                        className="w-full pl-8"
                         disabled={!source.selectedText}
                         onClick={() => {
                           if (!source.selectedText) return
@@ -414,59 +432,62 @@ export function ComposerAddMenu({
                           })
                           close()
                         }}
-                        type="button"
-                        variant="ghost"
                       >
-                        <span className="min-w-0">
-                          <strong className="block font-medium">{t('kubecode.terminalSelectedOutput')}</strong>
-                          <small className="block whitespace-normal text-sm font-normal text-muted-foreground">
+                        <ItemContent className="min-w-0">
+                          <ItemTitle>{t('kubecode.terminalSelectedOutput')}</ItemTitle>
+                          <ItemDescription>
                             {source.selectedText
                               ? t('kubecode.terminalSelectionReady')
                               : t('kubecode.terminalSelectionUnavailable')}
-                          </small>
-                        </span>
-                      </Button>
-                      <Button
+                          </ItemDescription>
+                        </ItemContent>
+                      </MenuRow>
+                      <MenuRow
                         aria-label={t('kubecode.attachRecentTerminalOutput', { pane })}
-                        className="h-auto w-full justify-start px-8 py-2 text-left"
+                        className="w-full pl-8"
                         onClick={() => {
                           onTerminalContext({ capture: 'recent', terminalId: source.terminalId })
                           close()
                         }}
-                        type="button"
-                        variant="ghost"
                       >
-                        <span className="min-w-0">
-                          <strong className="block font-medium">{t('kubecode.terminalRecentOutput')}</strong>
-                          <small className="block whitespace-normal text-sm font-normal text-muted-foreground">
+                        <ItemContent className="min-w-0">
+                          <ItemTitle>{t('kubecode.terminalRecentOutput')}</ItemTitle>
+                          <ItemDescription>
                             {t('kubecode.terminalRecentOutputDescription')}
-                          </small>
-                        </span>
-                      </Button>
+                          </ItemDescription>
+                        </ItemContent>
+                      </MenuRow>
                     </div>
                   )
                 })}
               </div>
             </>
           ) : (
-            <>
+            // The official Command owns the capability combobox: focus, arrows,
+            // wrap-around, skipping disabled rows, and aria-activedescendant.
+            <Command
+              className="min-h-0 flex-1 rounded-none bg-transparent"
+              label={t('kubecode.searchContext')}
+              loop
+              onValueChange={setActiveCapability}
+              shouldFilter={false}
+              value={activeCapability}
+            >
               <div className="min-h-0 flex-1 overflow-y-auto p-2">
-                <Button
-                  className="h-auto w-full justify-start gap-3 rounded-xl px-3 py-2.5 text-left"
+                <MenuRow
+                  className="w-full"
                   onClick={() => setShowFiles(true)}
-                  type="button"
-                  variant="ghost"
                 >
-                  <File className="shrink-0" size={20} />
-                  <span className="min-w-0">
-                    <strong className="block truncate font-medium">{t('kubecode.referenceFile')}</strong>
-                    <small className="block truncate text-sm font-normal text-muted-foreground">
+                  <ItemMedia variant="icon"><File /></ItemMedia>
+                  <ItemContent className="min-w-0">
+                    <ItemTitle>{t('kubecode.referenceFile')}</ItemTitle>
+                    <ItemDescription className="truncate">
                       {t('kubecode.chooseFileReference')}
-                    </small>
-                  </span>
-                </Button>
-                {gitDiffLabels && onGitDiff && <Button
-                  className="h-auto w-full justify-start gap-3 rounded-xl px-3 py-2.5 text-left"
+                    </ItemDescription>
+                  </ItemContent>
+                </MenuRow>
+                {gitDiffLabels && onGitDiff && <MenuRow
+                  className="w-full"
                   onClick={() => {
                     setShowGitDiffs(true)
                     setGitDiffState({ candidates: [], status: 'loading' })
@@ -474,117 +495,121 @@ export function ComposerAddMenu({
                       setGitDiffState({ candidates: result.candidates, status: 'ready' })
                     }).catch(() => setGitDiffState({ candidates: [], status: 'error' }))
                   }}
-                  type="button"
-                  variant="ghost"
-                >
-                  <GitCompare className="shrink-0" size={20} />
-                  <span className="min-w-0">
-                    <strong className="block truncate font-medium">{t('kubecode.referenceGitDiff')}</strong>
-                    <small className="block whitespace-normal text-sm font-normal text-muted-foreground">
+                                  >
+                  <ItemMedia variant="icon"><GitCompare /></ItemMedia>
+                  <ItemContent className="min-w-0">
+                    <ItemTitle>{t('kubecode.referenceGitDiff')}</ItemTitle>
+                    <ItemDescription>
                       {t('kubecode.chooseGitDiffReference')}
-                    </small>
-                  </span>
-                </Button>}
-                {terminalSources.length > 0 && onTerminalContext && <Button
-                  className="h-auto w-full justify-start gap-3 rounded-xl px-3 py-2.5 text-left"
+                    </ItemDescription>
+                  </ItemContent>
+                </MenuRow>}
+                {terminalSources.length > 0 && onTerminalContext && <MenuRow
+                  className="w-full"
                   onClick={() => setShowTerminals(true)}
-                  type="button"
-                  variant="ghost"
                 >
-                  <SquareTerminal className="shrink-0" size={20} />
-                  <span className="min-w-0">
-                    <strong className="block truncate font-medium">
+                  <ItemMedia variant="icon"><SquareTerminal /></ItemMedia>
+                  <ItemContent className="min-w-0">
+                    <ItemTitle>
                       {t('kubecode.referenceTerminalOutput')}
-                    </strong>
-                    <small className="block whitespace-normal text-sm font-normal text-muted-foreground">
+                    </ItemTitle>
+                    <ItemDescription>
                       {t('kubecode.chooseTerminalOutputReference')}
-                    </small>
-                  </span>
-                </Button>}
-                {onProjectContext && <Button
-                  className="h-auto w-full justify-start gap-3 rounded-xl px-3 py-2.5 text-left"
+                    </ItemDescription>
+                  </ItemContent>
+                </MenuRow>}
+                {onProjectContext && <MenuRow
+                  className="w-full"
                   onClick={() => setShowProjectWork(true)}
-                  type="button"
-                  variant="ghost"
                 >
-                  <FlaskConical className="shrink-0" size={20} />
-                  <span className="min-w-0">
-                    <strong className="block truncate font-medium">
+                  <ItemMedia variant="icon"><FlaskConical /></ItemMedia>
+                  <ItemContent className="min-w-0">
+                    <ItemTitle>
                       {t('kubecode.referenceProjectWork')}
-                    </strong>
-                    <small className="block whitespace-normal text-sm font-normal text-muted-foreground">
+                    </ItemTitle>
+                    <ItemDescription>
                       {t('kubecode.chooseProjectWorkReference')}
-                    </small>
-                  </span>
-                </Button>}
-                {sessionTurnSources.length > 0 && onSessionTurnContext && <Button
-                  className="h-auto w-full justify-start gap-3 rounded-xl px-3 py-2.5 text-left"
+                    </ItemDescription>
+                  </ItemContent>
+                </MenuRow>}
+                {sessionTurnSources.length > 0 && onSessionTurnContext && <MenuRow
+                  className="w-full"
                   onClick={() => setShowSessionTurns(true)}
-                  type="button"
-                  variant="ghost"
                 >
-                  <MessageSquareMore className="shrink-0" size={20} />
-                  <span className="min-w-0">
-                    <strong className="block truncate font-medium">
+                  <ItemMedia variant="icon"><MessageSquareMore /></ItemMedia>
+                  <ItemContent className="min-w-0">
+                    <ItemTitle>
                       {t('kubecode.referenceSessionTurns')}
-                    </strong>
-                    <small className="block whitespace-normal text-sm font-normal text-muted-foreground">
+                    </ItemTitle>
+                    <ItemDescription>
                       {t('kubecode.chooseSessionTurnReference')}
-                    </small>
-                  </span>
-                </Button>}
-                <Button
-                  className="h-auto w-full justify-start gap-3 rounded-xl px-3 py-2.5 text-left"
+                    </ItemDescription>
+                  </ItemContent>
+                </MenuRow>}
+                <MenuRow
+                  className="w-full"
                   disabled
-                  type="button"
-                  variant="ghost"
                 >
-                  <CircleAlert className="shrink-0" size={20} />
-                  <span className="min-w-0">
-                    <strong className="block truncate font-medium">
+                  <ItemMedia variant="icon"><CircleAlert /></ItemMedia>
+                  <ItemContent className="min-w-0">
+                    <ItemTitle>
                       {t('kubecode.diagnosticsUnavailable')}
-                    </strong>
-                    <small className="block whitespace-normal text-sm font-normal text-muted-foreground">
+                    </ItemTitle>
+                    <ItemDescription>
                       {t('kubecode.diagnosticsUnavailableDescription')}
-                    </small>
-                  </span>
-                </Button>
+                    </ItemDescription>
+                  </ItemContent>
+                </MenuRow>
                 {visibleCommands.map((command) => (
-                  <Button
-                    className="h-auto w-full justify-start gap-3 rounded-xl px-3 py-2.5 text-left"
+                  <MenuRow
+                    className="w-full"
                     key={command.name}
                     onClick={() => closeAndInsert(`/${command.name} `)}
-                    type="button"
-                    variant="ghost"
                   >
-                    <Sparkle className="shrink-0" size={20} />
-                    <span className="min-w-0">
-                      <strong className="block truncate font-medium">/{command.name}</strong>
+                    <ItemMedia variant="icon"><Sparkle /></ItemMedia>
+                    <ItemContent className="min-w-0">
+                      <ItemTitle>/{command.name}</ItemTitle>
                       {command.description && (
-                        <small className="block truncate text-sm font-normal text-muted-foreground">
+                        <ItemDescription className="truncate">
                           {command.description}
-                        </small>
+                        </ItemDescription>
                       )}
-                    </span>
-                  </Button>
+                    </ItemContent>
+                  </MenuRow>
                 ))}
                 {capabilityLabels && capabilityPickerVisible && (
-                  <div className="mt-1 border-t border-border pt-1">
-                    <ComposerCapabilityPicker
-                      embedded
-                      id={capabilityListboxId}
-                      items={visibleCapabilities}
-                      labels={capabilityLabels}
-                      onHover={setSelectedCapabilityIndex}
-                      onSelect={(index) => {
-                        const capability = visibleCapabilities[index]
-                        if (!capability?.enabled || !onCapability) return
-                        onCapability(capability)
-                        close()
-                      }}
-                      selectedIndex={currentCapabilityIndex}
-                      status={capabilityStatus}
-                    />
+                  <div
+                    aria-busy={capabilityStatus === 'loading'}
+                    aria-live="polite"
+                    className="mt-1 border-t border-border pt-1"
+                  >
+                    {capabilityStatus === 'loading' ? (
+                      <p className="px-3 py-3 text-sm text-muted-foreground">{capabilityLabels.loading}</p>
+                    ) : capabilityStatus === 'error' ? (
+                      <p className="px-3 py-3 text-sm text-destructive">{capabilityLabels.error}</p>
+                    ) : visibleCapabilities.length === 0 ? (
+                      <p className="px-3 py-3 text-sm text-muted-foreground">{capabilityLabels.empty}</p>
+                    ) : null}
+                    <CommandList aria-label={capabilityLabels.picker} className="max-h-none overflow-visible">
+                      <CommandGroup className="p-0">
+                        {visibleCapabilities.map((item, index) => (
+                          <CommandItem
+                            aria-describedby={item.enabled ? undefined : `${item.id}-reason-${index}`}
+                            className="min-h-12 items-start pointer-coarse:min-h-11"
+                            disabled={!item.enabled}
+                            key={item.id}
+                            onSelect={() => chooseCapability(item)}
+                            value={item.id}
+                          >
+                            <CapabilityRowContent
+                              item={item}
+                              labels={capabilityLabels}
+                              reasonId={`${item.id}-reason-${index}`}
+                            />
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
                   </div>
                 )}
                 {commands.length === 0 && !hasCapabilities && (
@@ -602,49 +627,26 @@ export function ComposerAddMenu({
                 )}
               </div>
               <div className="border-t border-border p-2">
-                <Input
-                  aria-activedescendant={capabilityPickerVisible
-                    && visibleCapabilities[currentCapabilityIndex]?.enabled
-                    ? `${capabilityListboxId}-option-${currentCapabilityIndex}`
-                    : undefined}
+                <CommandInput
                   aria-label={t('kubecode.searchContext')}
-                  aria-controls={capabilityPickerVisible ? capabilityListboxId : undefined}
-                  aria-expanded={capabilityPickerVisible}
-                  aria-autocomplete={capabilityPickerVisible ? 'list' : undefined}
                   autoFocus
-                  className="h-9 border-0 bg-transparent shadow-none focus-visible:ring-0"
-                  onChange={(event) => setQuery(event.target.value)}
                   onKeyDown={(event) => {
-                    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-                      if (enabledCapabilityIndexes.length === 0) return
-                      event.preventDefault()
-                      const currentPosition = Math.max(
-                        0,
-                        enabledCapabilityIndexes.indexOf(currentCapabilityIndex),
-                      )
-                      const direction = event.key === 'ArrowDown' ? 1 : -1
-                      const nextPosition = (
-                        currentPosition + direction + enabledCapabilityIndexes.length
-                      ) % enabledCapabilityIndexes.length
-                      setSelectedCapabilityIndex(enabledCapabilityIndexes[nextPosition])
-                    }
-                    if ((event.key === 'Enter' || event.key === 'Tab')
-                      && visibleCapabilities[currentCapabilityIndex]?.enabled
-                      && onCapability) {
-                      event.preventDefault()
-                      onCapability(visibleCapabilities[currentCapabilityIndex])
-                      close()
-                    }
+                    // Tab accepts the active capability, as Enter does.
+                    if (event.key !== 'Tab' || event.shiftKey || event.nativeEvent.isComposing) return
+                    const capability = visibleCapabilities.find((item) => item.id === activeCapability)
+                    if (!capability?.enabled || !onCapability) return
+                    event.preventDefault()
+                    chooseCapability(capability)
                   }}
+                  onValueChange={setQuery}
                   placeholder={t('kubecode.searchContext')}
-                  role={capabilityPickerVisible ? 'combobox' : undefined}
                   value={query}
                 />
               </div>
-            </>
+            </Command>
           )}
-        </section>
-      )}
+        </PopoverContent>
+      </Popover>
     </div>
   )
 }
