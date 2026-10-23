@@ -104,7 +104,7 @@ describe('DmPane', () => {
     expect(screen.getByText('within').closest('article')).toHaveAttribute('data-from', 'member')
     const waiting = screen.getByText("Waiting for Analyst's reply")
     expect(waiting.closest('article')).toHaveAttribute('data-state', 'pending')
-    const card = document.querySelector('.kubecode-prompt-input') as HTMLElement
+    const card = box().closest('form') as HTMLElement
     expect(card).toContainElement(box())
     expect(card).not.toHaveTextContent('Only Analyst sees this message.')
     // Empty, the card is compact: two lines that grow with the text.

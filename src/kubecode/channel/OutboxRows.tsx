@@ -30,7 +30,7 @@ export function OutboxRows<P>({ items, onDiscard, onEdit, onSendAgain, t }: {
               <span className="kubecode-outbox-text">{excerptOf(item.text, 200)}</span>
               {item.state === 'sending'
                 ? (
-                  <span className="kubecode-outbox-status">
+                  <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                     <Spinner aria-hidden="true" />
                     {t('kubecode.outbox.sending')}
                   </span>

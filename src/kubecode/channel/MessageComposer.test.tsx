@@ -286,7 +286,7 @@ describe('MessageComposer', () => {
   it('is one input surface: the reply and references head the card, and the text and its controls fill it', async () => {
     const initial = { ...emptyGeneralDraft('r1'), reply: { messageId: 'm4', authorName: 'Analyst', excerpt: 'Ran it' } }
     render(<Harness initial={initial} />)
-    const card = document.querySelector('.kubecode-prompt-input') as HTMLElement
+    const card = box().closest('form') as HTMLElement
     expect(card).not.toBeNull()
     const header = card.querySelector('.kubecode-composer-context') as HTMLElement
     expect(header).toHaveTextContent('Replying to Analyst: Ran it')
