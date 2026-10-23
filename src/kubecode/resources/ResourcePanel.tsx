@@ -125,6 +125,7 @@ export function ResourcePanel({ entry, projectId }: InspectorPanelProps<Extract<
         recovery={recovery}
         t={t}
         target={{ kind, id }}
+        titledByHost
         onCleared={onCleared}
         onDisplayed={onDisplayed}
         onFailed={onFailed}

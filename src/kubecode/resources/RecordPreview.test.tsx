@@ -288,3 +288,21 @@ describe('RecordPreview', () => {
     unmount()
   })
 })
+
+describe('RecordPreview inside a titled host', () => {
+  it('leaves the title and kind badges to the host header instead of repeating them', async () => {
+    const readProjectContext = vi.fn().mockResolvedValue(document())
+    mount({ readProjectContext }, { titledByHost: true })
+    expect(await screen.findByText('model,accuracy')).toBeInTheDocument()
+    expect(screen.queryByText('results/summary.csv')).not.toBeInTheDocument()
+    expect(screen.queryByText('File')).not.toBeInTheDocument()
+  })
+
+  it('still says when what is shown differs from the cited version', async () => {
+    const readProjectContext = vi.fn().mockResolvedValue(document())
+    mount({ readProjectContext }, { cited: '0000000aaaaaaa', titledByHost: true })
+    expect(await screen.findByText('model,accuracy')).toBeInTheDocument()
+    expect(screen.queryByText('results/summary.csv')).not.toBeInTheDocument()
+    expect(screen.getByText(/Changed/i)).toBeInTheDocument()
+  })
+})

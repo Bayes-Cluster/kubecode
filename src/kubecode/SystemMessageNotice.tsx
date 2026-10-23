@@ -127,7 +127,7 @@ export function SystemMessageNotice({
           <Button
             aria-expanded={expanded}
             aria-label={detailsLabel}
-            size="icon-xs"
+            className="kubecode-touch-target" size="icon-xs"
             title={detailsLabel}
             variant="ghost"
             onClick={() => setExpanded((current) => !current)}
@@ -137,7 +137,7 @@ export function SystemMessageNotice({
           {onDismiss && (
             <Button
               aria-label={dismissLabel}
-              size="icon-xs"
+              className="kubecode-touch-target" size="icon-xs"
               variant="ghost"
               onClick={onDismiss}
             >

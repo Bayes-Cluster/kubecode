@@ -299,6 +299,8 @@ describe('ContextWorkbench', () => {
     fireEvent.click((await screen.findByText('a.txt')).closest('button') as HTMLButtonElement)
     expect(await screen.findByText('Loading diff…')).toBeInTheDocument()
     expect(signals[0].aborted).toBe(false)
+    // A diff tab says it is a diff, so it never reads the same as the file's editor tab.
+    expect(screen.getByRole('tab', { name: 'a.txt (diff)' })).toBeInTheDocument()
 
     rerender(<ContextWorkbench {...props} projectId="project-b" />)
     await waitFor(() => expect(signals[0].aborted).toBe(true))
@@ -415,12 +417,12 @@ describe('ContextWorkbench', () => {
 
     fireEvent.click((await screen.findByText('a.txt')).closest('button') as HTMLButtonElement)
     expect(await screen.findByText('a diff')).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: 'a.txt' })).toHaveAttribute('data-state', 'active')
+    expect(screen.getByRole('tab', { name: 'a.txt (diff)' })).toHaveAttribute('data-state', 'active')
 
     fireEvent.click(screen.getByRole('button', { name: 'Close diff' }))
     expect(screen.getByRole('tab', { name: 'Explorer' })).toHaveAttribute('data-state', 'active')
     expect(screen.queryByText('a diff')).not.toBeInTheDocument()
-    expect(screen.queryByRole('tab', { name: 'a.txt' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'a.txt (diff)' })).not.toBeInTheDocument()
   })
 
   it('initializes Git from an untracked project', async () => {
@@ -644,6 +646,25 @@ describe('ContextWorkbench', () => {
     )
     expect(screen.getByText('Inspect the project').closest('[data-slot="item"]')).toBeInTheDocument()
     expect(screen.getByText('Implement the change')).toBeInTheDocument()
+    // Each entry's status is said, not only drawn.
+    expect(screen.getByText('Inspect the project').closest('[data-slot="item"]')).toHaveTextContent('Completed: Inspect the project')
+    expect(screen.getByText('Implement the change').closest('[data-slot="item"]')).toHaveTextContent('In progress: Implement the change')
+  })
+
+  it('names worktree changes once when they are the only group', async () => {
+    const api = {
+      listEntries: vi.fn().mockResolvedValue([]),
+      gitStatus: vi.fn().mockResolvedValue({
+        is_repository: true,
+        branch: 'main',
+        files: [{ path: 'a.txt', original_path: null, index_status: null, worktree_status: 'M', conflict: false }],
+        truncated: false,
+      }),
+    } as unknown as KubecodeApi
+    render(<ContextWorkbench api={api} projectId="project-1" t={createTranslator('en')} width={440} workspaceEvents={[]} />)
+
+    expect(await screen.findByText('a.txt')).toBeInTheDocument()
+    expect(screen.getAllByText('Changes')).toHaveLength(1)
   })
 
   it('keeps multiple file drafts isolated and confirms before discarding one', async () => {

@@ -107,6 +107,29 @@ function placeholderIssues(locale, sourceCatalog, catalog) {
   return issues
 }
 
+// Copy that is a path, a command or a product setting name reads the same in
+// every language; everything else that is a sentence must be translated.
+const SAME_IN_EVERY_LOCALE = new Set([
+  'kubecode.absoluteProjectPath',
+  'kubecode.research.exec.commandsPlaceholder',
+  'kubecode.teamYoloPermissionClaude',
+])
+
+/**
+ * A key that exists but still holds the English sentence passes the key and
+ * placeholder checks, which is how 348 keys stayed English (#263). A value
+ * identical to English with three or more words is reported as untranslated.
+ */
+function untranslatedIssues(locale, sourceCatalog, catalog) {
+  const issues = []
+  for (const [key, sourceValue] of Object.entries(sourceCatalog)) {
+    if (SAME_IN_EVERY_LOCALE.has(key) || catalog[key] !== sourceValue) continue
+    const words = sourceValue.replace(/\{\w+\}/g, '').match(/\b[A-Za-z]{3,}\b/g) ?? []
+    if (words.length >= 3) issues.push(`${locale}: key "${key}" is still the English text`)
+  }
+  return issues
+}
+
 const sourceCatalog = readCatalog(sourcePath)
 assertFlatStringCatalog('en', sourceCatalog)
 
@@ -136,6 +159,7 @@ for (const file of localeFiles) {
   }
 
   issues.push(...placeholderIssues(locale, sourceCatalog, catalog))
+  issues.push(...untranslatedIssues(locale, sourceCatalog, catalog))
 }
 
 if (issues.length > 0) {

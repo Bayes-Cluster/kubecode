@@ -241,6 +241,9 @@ describe('Kubecode workspace', () => {
 
       expect(await screen.findByRole('heading', { name: 'Start with a project' })).toBeInTheDocument()
       expect(screen.queryByText('Opening Workspace…')).not.toBeInTheDocument()
+      // Files and Git have nothing to show before a Project exists.
+      expect(screen.queryByRole('tab', { name: 'Explorer' })).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Toggle context panel' })).toBeDisabled()
       window.history.replaceState(null, '', '/')
     },
   )
@@ -1296,7 +1299,7 @@ describe('Kubecode workspace', () => {
 
     expect(await screen.findByRole('button', { name: 'Demo' })).toBeInTheDocument()
     expect(await screen.findByTestId('agent-session-workspace')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'New session' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'New session' })[0])
     expect(screen.getByRole('radio', { name: 'Start new' })).toHaveAttribute('aria-checked', 'true')
     expect(screen.getByRole('radio', { name: 'Start new' })).toHaveAttribute('data-slot', 'toggle-group-item')
     fireEvent.click(screen.getByRole('radio', { name: 'Team' }))
@@ -1391,6 +1394,14 @@ describe('Kubecode workspace', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(screen.getByRole('button', { name: 'Toggle context panel' })).toHaveAttribute('aria-pressed', 'false')
     await waitFor(() => expect(screen.getByRole('button', { name: 'Toggle context panel' })).toHaveFocus())
+
+    // Settings opened from the navigation Sheet replaces it rather than stacking on it.
+    fireEvent.click(screen.getByRole('button', { name: 'Toggle navigation' }))
+    const navigation = await screen.findByRole('dialog', { name: 'Workspaces' })
+    fireEvent.click(within(navigation).getByRole('button', { name: 'Settings' }))
+    const settings = await screen.findByRole('dialog', { name: 'Settings' })
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Workspaces', hidden: true })).toBeNull())
+    expect(within(settings).getByRole('heading', { name: 'Settings' })).toBeVisible()
   })
 
   it('opens a phone on the place with both panels put away, keeping the remembered wide-screen layout', async () => {

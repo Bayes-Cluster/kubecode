@@ -151,10 +151,30 @@ describe('AgentSessionWorkspace', () => {
     expect(screen.getByTestId('agent-session-workspace').querySelector('[data-slot="empty"]')).not.toBeNull()
     expect(screen.getByText('Codex').closest('[data-slot="item"]')).not.toBeNull()
     expect(screen.getByText('OpenCode').closest('[data-slot="item"]')).toHaveTextContent('Unavailable')
-    fireEvent.click(screen.getByRole('button', { name: 'Start an agent session' }))
+    fireEvent.click(screen.getByRole('button', { name: 'New session' }))
     fireEvent.click(screen.getByRole('button', { name: 'Check again' }))
     expect(onNewSession).toHaveBeenCalledOnce()
     expect(onRefreshAgents).toHaveBeenCalledOnce()
+  })
+
+  it('names the first-run Add project button by its visible label (WCAG 2.5.3)', () => {
+    const onAddProject = vi.fn()
+    render(<AgentSessionWorkspace
+      agents={[{ id: 'codex', available: true, version: '1', executable: 'codex', error: null }]}
+      api={{} as KubecodeApi}
+      conversation={null}
+      locale="en"
+      onAddProject={onAddProject}
+      onConversationCreated={vi.fn()}
+      onConversationRemoved={vi.fn()}
+      onConversationUpdated={vi.fn()}
+      onNewSession={vi.fn()}
+      t={createTranslator('en')}
+      workspaceEvents={[]}
+    />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add project' }))
+    expect(onAddProject).toHaveBeenCalledOnce()
   })
 
   it('keeps the Agent Composer out of the Team board view', async () => {

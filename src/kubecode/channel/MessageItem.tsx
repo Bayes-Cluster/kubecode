@@ -1,4 +1,5 @@
 import { MessageAction, MessageActions, MessageContent } from '@/components/ai-elements/message'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { MoreActions, type MoreActionItem } from '@/components/workspace/MoreActions'
@@ -204,16 +205,20 @@ export function MessageItem({
       </div>
       <MessageContent className="kubecode-message-content">
         {cited && message.reply_to && (
-          <button
-            className="kubecode-channel-citation"
+          <Button
+            className="h-auto max-w-full justify-start self-start px-0 text-muted-foreground"
+            size="sm"
             type="button"
+            variant="link"
             onClick={() => on.jump(message.reply_to as string)}
           >
             <Icon role="command" size="secondary" source={WORKSPACE_COMMAND_ICONS.reply.Icon} />
-            {cited === 'missing'
-              ? t('kubecode.channel.citationMissing')
-              : t('kubecode.channel.citation', { author: cited.author.name, excerpt: cited.excerpt })}
-          </button>
+            <span className="truncate">
+              {cited === 'missing'
+                ? t('kubecode.channel.citationMissing')
+                : t('kubecode.channel.citation', { author: cited.author.name, excerpt: cited.excerpt })}
+            </span>
+          </Button>
         )}
         {proposal && (
           <div className="flex flex-wrap gap-1.5">
@@ -256,10 +261,10 @@ export function MessageItem({
           />
         )}
         {delivery?.state === 'failed' && (
-          <div className="kubecode-message-delivery" data-delivery="failed">
-            <Badge variant="destructive">{t('kubecode.channel.notDelivered')}</Badge>
-            <span>{delivery.text}</span>
-          </div>
+          <Alert data-delivery="failed" variant="destructive">
+            <AlertTitle>{t('kubecode.channel.notDelivered')}</AlertTitle>
+            <AlertDescription>{delivery.text}</AlertDescription>
+          </Alert>
         )}
         {(delivery?.state === 'queued' || delivery?.state === 'delivered') && (
           <p className="kubecode-message-delivery" data-delivery={delivery.state}>

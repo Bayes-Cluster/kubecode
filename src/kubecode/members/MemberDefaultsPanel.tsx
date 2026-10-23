@@ -125,7 +125,8 @@ export function MemberDefaultsPanel({ agents, api, onLoaded, t }: MemberDefaults
       <Item size="sm">
         <ItemContent>
           <ItemTitle><h3>{t('kubecode.members.defaults.title')}</h3></ItemTitle>
-          <ItemDescription>{t('kubecode.members.defaults.description')}</ItemDescription>
+          {/* The whole sentence says what the defaults affect; it is never clamped. */}
+          <ItemDescription className="line-clamp-none">{t('kubecode.members.defaults.description')}</ItemDescription>
         </ItemContent>
         {dirty && (
           <ItemActions>

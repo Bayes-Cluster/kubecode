@@ -340,6 +340,8 @@ export function useWorkspaceEventStream({
       transportOpenRef.current = true
       if (!transportHasOpenedRef.current && !recoveryNeededRef.current) {
         transportHasOpenedRef.current = true
+        // The first open resumes from the snapshot's cursor, so it is a sync.
+        setLastSuccessfulSyncAt(Date.now())
         setConnectionState('live')
         return
       }

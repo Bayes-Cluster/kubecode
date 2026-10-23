@@ -48,6 +48,7 @@ export function RoundPauseControl({ api, execution, onChanged, projectId, t, tas
         busy={busy}
         label={t('kubecode.execution.pauseTaskWork', { task: task.title })}
         paused={execution.paused}
+        text={t('kubecode.execution.pauseWorkShort')}
         onToggle={() => void toggle()}
       />
       {notice && <p className="min-w-56 flex-1 text-sm text-muted-foreground" role="status">{notice}</p>}

@@ -129,6 +129,8 @@ export type PauseButtonProps = {
   label: string
   paused: boolean
   onToggle: () => void
+  /** A short visible label; the accessible name (`label`) starts with it (WCAG 2.5.3). */
+  text?: string
   busy?: boolean
   testId?: string
 }
@@ -140,7 +142,7 @@ export type PauseButtonProps = {
  * stopping ends one named run now; pausing stops new work from starting and
  * lets running work finish. Neither replaces sending.
  */
-export function PauseButton({ busy = false, label, onToggle, paused, testId }: PauseButtonProps) {
+export function PauseButton({ busy = false, label, onToggle, paused, testId, text }: PauseButtonProps) {
   return (
     <TooltipProvider>
       <ActionTooltip copy={{ label }}>
@@ -151,12 +153,13 @@ export function PauseButton({ busy = false, label, onToggle, paused, testId }: P
           aria-pressed={paused}
           className="kubecode-pause-button"
           data-testid={testId}
-          size="icon-sm"
+          size={text ? 'sm' : 'icon-sm'}
           type="button"
           variant={paused ? 'secondary' : 'outline'}
           onClick={unlessBusy(busy, onToggle)}
         >
           {busy ? <Spinner /> : paused ? <Resume aria-hidden size={ICON_SIZES.default} /> : <Pause aria-hidden size={ICON_SIZES.default} />}
+          {text}
         </Button>
       </ActionTooltip>
     </TooltipProvider>

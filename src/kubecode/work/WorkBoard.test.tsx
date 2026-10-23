@@ -121,6 +121,9 @@ describe('WorkBoard', () => {
     expect(within(screen.getByTestId('work-column-executing')).getByText('2', { selector: '[data-slot="badge"]' })).toBeInTheDocument()
 
     const run = screen.getByTestId('work-card-run')
+    // The official Card is the frame; one native button inside opens the item (like TaskCardView).
+    expect(run.tagName).toBe('BUTTON')
+    expect(run.parentElement).toHaveAttribute('data-slot', 'card')
     expect(within(run).getByText('kubecode.work.attemptFailed')).toBeInTheDocument()
     expect(run).toHaveTextContent('3')
     expect(run).toHaveTextContent('Pruner')
@@ -240,6 +243,10 @@ describe('WorkBoard', () => {
     expect(inspector).toHaveTextContent('baseline')
     expect(inspector).toHaveTextContent('kubecode.work.analysisPending')
     expect(inspector).toHaveTextContent('kubecode.work.routeState.delivered')
+    // Each history is a named group of official Items, not a raw list (#263).
+    const attempts = within(inspector).getByRole('region', { name: 'kubecode.work.field.attempts' })
+    expect(within(attempts).getByRole('list')).toHaveAttribute('data-slot', 'item-group')
+    expect(within(attempts).getByRole('listitem')).toHaveAttribute('data-slot', 'item')
     fireEvent.click(within(inspector).getByRole('button', { name: 'Pruning heads?' }))
     expect(onOpenThread).toHaveBeenCalledWith('t1')
   })

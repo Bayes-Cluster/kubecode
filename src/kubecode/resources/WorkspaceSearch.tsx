@@ -217,7 +217,7 @@ export function WorkspaceSearch({
         {mode !== 'quick' && (
           <ToggleGroup
             aria-label={t('kubecode.search.sectionsLabel')}
-            className="w-full justify-start max-sm:overflow-x-auto sm:flex-wrap"
+            className="w-full flex-wrap justify-start"
             size="sm"
             spacing={1}
             type="multiple"

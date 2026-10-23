@@ -81,19 +81,6 @@
   font-family: var(--kubecode-code-font, ui-monospace, SFMono-Regular, Menlo, monospace);
 }
 
-.kubecode-app,
-.kubecode-app * {
-  scrollbar-color: transparent transparent;
-  scrollbar-width: none;
-}
-
-.kubecode-app::-webkit-scrollbar,
-.kubecode-app *::-webkit-scrollbar {
-  display: none;
-  height: 0;
-  width: 0;
-}
-
 .kubecode-topbar {
   align-items: center;
   background: color-mix(in srgb, var(--surface-sidebar) 92%, var(--surface-app));
@@ -133,15 +120,13 @@
   padding: 8px 12px;
 }
 
+
 .kubecode-team-member-tree {
   align-items: center;
   display: flex;
-  min-width: 0;
-}
-
-.kubecode-team-member-tree {
   flex-wrap: wrap;
   gap: 2px;
+  min-width: 0;
 }
 
 .kubecode-team-workspace {
@@ -152,10 +137,7 @@
   min-height: 0;
   overflow: auto;
   padding: 16px;
-  scrollbar-width: none;
 }
-
-.kubecode-team-workspace::-webkit-scrollbar { display: none; }
 
 .kubecode-team-setup {
   margin: 0 auto;
@@ -195,12 +177,6 @@
   min-height: 0;
   overscroll-behavior: contain;
 }
-.kubecode-virtual-message-history [data-virtuoso-scroller='true'] {
-  scrollbar-width: none;
-}
-.kubecode-virtual-message-history [data-virtuoso-scroller='true']::-webkit-scrollbar {
-  display: none;
-}
 .kubecode-load-earlier {
   display: flex;
   margin: 0 auto 8px;
@@ -239,21 +215,7 @@
   overflow: hidden;
 }
 
-.kubecode-session-header {
-  align-items: center;
-  border-bottom: 1px solid var(--border-subtle);
-  display: flex;
-  flex: 0 0 48px;
-  justify-content: space-between;
-  padding: 0 14px;
-}
 
-.kubecode-session-title { gap: 8px; min-width: 0; }
-.kubecode-session-title strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
 .kubecode-session-status { gap: 6px; }
 
@@ -316,14 +278,6 @@
   overflow: hidden;
 }
 
-.kubecode-review-body {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 8px;
-}
 .kubecode-git-state { align-items: center; display: inline-flex; flex: 0 0 auto; gap: 3px; }
 .kubecode-git-state svg { height: 12px; width: 12px; }
 .kubecode-git-state code { font-size: 11px; }
@@ -340,9 +294,11 @@
   height: 36px;
   min-height: 36px;
 }
-.kubecode-git-path { flex: 1; height: 36px; justify-content: space-between; min-width: 0; overflow: hidden; }
+.kubecode-git-path { flex: 1; height: 36px; min-width: 0; overflow: hidden; }
+/* The name takes the row so it reads from the left edge, the state at the end. */
 .kubecode-git-path-name {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   min-width: 0;
   overflow: hidden;
@@ -401,23 +357,6 @@
 .kubecode-project-file-tree[data-virtualized='true'] { overflow: hidden; }
 .kubecode-file-tree-virtual-list { flex: 1 1 auto; min-height: 0; }
 
-.kubecode-file-tree-row {
-  border-radius: 4px;
-  display: flex;
-  font-family: var(--kubecode-code-font, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 14px;
-  font-weight: 400;
-  gap: 4px;
-  height: 27px;
-  justify-content: flex-start;
-  min-width: 100%;
-  overflow: hidden;
-  padding-bottom: 0;
-  padding-left: 7px;
-  padding-right: 7px;
-  padding-top: 0;
-  width: max-content;
-}
 
 .kubecode-project-file-tree [role='group'] {
   border-left: 1px solid color-mix(in srgb, var(--border-strong) 70%, transparent);
@@ -446,7 +385,8 @@
    context; :root default matches the light app theme. */
 .kubecode-material-icon { flex: 0 0 auto; }
 .kubecode-material-icon [data-variant='light'] { display: none; }
-[data-theme='light'] .kubecode-material-icon [data-variant='dark'] { display: none; }
+/* Only an icon that has a light variant swaps; the rest keep their one group. */
+[data-theme='light'] .kubecode-material-icon:has([data-variant='light']) [data-variant='dark'] { display: none; }
 [data-theme='light'] .kubecode-material-icon [data-variant='light'] { display: inline; }
 
 .kubecode-context-editor { display: grid; grid-template-rows: 40px minmax(0, 1fr); }
@@ -466,22 +406,7 @@
   overflow: hidden;
 }
 
-.kubecode-terminal-workspace {
-  display: grid;
-  grid-template-rows: 32px minmax(0, 1fr);
-  height: 100%;
-  min-height: 0;
-  position: relative;
-}
 
-.kubecode-terminal-toolbar {
-  align-items: center;
-  background: var(--surface-app);
-  display: flex;
-  justify-content: flex-end;
-  min-width: 0;
-  padding: 0 6px;
-}
 .kubecode-terminal-toolbar-actions {
   align-items: center;
   display: flex;
@@ -509,9 +434,7 @@
   min-width: 0;
   overflow: auto;
   padding: 4px;
-  scrollbar-width: none;
 }
-.kubecode-terminal-navigator::-webkit-scrollbar { display: none; }
 .kubecode-terminal-navigator-group { position: relative; }
 .kubecode-terminal-navigator-row-shell {
   align-items: center;
@@ -560,7 +483,10 @@
 }
 .kubecode-terminal-navigator-close svg { height: 12px; width: 12px; }
 .kubecode-terminal-navigator-row-shell:hover .kubecode-terminal-navigator-close,
+.kubecode-terminal-navigator-row-shell:focus-within .kubecode-terminal-navigator-close,
 .kubecode-terminal-navigator-close:focus-visible { opacity: 1; }
+/* Without hover (touch) the close button is always shown. */
+@media (hover: none) { .kubecode-terminal-navigator-close { opacity: 1; } }
 .kubecode-terminal-navigator-editor {
   align-items: center;
   display: flex;
@@ -601,8 +527,6 @@
   overflow: hidden;
   position: relative;
 }
-.kubecode-terminal-leaf[data-active='true'] { border-color: transparent; }
-.kubecode-terminal-view { background: var(--surface-editor); padding: 6px; }
 .kubecode-terminal-view .xterm { height: 100%; }
 .kubecode-terminal-view .xterm-viewport { background-color: var(--surface-editor) !important; }
 .kubecode-terminal-exited {
@@ -613,17 +537,6 @@
 }
 
 .kubecode-session-wechat-marker { color: var(--accent-green); flex-shrink: 0; }
-
-.kubecode-empty-small {
-  align-items: center;
-  color: var(--text-secondary);
-  display: flex;
-  font-size: 14px;
-  justify-content: center;
-  min-height: 60px;
-  padding: 12px;
-  text-align: center;
-}
 
 .kubecode-system-message-host {
   bottom: 12px;
@@ -727,7 +640,14 @@
 
 /* -- The Workspaces navigation (ADR 0228 §1) ---------------------------------- */
 
-.kubecode-session-header { flex: 0 0 44px; }
+.kubecode-session-header {
+  align-items: center;
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  flex: 0 0 44px;
+  justify-content: space-between;
+  padding: 0 14px;
+}
 .kubecode-session-composer-dock {
   flex: 0 0 auto;
   margin: 0 auto;
@@ -771,19 +691,54 @@
 .kubecode-explorer-section:not([data-fill='true']) .kubecode-explorer-section-content {
   max-height: min(300px, 40vh);
 }
-.kubecode-review-body { padding: 3px 5px 8px; }
-.kubecode-file-tree-row { height: 26px; }
+.kubecode-review-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 3px 5px 8px;
+}
+.kubecode-file-tree-row {
+  border-radius: 4px;
+  display: flex;
+  font-family: var(--kubecode-code-font, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 14px;
+  font-weight: 400;
+  gap: 4px;
+  height: 26px;
+  justify-content: flex-start;
+  min-width: 100%;
+  overflow: hidden;
+  padding-bottom: 0;
+  padding-left: 7px;
+  padding-right: 7px;
+  padding-top: 0;
+  width: max-content;
+}
 
-.kubecode-terminal-workspace { grid-template-rows: 28px minmax(0, 1fr); }
+.kubecode-terminal-workspace {
+  display: grid;
+  grid-template-rows: 28px minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+  position: relative;
+}
 .kubecode-terminal-toolbar {
+  align-items: center;
   background: var(--surface-sidebar);
+  display: flex;
+  justify-content: flex-end;
   min-height: 28px;
+  min-width: 0;
   padding: 0 4px;
 }
-.kubecode-terminal-view { padding: 4px 6px; }
-.kubecode-terminal-navigator { scrollbar-width: thin; }
-.kubecode-terminal-navigator::-webkit-scrollbar { display: initial; width: 6px; }
+.kubecode-terminal-view {
+  background: var(--surface-editor);
+  padding: 4px 6px;
+}
 
+/* One scrollbar policy for the app: thin, and shown while the region is hovered or focused. */
 .kubecode-app * {
   scrollbar-color: transparent transparent;
   scrollbar-width: thin;
@@ -819,8 +774,6 @@
   gap: 4px;
   padding: 16px 18px 13px;
 }
-.kubecode-path-picker-heading [data-slot='dialog-title'] { font-size: 15px; }
-.kubecode-path-picker-heading [data-slot='dialog-description'] { font-size: 12px; }
 
 .kubecode-path-picker-footer {
   align-items: center;
@@ -833,36 +786,12 @@
   color: var(--text-muted);
   font-size: 12px;
 }
-.kubecode-path-picker-error {
-  background: color-mix(in srgb, var(--destructive) 10%, transparent);
-  color: var(--destructive);
-  font-size: 12px;
-  overflow-wrap: anywhere;
-  padding: 8px 12px;
-  text-align: left;
-}
-
-/* Agent Chat remains scrollable, but its timeline and Composer never expose chrome. */
-.kubecode-message-history,
-.kubecode-composer-editor,
-.kubecode-virtual-message-history,
-.kubecode-virtual-message-history [data-virtuoso-scroller='true'] {
-  scrollbar-color: transparent transparent !important;
-  scrollbar-width: none !important;
-}
-.kubecode-message-history::-webkit-scrollbar,
-.kubecode-composer-editor::-webkit-scrollbar,
-.kubecode-virtual-message-history::-webkit-scrollbar,
-.kubecode-virtual-message-history [data-virtuoso-scroller='true']::-webkit-scrollbar {
-  display: none !important;
-  height: 0 !important;
-  width: 0 !important;
-}
 
 @media (prefers-reduced-motion: reduce) {
-  .kubecode-app *,
-  .kubecode-app *::before,
-  .kubecode-app *::after {
+  /* Global: menus, sheets and dialogs portal outside .kubecode-app (#263). */
+  *,
+  *::before,
+  *::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
@@ -878,52 +807,15 @@
   /* The Workspace search stays as one icon (ADR 0231): leading, search, actions. */
   .kubecode-topbar { grid-template-columns: minmax(0, 1fr) auto auto; }
   .kubecode-titlebar-session-slot { max-width: calc(100vw - 190px); }
+  /* A phone keeps the Session's name readable: the agent glyph gives way, the controls never shrink. */
+  .kubecode-session-title > svg { display: none; }
+  .kubecode-session-title { flex: 1 1 3.5rem; }
+  .kubecode-team-view-switch,
+  .kubecode-session-status { flex: none; }
 
 }
 
 /* Research workbench (ADR 0212) */
-
-.kubecode-research-nav-note {
-  color: var(--text-secondary);
-  font-size: var(--kubecode-ui-font-small);
-  margin: 0;
-  padding: 4px 12px 8px;
-}
-
-.kubecode-research-nav-list {
-  list-style: none;
-  margin: 0;
-  overflow-y: auto;
-  padding: 0 4px 6px;
-}
-
-.kubecode-research-nav-item {
-  align-items: center;
-  background: transparent;
-  border: 0;
-  border-radius: var(--radius-md);
-  color: var(--text-primary);
-  cursor: pointer;
-  display: flex;
-  font-size: var(--kubecode-ui-font-compact);
-  gap: 6px;
-  min-width: 0;
-  padding: 5px 8px;
-  text-align: left;
-  width: 100%;
-}
-
-.kubecode-research-nav-item:hover { background: var(--surface-hover); }
-.kubecode-research-nav-item[aria-current='true'] { background: var(--workbench-list-active); }
-.kubecode-research-nav-item:focus-visible { outline: 2px solid var(--border-focus); outline-offset: -2px; }
-
-.kubecode-research-nav-title {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
 .kubecode-research-workspace {
   background: var(--surface-app);
@@ -946,24 +838,6 @@
   color: var(--feedback-error-text);
   font-size: var(--kubecode-ui-font-small);
   margin: 0;
-}
-
-.kubecode-research-notice {
-  background: var(--feedback-warning-bg);
-  border-radius: var(--radius-md);
-  color: var(--feedback-warning-text);
-  font-size: var(--kubecode-ui-font-small);
-  margin: 8px 0 0;
-  padding: 6px 10px;
-}
-
-.kubecode-research-notice button {
-  background: transparent;
-  border: 0;
-  color: inherit;
-  cursor: pointer;
-  padding: 0;
-  text-decoration: underline;
 }
 
 /* Shared Workspace controls (ADR 0222): one icon button, one composer, one send. */
@@ -1075,33 +949,6 @@
   padding-inline: max(var(--ws-space-3), calc((100% - var(--ws-thread-width)) / 2));
 }
 
-.kubecode-channel-body {
-  margin: 0;
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
-}
-
-.kubecode-channel-citation {
-  align-items: center;
-  align-self: flex-start;
-  background: transparent;
-  border: 0;
-  border-left: 2px solid var(--border-subtle);
-  color: var(--text-secondary);
-  cursor: pointer;
-  display: inline-flex;
-  font-size: var(--kubecode-ui-font-small);
-  gap: 6px;
-  max-width: 100%;
-  overflow: hidden;
-  padding: 0 0 0 8px;
-  text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.kubecode-channel-citation:hover { color: var(--text-primary); }
-
 .kubecode-channel-filter {
   align-items: center;
   color: var(--text-secondary);
@@ -1187,35 +1034,8 @@
 
 
 
-.kubecode-composer-hint { color: var(--text-secondary); font: var(--ws-font-meta); margin: 0; }
-
-.kubecode-dm-turn { display: flex; flex-direction: column; max-width: var(--ws-reading-width); }
-.kubecode-member-provider {
-  align-items: center;
-  color: var(--text-secondary);
-  display: inline-flex;
-  gap: var(--ws-space-1);
-}
-
-
-
-
-/* -- Workspace navigation and the on-demand detail area (ADR 0224) ----------- */
 
 /* Execution history scrolls with the navigation, not inside a second scroller. */
-
-.kubecode-nav-heading {
-  color: var(--text-secondary);
-  font: var(--ws-font-meta);
-  font-weight: 600;
-  margin: var(--ws-space-2) 0 var(--ws-space-1);
-  overflow: hidden;
-  padding: 0 10px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.kubecode-research-nav-item[aria-current='page'] { background: var(--workbench-list-active); }
 
 .kubecode-with-detail { display: flex; flex: 1 1 auto; min-height: 0; min-width: 0; }
 .kubecode-with-detail > :first-child { flex: 1 1 0; min-width: 0; }
@@ -1305,12 +1125,6 @@
   padding: 12px 16px;
 }
 
-/* -- The one Kanban of Tasks and a Task's details (ADR 0225, ADR 0230) ----- */
-
-/* On a card the reason takes its own line under the badges. */
-
-/* One stage at a time on a narrow board; the stage picker exists only there. */
-
 /* A Task's details. */
 
 
@@ -1398,27 +1212,8 @@
 .kubecode-work-closed { border: 1px dashed var(--border-subtle); border-radius: 6px; }
 .kubecode-work-closed > div { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
 
-.kubecode-work-card {
-  background: var(--surface-card);
-  border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  cursor: pointer;
-  display: grid;
-  gap: 6px;
-  min-width: 0;
-  padding: 10px;
-}
-.kubecode-work-card:hover,
-.kubecode-work-card:focus-visible,
-.kubecode-work-card.is-selected {
-  background: var(--surface-hover);
-  border-color: var(--border-strong);
-  outline: none;
-}
-.kubecode-work-card[data-lifecycle]:not([data-lifecycle='active']) { opacity: 0.8; }
-.kubecode-work-card[data-acceptance='accepted'] { border-left: 3px solid var(--feedback-success-text); }
-.kubecode-work-card[data-condition='needs_input'] { border-left: 3px solid var(--feedback-warning-text); }
-.kubecode-work-card strong {
+.kubecode-work-card [data-lifecycle]:not([data-lifecycle='active']) { opacity: 0.8; }
+.kubecode-work-card-title {
   font-size: 13px;
   font-weight: 550;
   line-height: 1.35;
@@ -1430,8 +1225,9 @@
 .kubecode-work-card-blocker { color: var(--text-secondary); font-size: 11px; overflow-wrap: anywhere; }
 .kubecode-work-card-blocker { align-items: center; display: inline-flex; gap: 4px; }
 .kubecode-work-card-badges { display: flex; flex-wrap: wrap; gap: 4px; }
-.kubecode-work-card footer {
+.kubecode-work-card-footer {
   align-items: center;
+  align-self: stretch;
   color: var(--text-muted);
   display: flex;
   font-size: 11px;
@@ -1461,24 +1257,11 @@
   justify-content: space-between;
 }
 .kubecode-work-inspector h3 { font-size: 16px; font-weight: 650; margin: 2px 0 6px; overflow-wrap: anywhere; }
-.kubecode-work-inspector h4 {
-  color: var(--text-secondary);
-  font-size: var(--kubecode-ui-font-tiny);
-  font-weight: 650;
-  letter-spacing: 0.04em;
-  margin: 0 0 4px;
-  text-transform: uppercase;
-}
-.kubecode-work-inspector ul,
-.kubecode-work-inspector ol { margin: 0; padding-left: 18px; }
-.kubecode-work-inspector li { font-size: var(--kubecode-ui-font-small); overflow-wrap: anywhere; }
 .kubecode-work-facts { display: grid; gap: 4px; margin: 0; }
 .kubecode-work-facts > div { align-items: center; display: flex; gap: 8px; }
 .kubecode-work-facts dt { color: var(--text-secondary); font-size: var(--kubecode-ui-font-small); min-width: 84px; }
 .kubecode-work-facts dd { margin: 0; overflow-wrap: anywhere; }
 .kubecode-work-text { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
-.kubecode-work-evidence { border-left: 2px solid var(--border-subtle, var(--border)); display: grid; gap: 6px; margin: 6px 0 6px 4px; padding-left: 10px; }
-.kubecode-work-evidence h5 { color: var(--text-secondary); font-size: var(--kubecode-ui-font-small); margin: 0; }
 .kubecode-work-commands,
 .kubecode-work-review { display: flex; flex-direction: column; gap: 8px; }
 
@@ -1519,6 +1302,7 @@
 /* Every Workspace control: a touch-sized target (the official Button draws focus). */
 @media (pointer: coarse) {
   .kubecode-icon-button,
+  .kubecode-touch-target,
   .kubecode-send-button,
   .kubecode-stop-button,
   .kubecode-pause-button,
@@ -1571,12 +1355,14 @@
 .kubecode-view-header-row {
   align-items: center;
   display: flex;
+  /* Actions wrap under a title that would otherwise be squeezed below a readable width. */
+  flex-wrap: wrap;
   gap: var(--ws-space-2);
   min-width: 0;
 }
 .kubecode-view-header-icon { color: var(--text-tertiary); display: inline-flex; }
 .kubecode-view-header-title {
-  flex: 1 1 auto;
+  flex: 1 1 14ch;
   font: var(--ws-font-title);
   margin: 0;
   min-width: 0;
@@ -1586,6 +1372,8 @@
   align-items: center;
   display: flex;
   flex-wrap: wrap;
+  max-width: 100%;
+  min-width: 0;
   gap: var(--ws-space-1);
   justify-content: flex-end;
 }
@@ -1686,12 +1474,6 @@
 :root.dark .kubecode-app,
 :root[data-theme='dark'] .kubecode-app { --ws-danger-text: var(--feedback-error-text); }
 
-/* -- What waits on the researcher, and what is working (ADR 0232) ------------- */
-
-/* A title wraps instead of hiding behind a tooltip. */
-
-/* Opened by a mouse, the list shows no ring; from the keyboard it does. */
-
 /* One running item (ADR 0240): who, a queued count and Stop; the Task below. */
 
 .kubecode-delivery-status { display: flex; flex-direction: column; gap: var(--ws-space-1); }
@@ -1754,26 +1536,6 @@
 .kubecode-app {
   --ws-font-reading: 400 var(--kubecode-ui-font-size, 14px) / 1.715 var(--kubecode-ui-font, system-ui, sans-serif);
 }
-
-/* Disclosures shared by sources, activity, tools, internal work, and queues. */
-
-/* Conversation */
-
-/* Message */
-
-/* Prompt input: the composer card */
-
-/* Inline citation */
-
-/* Sources, activity, internal work */
-
-/* Tool */
-
-/* Queue */
-
-/* Confirmation: a pending decision */
-
-/* Loader, suggestions, shimmer */
 
 /* Workspace prototypes (ADR 0233, `#/prototypes`): places, main, one
    inspector, in the Harness proportions; a phone stacks them. */
@@ -1950,8 +1712,6 @@
  * and the Prompt Input card around the shared Composer.
  */
 
-.kubecode-dm-waiting { align-items: center; color: var(--text-secondary); display: flex; font: var(--ws-font-meta); gap: var(--ws-space-2); margin: 0; }
-
 .kubecode-conversation-dock {
   display: flex;
   flex: 0 0 auto;
@@ -1978,11 +1738,9 @@
   max-width: none;
   width: min(100%, var(--ws-composer-max));
 }
-/* ADR 0240: the running work, its list and the card share the dock's one width. */
 
 /* The last message ends above the dock, never under it. */
 .kubecode-channel-messages { padding-block-end: var(--ws-space-4); scroll-padding-block-end: var(--ws-space-4); }
-/* A comfortable measure on a wide pane: a member's message about 90 characters, the researcher's 70. */
 
 /* Empty, the card is one line over its tools (ADR 0240); it grows with the text up to a limit, then scrolls. */
 .kubecode-conversation-dock .kubecode-composer { gap: 2px; }
@@ -2000,17 +1758,6 @@
   
 }
 
-/* -- The research Kanban, Task review and Needs you (#234) ------------------- */
-/* The board: four lanes, the cards that wait on the researcher marked. */
-
-/* A Task in the 360px inspector: the header keeps the Task's facts; what happens next carries Discuss. */
-
-/* Results: evidence as chips, the outcome compact, the decision kept together at the bottom. */
-
-/* Activity: the lifecycle as one timeline, General's messages as left-aligned lines. */
-
-/* Needs you: each decision a row that reads as one thing to open. */
-
 /* ============================================================
    S4 Session view on official AI Elements (ADR 0245)
    Message, Reasoning, Tool, Code Block, Plan, Task, Queue,
@@ -2019,25 +1766,11 @@
 .kubecode-session-timeline { position: relative; }
 .kubecode-session-turn { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
 
-/* The prompt: a right-aligned quiet bubble, actions on hover or focus. */
-
-/* The response: full width, markdown at the reading size. */
-
-/* Reasoning and the tool-use group: quiet one-line triggers. */
-
-/* One Tool per call: the official header in the compact row height. */
-
-/* Plan: one compact card row above the composer. */
-
 /* Subagent: a Task in the transcript. */
 .kubecode-session-subagent { margin-bottom: 8px; }
 
 /* Queue above the composer. */
 .kubecode-session-queue { margin-bottom: 8px; }
-
-/* Context meter in the Session header. */
-
-/* Composer: Prompt Input parts on the one-row surface (ADRs 0239/0240). */
 
 /* Jump to latest: ConversationScrollButton's place, over the timeline. */
 .kubecode-session-jump {
@@ -2050,18 +1783,6 @@
 }
 /* End S4 Session view */
 
-/* ==== S2 (ADR 0243): Task inspector, Kanban and Needs you on the official parts ==== */
-/* Status tones on the official Badge: the text carries the meaning, the tone only adds emphasis. */
-
-/* Kanban: the Card is the frame, its one button the whole card. */
-
-/* Inspector: the brief as a Plan, work as Task items, evidence as Sources of Item rows. */
-
-/* Needs you: named Item groups, one row per thing to open; Empty when nothing waits. */
-
-/* ==== end S2 ==== */
-
-/* -- General and DMs on the official components (#229 S1, ADR 0242) --------- */
 /* The Conversation (use-stick-to-bottom): the named log fills the pane; its
    scroller keeps the scrollbar at the pane's edge and the thread in the middle
    three quarters (ADR 0239). */
@@ -2132,13 +1853,11 @@
 /* Cells keep words whole on a phone; the table scrolls inside its box instead (#229). */
 .kubecode-message-body :is(th, td) { overflow-wrap: normal; word-break: normal; }
 .kubecode-message-action { color: var(--text-secondary); }
-.kubecode-dm-waiting { align-items: center; color: var(--text-secondary); display: flex; font: var(--ws-font-meta); gap: var(--ws-space-2); margin: 0; }
 
 /* Identity: the official Avatar, toned by who someone is; the words say it. */
 .kubecode-conversation-avatar { flex: none; }
 .kubecode-member-identity[data-size='md'] > .kubecode-conversation-avatar { height: var(--ws-avatar-md); width: var(--ws-avatar-md); }
 .kubecode-member-identity[data-size='sm'] > .kubecode-conversation-avatar { height: var(--ws-avatar-sm); width: var(--ws-avatar-sm); }
-.kubecode-conversation-avatar[data-role='researcher'] > [data-slot='avatar-fallback'] { background: var(--accent-purple-light); box-shadow: inset 0 0 0 1px var(--accent-purple); }
 .kubecode-identity-card { display: flex; flex-direction: column; gap: 2px; width: auto; max-width: 20rem; }
 .kubecode-identity-card-name { color: var(--text-primary); font: var(--ws-font-subtitle); }
 
@@ -2153,10 +1872,6 @@
 .kubecode-composer-controls { gap: var(--ws-space-1); }
 .kubecode-composer-context { align-items: flex-start; flex-direction: column; padding: var(--ws-space-2) var(--ws-space-3) 0; }
 
-/* The unsent rows: each the researcher's message in its pending state, with its actions. */
-
-/* The running list in its popover: a Queue of Items, each two lines with one Stop (ADR 0238, 0240). */
-
 /* Requests as Confirmations: the official Alert layout, the Workspace's decision look. */
 
 @media (max-width: 767px) {
@@ -2166,27 +1881,6 @@
 @media (max-width: 760px) {
   .kubecode-message[data-from='member'] .kubecode-message-inner > :not(.kubecode-message-header) { padding-inline-start: 0; }
 }
-/* ==== S3 Resources and Members on official components (ADR 0244) ==== */
-/* Record preview: Code Block for code and text, hardened streamdown for Markdown. */
-.kubecode-record-code { max-height: 240px; overflow: auto; }
-.kubecode-record-code:focus-visible { outline: 2px solid var(--state-focus-ring); outline-offset: 1px; }
-.kubecode-record-code pre { background: transparent !important; font-size: var(--ws-font-size-meta, 12px); padding: 6px 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
-.kubecode-record-code > div { overflow: visible; }
-.kubecode-record-preview-compact .kubecode-record-code { max-height: 40vh; }
-.kubecode-record-markdown { font: var(--ws-font-body); min-width: 0; overflow-wrap: anywhere; }
-.kubecode-record-markdown > div > :first-child { margin-top: 0; }
-.kubecode-record-markdown > div > :last-child { margin-bottom: 0; }
-/* Resource results and member rows are Items inside the existing lists. */
-.kubecode-resource-row[data-slot='item'] { border-radius: var(--ws-radius-md); flex-wrap: nowrap; align-items: flex-start; }
-.kubecode-resource-row-body[data-slot='item-content'] { gap: 2px; }
-
-.kubecode-member-row[data-slot='item'] { align-items: flex-start; border: 0; border-radius: 0; }
-.kubecode-member-row[data-slot='item'] + .kubecode-member-row[data-slot='item'] { border-top: 1px solid var(--border-subtle); }
-/* Member facts are Fields; forms use Field, Select and Input. */
-
-/* The manager setup notice is an Alert in the warning tone. */
-
-/* ==== end S3 ==== */
 
 /* The inspector and its entries take focus only so keyboard reading starts there;
    they are not controls, so they draw no ring around the whole panel (#229). */

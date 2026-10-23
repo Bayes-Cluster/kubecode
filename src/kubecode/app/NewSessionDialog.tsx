@@ -148,7 +148,8 @@ export function NewSessionDialog({
           projectId,
           selectedAgentId,
           agentName(selectedAgentId),
-          title.trim() || undefined,
+          // Left unnamed, a Team is called "Team" in the researcher's language.
+          title.trim() || t('kubecode.teamSession'),
           executionMode,
         )
         trackEvent('kubecode_team_created', {

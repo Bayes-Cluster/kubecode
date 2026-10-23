@@ -56,6 +56,11 @@ export type RecordPreviewProps = {
   onShowCurrent?: () => void
   /** A narrower layout for a dialog or a picker. */
   compact?: boolean
+  /**
+   * The host's header already names the record (an inspector panel): only
+   * what differs from what was cited is said here, not the title and kind again.
+   */
+  titledByHost?: boolean
   /** Somewhere to look for the material again, offered when it is gone or could not be read. */
   recovery?: { label: string; run: () => void }
 }
@@ -96,6 +101,7 @@ export function RecordPreview({
   canFollow,
   cited = null,
   compact = false,
+  titledByHost = false,
   events = [],
   onCleared,
   onDisplayed,
@@ -178,10 +184,16 @@ export function RecordPreview({
   const showNewer = <Button size="xs" variant="outline" onClick={showCurrent}>{t('kubecode.resources.preview.showNewer')}</Button>
   return (
     <div
-      className={cn('kubecode-record-preview flex min-w-0 flex-col gap-3', compact && 'kubecode-record-preview-compact')}
+      className="flex min-w-0 flex-col gap-3"
       data-shown-revision={shownRevision ?? undefined}
       data-testid="evidence-viewer"
     >
+      {titledByHost ? (changed || citedVersion) && (
+        <div className="flex flex-wrap items-center gap-1">
+          {changed && <Badge variant="warning">{t('kubecode.work.evidence.changed')}</Badge>}
+          {citedVersion && <span className="text-xs text-muted-foreground">{t('kubecode.work.evidence.pinned', { revision: citedVersion })}</span>}
+        </div>
+      ) : (
       <Item className="p-0" size="sm">
         <ItemMedia variant="icon">
           <Icon role="identity" size="secondary" source={WORKSPACE_OBJECT_ICONS[objectKindOf(target.kind)].Icon} />
@@ -196,6 +208,7 @@ export function RecordPreview({
           {citedVersion && <ItemDescription>{t('kubecode.work.evidence.pinned', { revision: citedVersion })}</ItemDescription>}
         </ItemContent>
       </Item>
+      )}
       {state.newer && <ReaderNotice action={showNewer}>{t('kubecode.resources.preview.newer')}</ReaderNotice>}
       {unreadable && <ReaderNotice failed>{t('kubecode.work.evidence.failed')}</ReaderNotice>}
       {!unreadable && doc.sections.length === 0 && doc.notes.length === 0 && (

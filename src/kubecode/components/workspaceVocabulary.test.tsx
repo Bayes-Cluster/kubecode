@@ -247,6 +247,13 @@ describe('PauseButton and StopButton (ADR 0227)', () => {
     fireEvent.click(busy)
     expect(onToggle).toHaveBeenCalledTimes(1)
   })
+
+  it('can show a short visible label that starts its accessible name', () => {
+    render(<PauseButton label="Pause new work on this Task" paused={false} text="Pause new work" onToggle={vi.fn()} />)
+    const pause = screen.getByRole('button', { name: 'Pause new work on this Task' })
+    expect(pause).toHaveTextContent('Pause new work')
+    expect(pause).toHaveAttribute('data-size', 'sm')
+  })
 })
 
 describe('what the controls draw (ADR 0227)', () => {

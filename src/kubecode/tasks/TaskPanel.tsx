@@ -186,7 +186,8 @@ export function TaskPanel({ entry, projectId }: InspectorPanelProps<Extract<Insp
         <Alert aria-label={t('kubecode.task.nextTitle')} className="kubecode-task-next-step" data-tone={next.tone} role="group">
           {next.tone === 'warn' && <CircleAlert aria-hidden />}
           <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
-            {nextText && <span className="min-w-0 flex-1">{nextText}</span>}
+            {/* A real basis: on a narrow inspector the action wraps below the sentence instead of squeezing it. */}
+            {nextText && <span className="min-w-0 flex-[1_1_12rem]">{nextText}</span>}
             <Button size="sm" variant="outline" onClick={discuss}>
               <Icon role="command" source={WORKSPACE_DESTINATION_ICONS.general.Icon} />
               {t('kubecode.task.discuss')}

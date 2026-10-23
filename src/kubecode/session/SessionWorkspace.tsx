@@ -508,13 +508,13 @@ export function AgentSessionWorkspace({
             </EmptyDescription>
           </EmptyHeader>
           <EmptyContent className="max-w-xl">
-            <ItemGroup className="kubecode-agent-readiness-grid">
+            <ItemGroup>
               {agents.map((candidate) => (
                 <Item data-ready={candidate.available} key={candidate.id} size="sm" variant="outline">
                   <ItemMedia>
                     <AiAgentIcon agent={candidate.id} size={22} />
                   </ItemMedia>
-                  <ItemContent>
+                  <ItemContent className="text-left">
                     <ItemTitle>{agentName(candidate.id)}</ItemTitle>
                     <ItemDescription>
                       {candidate.available
@@ -528,7 +528,6 @@ export function AgentSessionWorkspace({
             <div className="flex flex-wrap justify-center gap-2">
               {projectId ? (
                 <Button
-                  aria-label={t('kubecode.startSession')}
                   disabled={readyAgents.length === 0}
                   onClick={onNewSession}
                 >
@@ -536,7 +535,7 @@ export function AgentSessionWorkspace({
                   {t('kubecode.newSession')}
                 </Button>
               ) : (
-                <Button aria-label={t('kubecode.firstRunTitle')} onClick={onAddProject}>
+                <Button onClick={onAddProject}>
                   <Plus data-icon="inline-start" />
                   {t('kubecode.addProject')}
                 </Button>
