@@ -12,7 +12,7 @@ import type {
 import { readWorkbenchNavigatorLayout } from '../workbenchLayout'
 import { errorMessage } from './errors'
 import { mergeProjectRuns } from './useWorkspaceReconciliation'
-import { mergeConversations } from './sessionCatalog'
+import { keepsSelection, mergeConversations } from './sessionCatalog'
 import type { Translator } from '@/lib/i18n'
 
 type Dispatch<State> = React.Dispatch<React.SetStateAction<State>>
@@ -36,6 +36,8 @@ export type WorkspaceBootstrapOptions = {
   setTerminalsLoadedForProjectId: Dispatch<string | null>
   setConversations: Dispatch<Conversation[]>
   setConversationId: Dispatch<string | null>
+  /** A selected Session the list leaves out that a reload keeps (#254). */
+  heldSession?: () => string | null
   /** The Project whose Sessions have been read, so "no Sessions yet" is known and not a guess. */
   /** The Project whose Sessions were read (`ok`), or failed to be read. */
   setConversationsLoadedFor?: Dispatch<SessionsLoad | null>
@@ -76,6 +78,7 @@ export function useWorkspaceBootstrap(
     setTerminalsLoadedForProjectId,
     setConversations,
     setConversationId,
+    heldSession,
     setConversationsLoadedFor,
     setTeams,
     setError,
@@ -153,11 +156,8 @@ export function useWorkspaceBootstrap(
           const nextConversations = conversationResult.value
           setConversations(nextConversations)
           setAllConversations((current) => mergeConversations(current, nextConversations))
-          setConversationId((selected) => (
-            nextConversations.some((item) => item.id === selected)
-              ? selected
-              : nextConversations.at(-1)?.id ?? null
-          ))
+          setConversationId((selected) => keepsSelection(selected, nextConversations, heldSession?.())
+            ? selected : nextConversations.at(-1)?.id ?? null)
         }
         // Read, or failed to read: either way the first view can be chosen.
         setConversationsLoadedFor?.({ projectId, ok: conversationResult.status === 'fulfilled' })
@@ -169,7 +169,7 @@ export function useWorkspaceBootstrap(
         }
       })
     return () => { current = false }
-  }, [api, projectId, setAllConversations, setConversationId, setConversations, setConversationsLoadedFor, setError, setTeams, setTerminals, setTerminalsLoadedForProjectId, t])
+  }, [api, heldSession, projectId, setAllConversations, setConversationId, setConversations, setConversationsLoadedFor, setError, setTeams, setTerminals, setTerminalsLoadedForProjectId, t])
 
   const refreshAgents = useCallback(async () => {
     setAgentsRefreshing(true)

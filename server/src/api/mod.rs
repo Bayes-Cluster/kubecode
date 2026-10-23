@@ -50,8 +50,8 @@ use self::runtime::{
 };
 use self::sessions::{
     ask_side_question, branch_conversation_at_run, create_conversation, create_team_member,
-    delete_conversation, fork_conversation, fork_conversation_at_turn, get_session_state,
-    list_all_conversations, list_conversation_revisions, list_conversations,
+    delete_conversation, fork_conversation, fork_conversation_at_turn, get_conversation,
+    get_session_state, list_all_conversations, list_conversation_revisions, list_conversations,
     list_provider_sessions, revise_conversation_at_run, update_conversation, update_session_option,
 };
 use self::terminals::{
@@ -214,6 +214,10 @@ fn client_api_router(state: AppState) -> Router {
         .route(
             "/projects/{project_id}/sessions",
             get(list_conversations).post(create_conversation),
+        )
+        .route(
+            "/projects/{project_id}/sessions/{conversation_id}",
+            get(get_conversation),
         )
         .route(
             "/projects/{project_id}/conversations/{conversation_id}/runs",

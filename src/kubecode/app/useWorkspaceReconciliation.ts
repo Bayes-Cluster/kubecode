@@ -17,6 +17,7 @@ import {
   type WorkspaceEventReconciliationRequest,
 } from '../useWorkspaceEventStream'
 import { errorMessage } from './errors'
+import { keepsSelection } from './sessionCatalog'
 import type { Translator } from '@/lib/i18n'
 
 type Dispatch<State> = React.Dispatch<React.SetStateAction<State>>
@@ -27,6 +28,8 @@ export type WorkspaceReconciliationOptions = {
   setAllConversations: Dispatch<Conversation[]>
   setConversations: Dispatch<Conversation[]>
   setConversationId: Dispatch<string | null>
+  /** A selected Session the list leaves out that a reload keeps (#254). */
+  heldSession?: () => string | null
   setTeams: Dispatch<TeamSnapshot[]>
   setTerminals: Dispatch<TerminalInfo[]>
   setTerminalsLoadedForProjectId: Dispatch<string | null>
@@ -44,6 +47,7 @@ export function useWorkspaceReconciliation(
     setAllConversations,
     setConversations,
     setConversationId,
+    heldSession,
     setTeams,
     setTerminals,
     setTerminalsLoadedForProjectId,
@@ -107,7 +111,7 @@ export function useWorkspaceReconciliation(
       && !dirty.refreshProjectSessions) {
       const nextConversations = applyWorkspaceConversationEvents(conversationResult.value, replayEvents)
       setConversations(nextConversations)
-      setConversationId((selected) => nextConversations.some((item) => item.id === selected)
+      setConversationId((selected) => keepsSelection(selected, nextConversations, heldSession?.())
         ? selected : nextConversations.at(-1)?.id ?? null)
     }
     if (teamResult.status === 'fulfilled' && teamResult.value && !dirty.refreshTeams) {
@@ -125,7 +129,7 @@ export function useWorkspaceReconciliation(
         [activeProjectId]: reconciledRuns,
       }, replayEvents))
     }
-  }, [api, reportOwnedError, setAllConversations, setConversationId, setConversations, setProjectRuns, setTeams, setTerminals, setTerminalsLoadedForProjectId])
+  }, [api, heldSession, reportOwnedError, setAllConversations, setConversationId, setConversations, setProjectRuns, setTeams, setTerminals, setTerminalsLoadedForProjectId])
 
   const {
     connectionState,

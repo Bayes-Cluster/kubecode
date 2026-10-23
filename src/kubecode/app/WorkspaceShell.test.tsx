@@ -646,6 +646,20 @@ describe('Workspace navigation and routes', () => {
     await waitFor(() => expect(window.location.hash).toBe(hash))
   })
 
+  it('opens a member\'s Session a Task points at, though the Sessions list leaves it out (#254)', async () => {
+    const run = { ...session, id: 's-member', title: 'Analyst run', read_only: true }
+    const client = api({
+      listConversations: vi.fn().mockResolvedValue([session]),
+      getSession: vi.fn().mockResolvedValue(run),
+    })
+    await start('#/p/project-1/sessions/c/s-member', client)
+    expect(await screen.findByTestId('agent-session-workspace')).toBeInTheDocument()
+    expect(screen.queryByText('Start an agent session')).not.toBeInTheDocument()
+    expect(client.getSession).toHaveBeenCalledWith('project-1', 's-member')
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)))
+    expect(window.location.hash).toBe('#/p/project-1/sessions/c/s-member')
+  })
+
   it('opens a legacy question\'s Task on Kanban, whatever the board lists', async () => {
     await start('#/p/project-1/question/r1')
     fireEvent.click(await screen.findByRole('button', { name: 'Open the Task' }))

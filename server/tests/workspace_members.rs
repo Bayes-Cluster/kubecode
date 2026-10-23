@@ -718,3 +718,55 @@ async fn the_sessions_list_leaves_out_member_sessions_but_keeps_the_researchers_
     );
     assert!(!ids.contains(&member_session.as_str()));
 }
+
+#[tokio::test]
+async fn a_member_session_opens_by_id_read_only_though_the_list_leaves_it_out() {
+    let env = env(true);
+    let (_, roster) = call(
+        &env,
+        Method::GET,
+        &format!("/projects/{}/members", env.project),
+        Value::Null,
+    )
+    .await;
+    let member_session = roster["members"][0]["public_conversation_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (status, session) = call(
+        &env,
+        Method::GET,
+        &format!("/projects/{}/sessions/{member_session}", env.project),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{session}");
+    assert_eq!(session["id"], member_session.as_str());
+    assert_eq!(
+        session["read_only"], true,
+        "a member's run is watched, not typed into"
+    );
+
+    let chat = env
+        .agents
+        .create_conversation(&env.project, AgentId::OpenCode, Some("My chat"))
+        .unwrap()
+        .id;
+    let (_, own) = call(
+        &env,
+        Method::GET,
+        &format!("/projects/{}/sessions/{chat}", env.project),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(own["read_only"], false);
+
+    let (status, _) = call(
+        &env,
+        Method::GET,
+        &format!("/projects/{}/sessions/missing", env.project),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
