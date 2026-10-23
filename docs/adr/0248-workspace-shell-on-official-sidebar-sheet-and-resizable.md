@@ -50,7 +50,11 @@ The phone layout keeps its own 980-pixel breakpoint, so the navigator and the
 Files and Git panel open in official `Sheet`s (left and right) rather than in
 the Sidebar's built-in mobile mode, whose breakpoint is 768 pixels. The Sheet
 owns the overlay, focus trapping, Escape and focus return; the scrim button
-and the Escape listener are removed. When the navigation Sheet opens, focus
+and the Escape listener are removed. Because a Sheet is modal, a phone opens
+on the place with both Sheets closed, and they open only on demand; entering
+the narrow layout closes them. The Sheets' state is not a preference: the
+remembered wide-screen choices (navigation and Files and Git open or closed)
+are kept and come back when the layout widens. When the navigation Sheet opens, focus
 goes to the current place (else the current Workspace, else the Sheet), not to
 the first header action, whose tooltip would take the first Escape.
 

@@ -151,9 +151,12 @@ test('@smoke workspace shell moves from General to a Task and back, and keeps it
 
   // Files and Git open on request and are dismissed again, as an overlay on a phone.
   await page.getByRole('button', { name: 'Toggle context panel' }).click()
-  await expect(page.getByRole('button', { name: 'Toggle context panel' })).toHaveAttribute('aria-pressed', 'true')
+  // A modal official Sheet: the page under it is out of reach until it is dismissed.
+  await expect(page.getByRole('dialog', { name: 'Context panel' })).toBeVisible()
   await page.keyboard.press('Escape')
+  await expect(page.getByRole('dialog', { name: 'Context panel' })).toBeHidden()
   await expect(page.getByRole('button', { name: 'Toggle context panel' })).toHaveAttribute('aria-pressed', 'false')
+  await expect(page.getByRole('button', { name: 'Toggle context panel' })).toBeFocused()
 
   // An agent's profile is a detail screen too, with a way back.
   await toggleNavigation(page)

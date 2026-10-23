@@ -159,6 +159,10 @@ const contextDocument = (kind: string, id: string, title: string) => ({
 async function start(hash: string, client = api()) {
   window.history.replaceState(null, '', `/${hash}`)
   const view = render(<KubecodeApp api={client} />)
+  // On a phone the navigation is a Sheet opened on demand: open it to reach it.
+  if (window.matchMedia('(max-width: 980px)').matches) {
+    fireEvent.click(await screen.findByRole('button', { name: 'Toggle navigation' }))
+  }
   const nav = await screen.findByRole('region', { name: 'Workspace' })
   return { ...view, client, nav }
 }

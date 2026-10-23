@@ -769,8 +769,9 @@ collapsible Terminal panel, with named, keyboard-operable separators and sizes
 kept in pixels. The navigator is the official `Sidebar` inside a
 `SidebarProvider` that owns the navigation's open state (title-bar toggle and
 Cmd/Ctrl+B). Below 980 pixels, the navigator and Explorer are mutually
-exclusive official `Sheet`s, which own the overlay, focus trap, Escape and
-focus return.
+exclusive official `Sheet`s, opened on demand (a phone opens on the place),
+which own the overlay, focus trap, Escape and focus return; the remembered
+wide-screen layout is not changed by them.
 
 The navigator searches, filters, sorts, groups, archives, forks, and deletes
 Sessions beneath their owning Project. Query matches temporarily reveal

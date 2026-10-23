@@ -1356,7 +1356,12 @@ describe('Kubecode workspace', () => {
     } as unknown as KubecodeApi
     const { container } = render(<KubecodeApp api={api} />)
 
-    // The navigation is an official Sheet: a modal dialog named for what it holds.
+    // A phone opens on the place: the navigation is an official Sheet opened on demand.
+    const toggle = await screen.findByRole('button', { name: 'Toggle navigation' })
+    expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.queryByRole('dialog', { name: 'Workspaces' })).toBeNull()
+    toggle.focus()
+    fireEvent.click(toggle)
     const sheet = await screen.findByRole('dialog', { name: 'Workspaces' })
     expect(sheet).toHaveAttribute('data-slot', 'sheet-content')
     expect(within(sheet).getByRole('navigation', { name: 'Workspaces' })).toBeInTheDocument()
@@ -1368,10 +1373,13 @@ describe('Kubecode workspace', () => {
     // Escape is the Sheet's own: it closes the navigation.
     fireEvent.keyDown(sheet, { key: 'Escape' })
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Workspaces' })).toBeNull())
-    const sessionsToggle = screen.getByRole('button', { name: 'Toggle navigation' })
+    const sessionsToggle = await screen.findByRole('button', { name: 'Toggle navigation' })
     const contextToggle = screen.getByRole('button', { name: 'Toggle context panel' })
     expect(sessionsToggle).toHaveAttribute('aria-pressed', 'false')
+    // Closing it gives focus back to the toggle that opened it.
+    await waitFor(() => expect(sessionsToggle).toHaveFocus())
 
+    contextToggle.focus()
     fireEvent.click(contextToggle)
     const context = await screen.findByRole('dialog', { name: 'Context panel' })
     expect(within(context).getByTestId('context-workbench')).toBeInTheDocument()
@@ -1380,9 +1388,10 @@ describe('Kubecode workspace', () => {
     fireEvent.click(within(context).getByRole('button', { name: 'Close side panels' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(screen.getByRole('button', { name: 'Toggle context panel' })).toHaveAttribute('aria-pressed', 'false')
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Toggle context panel' })).toHaveFocus())
   })
 
-  it('reconciles a persisted narrow layout that opens both overlays to a single overlay', async () => {
+  it('opens a phone on the place with both panels put away, keeping the remembered wide-screen layout', async () => {
     vi.stubGlobal('matchMedia', vi.fn().mockImplementation((query: string) => ({
       matches: query === '(max-width: 980px)',
       media: query,
@@ -1410,16 +1419,21 @@ describe('Kubecode workspace', () => {
     } as unknown as KubecodeApi
     const { container } = render(<KubecodeApp api={api} />)
 
-    // The phone sheet sizes the navigation (it fills it); the stored width is for wide screens.
-    const sheet = await screen.findByRole('dialog', { name: 'Workspaces' })
-    await within(sheet).findByRole('button', { name: 'Demo' })
-    const sessionsToggle = screen.getByRole('button', { name: 'Toggle navigation', hidden: true })
-    const contextToggle = screen.getByRole('button', { name: 'Toggle context panel', hidden: true })
-    expect((container.ownerDocument.querySelector('.kubecode-session-sidebar') as HTMLElement).style.width).toBe('100%')
-
+    const sessionsToggle = await screen.findByRole('button', { name: 'Toggle navigation' })
+    const contextToggle = screen.getByRole('button', { name: 'Toggle context panel' })
     await waitFor(() => expect(contextToggle).toHaveAttribute('aria-pressed', 'false'))
-    expect(sessionsToggle).toHaveAttribute('aria-pressed', 'true')
+    expect(sessionsToggle).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.queryByRole('dialog')).toBeNull()
     expect(container.querySelector('.kubecode-context-workbench')).not.toBeInTheDocument()
+    // The Sheet is not a preference: the wide-screen navigation stays remembered as open.
+    expect(JSON.parse(localStorage.getItem('kubecode:workbench-layout:v2') ?? '{}')).toMatchObject({
+      navigatorOpen: true,
+      navigatorWidth: 300,
+    })
+    // Opened, the Sheet sizes the navigation (it fills it).
+    fireEvent.click(sessionsToggle)
+    const sheet = await screen.findByRole('dialog', { name: 'Workspaces' })
+    expect((sheet.querySelector('.kubecode-session-sidebar') as HTMLElement).style.width).toBe('100%')
   })
 
   it('restores the saved pane layout for a project', async () => {

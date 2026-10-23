@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type SetStateAction } from 'react'
 import { Bell } from 'lucide-react'
 import { createTranslator, resolveEffectiveLocale, type Translator } from '@/lib/i18n'
 import { trackEvent } from '@/lib/telemetry'
@@ -166,7 +166,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   const [commandPaletteSession, setCommandPaletteSession] = useState<CommandPaletteSessionSnapshot | null>(null)
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('general')
   const [disableWorkspacesOpen, setDisableWorkspacesOpen] = useState(false)
-  const [sessionSidebarOpen, setSessionSidebarOpen] = useState(true)
+  const [navigatorPreference, setNavigatorPreference] = useState(true)
   // "History and execution": collapsed unless the researcher opened it.
   const [historyOpen, setHistoryOpen] = useState(false)
   const [contextOpen, setContextOpen] = useState(true)
@@ -182,6 +182,22 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   // The Workspace the researcher last switched to, so its place is announced.
   const [announcedProjectId, setAnnouncedProjectId] = useState<string | null>(null)
   const narrowLayout = useNarrowWorkbench()
+  // On a phone the navigation and Files and Git are modal Sheets opened on
+  // demand, closed whenever the layout becomes narrow; the wide-screen
+  // choices are the remembered preferences and are never changed by a Sheet.
+  const [navigationSheetOpen, setNavigationSheetOpen] = useState(false)
+  const [contextSheetOpen, setContextSheetOpen] = useState(false)
+  const [sheetLayout, setSheetLayout] = useState(narrowLayout)
+  if (sheetLayout !== narrowLayout) {
+    setSheetLayout(narrowLayout)
+    setNavigationSheetOpen(false)
+    setContextSheetOpen(false)
+  }
+  const sessionSidebarOpen = narrowLayout ? navigationSheetOpen : navigatorPreference
+  const setSessionSidebarOpen = useCallback((value: SetStateAction<boolean>) => {
+    if (narrowLayout) setNavigationSheetOpen(value)
+    else setNavigatorPreference(value)
+  }, [narrowLayout])
 
   // -- Where the researcher is (ADR 0228): one location per Workspace -----------------------
   const [locationStorage] = useState(browserStorage)
@@ -196,11 +212,14 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   // Files and Git are a column beside Sessions; beside the research views they
   // open when asked for and are gone again when the view is left.
   const onSessionsSurface = !projectId || place.view === 'sessions'
-  const contextVisible = onSessionsSurface ? contextOpen : researchToolsOpen
+  const contextVisible = narrowLayout
+    ? contextSheetOpen
+    : onSessionsSurface ? contextOpen : researchToolsOpen
   const setContextVisible = useCallback((open: boolean | ((current: boolean) => boolean)) => {
-    if (onSessionsSurface) setContextOpen(open)
+    if (narrowLayout) setContextSheetOpen(open)
+    else if (onSessionsSurface) setContextOpen(open)
     else setResearchToolsOpen(open)
-  }, [onSessionsSurface])
+  }, [narrowLayout, onSessionsSurface])
 
   const workspaceRef = useRef<HTMLDivElement>(null)
   const mainStackRef = useRef<HTMLDivElement>(null)
@@ -328,7 +347,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     initialProjectId,
     setProjects,
     setProjectId,
-    setSessionSidebarOpen,
+    setSessionSidebarOpen: setNavigatorPreference,
     setSessionSidebarWidth,
     setHistoryOpen,
     setProjectRuns: reconciliation.setProjectRuns,
@@ -412,9 +431,29 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     window.addEventListener('pagehide', onHide)
     return () => window.removeEventListener('pagehide', onHide)
   }, [flushLocation, foldReading])
+  // What had focus when a phone Sheet opened gets it back when the Sheet
+  // closes (there is no SheetTrigger for Radix to return to), unless a move
+  // from the navigation closed it: then the place being opened takes focus.
+  const sheetOpenerRef = useRef<HTMLElement | null>(null)
+  const sheetClosedByMoveRef = useRef(false)
+  const rememberSheetOpener = useCallback(() => {
+    sheetOpenerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  }, [])
+  const returnFocusFromSheet = useCallback((event: Event) => {
+    event.preventDefault()
+    const opener = sheetOpenerRef.current
+    sheetOpenerRef.current = null
+    if (sheetClosedByMoveRef.current) {
+      sheetClosedByMoveRef.current = false
+      return
+    }
+    if (opener?.isConnected) opener.focus({ preventScroll: true })
+  }, [])
   const closeNavigatorSheet = useCallback(() => {
-    if (narrowLayout) setSessionSidebarOpen(false)
-  }, [narrowLayout])
+    if (!narrowLayout || !navigationSheetOpen) return
+    sheetClosedByMoveRef.current = true
+    setNavigationSheetOpen(false)
+  }, [narrowLayout, navigationSheetOpen])
   const presentation = useInspectorPresentation(contextRowRef, {
     narrowLayout,
     reservedWidth: contextVisible ? contextWidth : 0,
@@ -734,10 +773,10 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     if (!layoutHydrated) return
     writeWorkbenchNavigatorLayout(localStorage, {
       historyOpen,
-      navigatorOpen: sessionSidebarOpen,
+      navigatorOpen: navigatorPreference,
       navigatorWidth: sessionSidebarWidth,
     })
-  }, [historyOpen, layoutHydrated, sessionSidebarOpen, sessionSidebarWidth])
+  }, [historyOpen, layoutHydrated, navigatorPreference, sessionSidebarWidth])
 
   useEffect(() => {
     if (!layoutHydrated || !projectId) return
@@ -803,7 +842,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
         navigatorSearchRef.current?.select()
       })
     }
-  }, [narrowLayout, setContextVisible])
+  }, [narrowLayout, setContextVisible, setSessionSidebarOpen])
 
   useEffect(() => {
     // On narrow layouts, the navigator takes precedence if both overlays are open.
@@ -1222,7 +1261,9 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
               className="w-[min(86vw,420px)] gap-0 p-0 sm:max-w-none"
               closeLabel={t('kubecode.closeSidePanels')}
               side="left"
+              onCloseAutoFocus={returnFocusFromSheet}
               onOpenAutoFocus={(event) => {
+                rememberSheetOpener()
                 // Focus lands where the researcher is (the current place, else the
                 // current Workspace, else the sheet), not on the first header
                 // action, whose tooltip would take the first Escape.
@@ -1245,6 +1286,8 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
               className="w-auto gap-0 p-0 sm:max-w-none"
               closeLabel={t('kubecode.closeSidePanels')}
               side="right"
+              onCloseAutoFocus={returnFocusFromSheet}
+              onOpenAutoFocus={rememberSheetOpener}
             >
               <SheetTitle className="sr-only">{t('kubecode.contextPanel')}</SheetTitle>
               {contextWorkbench}

@@ -75,7 +75,8 @@ test('@smoke research question carries context from discussion through a round t
     await page.getByRole('option', { name: 'Solo' }).click()
     await page.getByLabel('Instruction').fill('Compare pruning ratios')
     await page.getByRole('button', { name: 'Start round 1' }).click()
-    const round = page.getByRole('listitem').filter({ hasText: 'Round 1' })
+    // The research surface's rounds, not the execution history in the navigation.
+    const round = page.locator('.kubecode-session-context-row').getByRole('listitem').filter({ hasText: 'Round 1' })
     await expect(round).toContainText('used brief revision 1')
     await expect(round).toContainText('Started')
 
@@ -108,7 +109,7 @@ test('@smoke research question carries context from discussion through a round t
     await expect(reloaded).toContainText('Changed')
     await expect(reloaded).toContainText('Brief changed since')
     await page.getByRole('tab', { name: 'Work' }).click()
-    const reloadedRound = page.getByRole('listitem').filter({ hasText: 'Round 1' })
+    const reloadedRound = page.locator('.kubecode-session-context-row').getByRole('listitem').filter({ hasText: 'Round 1' })
     await expect(reloadedRound).toContainText('used brief revision 1')
     await expect(reloadedRound).toContainText('Brief changed since')
     await expect(page.getByText('It will use brief revision 2.')).toBeVisible()
