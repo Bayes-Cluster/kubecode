@@ -155,7 +155,7 @@ export function ResearchFindingsPanel({
 
       <ResearchSection label={t('kubecode.research.findings')}>
         {findings.length === 0 && (
-          <Empty className="items-start p-0 text-left">
+          <Empty className="items-start p-0 text-left md:p-0">
             <EmptyDescription>{t('kubecode.research.noFindings')}</EmptyDescription>
           </Empty>
         )}
@@ -257,7 +257,7 @@ function CaptureForm({
 
   if (sources.length === 0) {
     return (
-      <Empty className="items-start p-0 text-left">
+      <Empty className="items-start p-0 text-left md:p-0">
         <EmptyDescription>{t('kubecode.research.captureNeedsLink')}</EmptyDescription>
       </Empty>
     )

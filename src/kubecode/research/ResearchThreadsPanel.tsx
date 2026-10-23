@@ -38,7 +38,7 @@ export function ResearchThreadsPanel({
   return (
     <ResearchSection label={t('kubecode.channel.linkedThreads')}>
       {linked.length === 0 ? (
-        <Empty className="items-start p-0 text-left">
+        <Empty className="items-start p-0 text-left md:p-0">
           <EmptyDescription>{t('kubecode.channel.noLinkedThreads')}</EmptyDescription>
         </Empty>
       ) : (

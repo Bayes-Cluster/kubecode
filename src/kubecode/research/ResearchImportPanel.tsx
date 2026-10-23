@@ -174,7 +174,7 @@ export function ResearchImportPanel({
           {t('kubecode.research.import.listFailed')}
         </ReaderNotice>
       ) : imports.length === 0 ? (
-        <Empty className="items-start p-0 text-left">
+        <Empty className="items-start p-0 text-left md:p-0">
           <EmptyDescription>{t('kubecode.research.import.empty')}</EmptyDescription>
         </Empty>
       ) : (
@@ -374,7 +374,7 @@ function ImportReview({
       <ResearchSection label={t('kubecode.research.import.candidates')} level={4}>
       <p className="m-0 text-xs text-muted-foreground">{t('kubecode.research.import.candidatesNote')}</p>
       {candidates.length === 0 ? (
-        <Empty className="items-start p-0 text-left">
+        <Empty className="items-start p-0 text-left md:p-0">
           <EmptyDescription>{t('kubecode.research.import.noCandidates')}</EmptyDescription>
         </Empty>
       ) : (
@@ -418,7 +418,7 @@ function ImportReview({
       </ResearchSection>
       <ResearchSection label={t('kubecode.research.import.proposal')} level={4}>
       {!hasChange ? (
-        <Empty className="items-start p-0 text-left">
+        <Empty className="items-start p-0 text-left md:p-0">
           <EmptyDescription>{t('kubecode.research.import.proposalNone')}</EmptyDescription>
         </Empty>
       ) : (
