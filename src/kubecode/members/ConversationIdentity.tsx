@@ -1,9 +1,9 @@
 import { useContext, type ReactNode } from 'react'
 
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
-import { initialsOf } from '@/components/workspace/memberInitials'
+import { MemberAvatar } from '@/components/workspace/MemberIdentity'
 import { cn } from '@/lib/utils'
 
 import { WorkspaceNavigationContext } from '../app/location/WorkspaceNavigation'
@@ -21,7 +21,7 @@ export type ConversationIdentityProps = {
 }
 
 /**
- * Someone in General or a DM (ADR 0242): the official Avatar with their
+ * Someone in General or a DM (ADR 0242): the shared MemberAvatar with their
  * initials, the name (a live member's opens the profile), handle and role in
  * words, and a HoverCard that repeats who they are for a pointer.
  */
@@ -32,15 +32,13 @@ export function ConversationIdentity({ className, from, meta, size = 'md', view 
     ? () => navigation.inspect({ kind: 'member', id: memberId }, from ? { from } : undefined)
     : undefined
   const name = open ? (
-    <button className="kubecode-member-identity-name" type="button" onClick={open}>{view.name}</button>
+    <Button className="kubecode-member-identity-name h-auto p-0" size="sm" type="button" variant="link" onClick={open}>{view.name}</Button>
   ) : (
     <span className="kubecode-member-identity-name">{view.name}</span>
   )
   return (
     <span className={cn('kubecode-member-identity', className)} data-size={size}>
-      <Avatar aria-hidden="true" className="kubecode-conversation-avatar" data-role={view.role} size={size === 'sm' ? 'sm' : 'default'}>
-        <AvatarFallback data-testid="member-avatar">{initialsOf(view.name)}</AvatarFallback>
-      </Avatar>
+      <MemberAvatar className="kubecode-conversation-avatar" name={view.name} role={view.role} size={size} />
       <span className="kubecode-member-identity-text">
         {view.handle || view.roleLabel ? (
           <HoverCard closeDelay={80} openDelay={400}>
