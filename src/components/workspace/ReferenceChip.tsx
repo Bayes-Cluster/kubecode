@@ -107,13 +107,14 @@ export function ReferenceChip({
       </AttachmentContent>
       {opens && (
         // The trigger covers the chip.
-        <AttachmentTrigger aria-labelledby={labelledBy} className="kubecode-reference-chip-open" onClick={onOpen} />
+        <AttachmentTrigger aria-labelledby={labelledBy} data-reference-chip-action="open" onClick={onOpen} />
       )}
       {onRemove && (
         <AttachmentActions>
           <AttachmentAction
             aria-label={removeLabel}
-            className="kubecode-reference-chip-remove pointer-coarse:size-[44px]"
+            className="pointer-coarse:size-[44px]"
+            data-reference-chip-action="remove"
             type="button"
             onClick={onRemove}
           >

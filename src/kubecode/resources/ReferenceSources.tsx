@@ -33,7 +33,7 @@ export function ReferenceSources<R extends CitedRef>({ leading, onOpen, referenc
   const label = attention > 0 ? `${count} · ${t('kubecode.reference.sourcesAttention', { count: attention })}` : count
   return (
     // The official Sources (ADR 0242); each source is a reference chip that opens in the Workspace, not a link.
-    <Sources className="kubecode-reference-sources mb-0 min-w-0" defaultOpen>
+    <Sources className="mb-0 min-w-0" defaultOpen>
       <SourcesTrigger className="group/sources" count={references.length}>
         <span>{label}</span>
         <ChevronDownIcon aria-hidden="true" className="size-4 transition-transform group-data-[state=open]/sources:rotate-180" />

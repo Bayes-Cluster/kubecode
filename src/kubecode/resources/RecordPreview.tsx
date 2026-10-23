@@ -208,7 +208,7 @@ export function RecordPreview({
           )}
           {/* A truncated section can end inside a fence, so it shows as text. */}
           {format.markdown && !section.truncated ? (
-            <div className="kubecode-record-markdown min-w-0 text-sm [overflow-wrap:anywhere]">
+            <div data-record-markdown="" className="min-w-0 text-sm [overflow-wrap:anywhere]">
               <Streamdown {...NO_IMAGE_STREAMDOWN_PROPS} mode="static">{section.text}</Streamdown>
             </div>
           ) : (

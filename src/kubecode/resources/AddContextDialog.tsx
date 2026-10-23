@@ -139,7 +139,7 @@ export function AddContextDialog({
   return (
     <Dialog open={open} onOpenChange={changeOpen}>
       <DialogContent
-        className="kubecode-add-context-dialog @container max-h-[calc(100dvh-32px)] w-[min(960px,calc(100vw-32px))] max-w-[min(960px,calc(100vw-32px))] overflow-y-auto sm:max-w-[min(960px,calc(100vw-32px))] max-sm:h-dvh max-sm:max-h-none max-sm:w-screen max-sm:max-w-none max-sm:rounded-none"
+        className="@container max-h-[calc(100dvh-32px)] w-[min(960px,calc(100vw-32px))] max-w-[min(960px,calc(100vw-32px))] overflow-y-auto sm:max-w-[min(960px,calc(100vw-32px))] max-sm:h-dvh max-sm:max-h-none max-sm:w-screen max-sm:max-w-none max-sm:rounded-none"
         onCloseAutoFocus={onCloseAutoFocus}
         onEscapeKeyDown={(event) => {
           // Escape leaves the preview first, then closes.

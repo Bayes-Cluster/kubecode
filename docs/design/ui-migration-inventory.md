@@ -22,9 +22,9 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 
 | Status | Rows |
 | --- | ---: |
-| migrated | 75 |
+| migrated | 76 |
 | partial | 92 |
-| handcrafted | 65 |
+| handcrafted | 64 |
 | specialist-engine | 4 |
 | exception | 1 |
 | not-applicable | 8 |
@@ -190,7 +190,7 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | AddContextDialog (search, preview, back step, footer, refusal/error) | `src/kubecode/resources/AddContextDialog.tsx:4,138-230` | official Dialog + Command + DialogFooter + ReaderNotice; container-query layout classes | shadcn/ui Dialog, Command, DialogFooter, Alert | ResourcePanel, MessageComposer | #258 | migrated | #258 |
-| ComposerAddMenu reference picker (file, git diff, work, turns, terminal) | `src/kubecode/ComposerAddMenu.tsx:166-420,598,640` | official Popover (dismissal, focus return, stacking) + Item rows + shared ReaderStates | shadcn/ui Popover + Command; AI Elements PromptInputActionMenu | SessionComposer | #258 | handcrafted | #258: shell, rows and states migrated; the capability search combobox (ComposerCapabilityPicker) and ComposerProjectWorkPicker keep handcrafted listboxes, for #261 (Session composer) |
+| ComposerAddMenu reference picker (file, git diff, work, turns, terminal) | `src/kubecode/ComposerAddMenu.tsx; src/kubecode/ComposerProjectWorkPicker.tsx` | official Popover (dismissal, focus return, stacking; inner panels and the work preview peel Escape one layer at a time) + Item rows (touch-sized) + Command for the capability search and the Project work list + shared ReaderStates | shadcn/ui Popover + Command; AI Elements PromptInputActionMenu | SessionComposer | #258 | migrated | #258: no handcrafted combobox remains; the capability row content is shared with the inline composer listbox (row 194, specialist engine) through CapabilityRowContent |
 | Inline wikilink/mention context input | `src/kubecode/ComposerContextInput.tsx:3; src/components/InlineWikilinkInput.tsx:939` | specialist engine (contenteditable inline token editor) | AI Elements PromptInputTextarea + PromptInputCommand (no inline-token equivalent) | SessionComposer | #258 | specialist-engine | Inline tokens within editable text (944-line engine) have no registry equivalent |
 | Composer attach-from-workspace / attach file | `src/kubecode/channel/MessageComposer.tsx:339,368,394,423` | AI Elements PromptInput attachments + workspace menu | AI Elements PromptInput attachments; ui/attachment | MessageComposer | #257 | partial | — |
 

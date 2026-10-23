@@ -14,8 +14,8 @@ const CONTROLS = [
   '.kubecode-stop-button',
   '.kubecode-pause-button',
   '.kubecode-decision-button:not(:disabled)',
-  '.kubecode-reference-chip-open:is(button)',
-  '.kubecode-reference-chip-remove',
+  '[data-reference-chip-action="open"]:is(button)',
+  '[data-reference-chip-action="remove"]',
   'button.kubecode-member-identity-name',
 ].join(', ')
 
