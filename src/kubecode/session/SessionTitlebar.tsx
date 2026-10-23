@@ -111,7 +111,7 @@ export function SessionTitlebar({
         </StatusBadge>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button aria-label={t('kubecode.sessionActions')} size="icon-xs" variant="ghost">
+            <Button aria-label={t('kubecode.sessionActions')} className="kubecode-touch-target" size="icon-xs" variant="ghost">
               <Ellipsis />
             </Button>
           </DropdownMenuTrigger>

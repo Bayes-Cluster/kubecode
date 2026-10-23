@@ -806,6 +806,12 @@
   /* The Workspace search stays as one icon (ADR 0231): leading, search, actions. */
   .kubecode-topbar { grid-template-columns: minmax(0, 1fr) auto auto; }
   .kubecode-titlebar-session-slot { max-width: calc(100vw - 190px); }
+  /* A phone keeps the Session's name readable: the agent glyph and usage meter give way, the controls never shrink. */
+  .kubecode-session-title > svg,
+  .kubecode-session-titlebar-content [data-testid='usage-meter-trigger'] { display: none; }
+  .kubecode-session-title { flex: 1 1 3.5rem; }
+  .kubecode-team-view-switch,
+  .kubecode-session-status { flex: none; }
 
 }
 
@@ -1346,6 +1352,7 @@
 /* Every Workspace control: a touch-sized target (the official Button draws focus). */
 @media (pointer: coarse) {
   .kubecode-icon-button,
+  .kubecode-touch-target,
   .kubecode-send-button,
   .kubecode-stop-button,
   .kubecode-pause-button,

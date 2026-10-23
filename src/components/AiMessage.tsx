@@ -161,7 +161,7 @@ function UserBubble({ content, locale, messageId, onEdit, references, onOpenNote
         <MessageAction
           aria-label={copyLabel}
           label={copyLabel}
-          size="icon-xs"
+          className="kubecode-touch-target" size="icon-xs"
           title={copyLabel}
           onClick={() => {
             void writeClipboardText(content).catch((error) => {
@@ -175,7 +175,7 @@ function UserBubble({ content, locale, messageId, onEdit, references, onOpenNote
           aria-label={editLabel}
           disabled={!messageId || !onEdit}
           label={editLabel}
-          size="icon-xs"
+          className="kubecode-touch-target" size="icon-xs"
           title={editLabel}
           onClick={() => {
             setDraft(content)
@@ -306,7 +306,7 @@ function ResponseActions({
         data-testid="ai-message-regenerate"
         disabled={regenerateDisabled}
         label={regenerate}
-        size="icon-xs"
+        className="kubecode-touch-target" size="icon-xs"
         title={regenerate}
         onClick={() => messageId && onRegenerate?.(messageId)}
       >
@@ -316,7 +316,7 @@ function ResponseActions({
         aria-label={copy}
         data-testid="ai-message-copy"
         label={copy}
-        size="icon-xs"
+        className="kubecode-touch-target" size="icon-xs"
         title={copy}
         onClick={onCopy}
       >
@@ -327,7 +327,7 @@ function ResponseActions({
         data-testid="ai-message-fork"
         disabled={forkDisabled}
         label={forkTitle}
-        size="icon-xs"
+        className="kubecode-touch-target" size="icon-xs"
         title={forkTitle}
         onClick={() => messageId && onFork?.(messageId)}
       >
