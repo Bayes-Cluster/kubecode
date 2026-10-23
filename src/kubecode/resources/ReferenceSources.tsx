@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react'
 
+import { ChevronDownIcon } from 'lucide-react'
+
 import { Sources, SourcesContent, SourcesTrigger } from '@/components/ai-elements/sources'
-import { Icon } from '@/kubecode/icons'
-import { WORKSPACE_COMMAND_ICONS } from '@/kubecode/icons/workspaceIcons'
 import type { Translator } from '@/lib/i18n'
 
 import type { ProjectContextRef } from '../api'
@@ -33,13 +33,13 @@ export function ReferenceSources<R extends CitedRef>({ leading, onOpen, referenc
   const label = attention > 0 ? `${count} · ${t('kubecode.reference.sourcesAttention', { count: attention })}` : count
   return (
     // The official Sources (ADR 0242); each source is a reference chip that opens in the Workspace, not a link.
-    <Sources className="kubecode-reference-sources" defaultOpen>
-      <SourcesTrigger className="kubecode-reference-sources-trigger" count={references.length}>
+    <Sources className="kubecode-reference-sources mb-0 min-w-0" defaultOpen>
+      <SourcesTrigger className="group/sources" count={references.length}>
         <span>{label}</span>
-        <Icon className="kubecode-reference-sources-chevron" role="control" source={WORKSPACE_COMMAND_ICONS.expand.Icon} />
+        <ChevronDownIcon aria-hidden="true" className="size-4 transition-transform group-data-[state=open]/sources:rotate-180" />
       </SourcesTrigger>
-      <SourcesContent>
-        <ul aria-label={t('kubecode.channel.references')} className="kubecode-reference-sources-list">
+      <SourcesContent className="mt-2 w-full">
+        <ul aria-label={t('kubecode.channel.references')} className="flex flex-wrap gap-1">
         {leading && <li>{leading}</li>}
         {references.map((reference) => (
           <li key={`${reference.ref.kind}:${reference.ref.id}`}>

@@ -5,8 +5,10 @@ import type { BundledLanguage } from 'shiki'
 
 import { CodeBlock } from '@/components/ai-elements/code-block'
 import { NO_IMAGE_STREAMDOWN_PROPS } from '@/components/ai-elements/streamdown-hardening'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { StatusBadge } from '@/components/workspace/StatusBadge'
+import { Item, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemTitle } from '@/components/ui/item'
+import { Spinner } from '@/components/ui/spinner'
 import { Icon } from '@/kubecode/icons'
 import { WORKSPACE_OBJECT_ICONS } from '@/kubecode/icons/workspaceIcons'
 import type { Translator } from '@/lib/i18n'
@@ -14,6 +16,7 @@ import { cn } from '@/lib/utils'
 
 import type { KubecodeApi, ProjectContextDocument, ProjectContextItem, ProjectContextRef, WorkspaceEvent } from '../api'
 import { objectKindOf } from '../references/referenceLabels'
+import { ReaderEmpty, ReaderLoading, ReaderNotice } from './ReaderStates'
 import { formatVersion, kindLabelKey } from './referenceKinds'
 import { useRecordDocument } from './useRecordDocument'
 
@@ -142,25 +145,27 @@ export function RecordPreview({
   }, [loadedDoc, onLoaded])
 
   if (state.status === 'loading') {
-    return <p className="kubecode-research-muted" role="status">{t('kubecode.work.evidence.loading')}</p>
+    return <ReaderLoading>{t('kubecode.work.evidence.loading')}</ReaderLoading>
   }
   const recover = recovery && (
     <Button size="xs" variant="outline" onClick={recovery.run}>{recovery.label}</Button>
   )
   if (state.status === 'removed') {
-    return (
-      <p className="kubecode-research-error" role="alert">
-        {t('kubecode.work.evidence.removed')}{recover && ' '}{recover}
-      </p>
-    )
+    return <ReaderNotice action={recover} failed>{t('kubecode.work.evidence.removed')}</ReaderNotice>
   }
   if (state.status === 'error') {
     return (
-      <p className="kubecode-research-error" role="alert">
-        {t('kubecode.work.evidence.failed')}{' '}
-        <Button size="xs" variant="ghost" onClick={state.retry}>{t('kubecode.vocab.command.retry')}</Button>
-        {recover && ' '}{recover}
-      </p>
+      <ReaderNotice
+        action={(
+          <>
+            <Button size="xs" variant="outline" onClick={state.retry}>{t('kubecode.vocab.command.retry')}</Button>
+            {recover}
+          </>
+        )}
+        failed
+      >
+        {t('kubecode.work.evidence.failed')}
+      </ReaderNotice>
     )
   }
   const { doc } = state
@@ -170,94 +175,104 @@ export function RecordPreview({
   const citedVersion = cited ? formatVersion(target.kind, cited, t) : undefined
   const showCurrent = onShowCurrent ?? state.reload
   const format = recordFormat(target.kind, target.id)
+  const showNewer = <Button size="xs" variant="outline" onClick={showCurrent}>{t('kubecode.resources.preview.showNewer')}</Button>
   return (
     <div
-      className={cn('kubecode-work-evidence kubecode-record-preview', compact && 'kubecode-record-preview-compact')}
+      className={cn('kubecode-record-preview flex min-w-0 flex-col gap-3', compact && 'kubecode-record-preview-compact')}
       data-shown-revision={shownRevision ?? undefined}
-     
       data-testid="evidence-viewer"
     >
-      <div className="kubecode-record-preview-meta">
-        <Icon role="identity" size="secondary" source={WORKSPACE_OBJECT_ICONS[objectKindOf(target.kind)].Icon} />
-        <strong>{doc.title}</strong>
-        <StatusBadge tone="muted">{t(kindLabelKey(target.kind))}</StatusBadge>
-        {version && <StatusBadge tone="muted">{version}</StatusBadge>}
-        {changed && <StatusBadge tone="warn">{t('kubecode.work.evidence.changed')}</StatusBadge>}
-        {citedVersion && (
-          <small className="kubecode-research-muted">{t('kubecode.work.evidence.pinned', { revision: citedVersion })}</small>
-        )}
-      </div>
-      {state.newer && (
-        <p className="kubecode-research-notice" role="status">
-          {t('kubecode.resources.preview.newer')}{' '}
-          <Button size="xs" variant="outline" onClick={showCurrent}>{t('kubecode.resources.preview.showNewer')}</Button>
-        </p>
-      )}
-      {unreadable && <p className="kubecode-research-error" role="alert">{t('kubecode.work.evidence.failed')}</p>}
+      <Item className="p-0" size="sm">
+        <ItemMedia variant="icon">
+          <Icon role="identity" size="secondary" source={WORKSPACE_OBJECT_ICONS[objectKindOf(target.kind)].Icon} />
+        </ItemMedia>
+        <ItemContent className="min-w-0">
+          <ItemTitle className="[overflow-wrap:anywhere]">{doc.title}</ItemTitle>
+          <div className="flex flex-wrap items-center gap-1">
+            <Badge variant="secondary">{t(kindLabelKey(target.kind))}</Badge>
+            {version && <Badge variant="outline">{version}</Badge>}
+            {changed && <Badge variant="warning">{t('kubecode.work.evidence.changed')}</Badge>}
+          </div>
+          {citedVersion && <ItemDescription>{t('kubecode.work.evidence.pinned', { revision: citedVersion })}</ItemDescription>}
+        </ItemContent>
+      </Item>
+      {state.newer && <ReaderNotice action={showNewer}>{t('kubecode.resources.preview.newer')}</ReaderNotice>}
+      {unreadable && <ReaderNotice failed>{t('kubecode.work.evidence.failed')}</ReaderNotice>}
       {!unreadable && doc.sections.length === 0 && doc.notes.length === 0 && (
-        <p className="kubecode-research-muted">{t('kubecode.work.evidence.empty')}</p>
+        <ReaderEmpty>{t('kubecode.work.evidence.empty')}</ReaderEmpty>
       )}
       {doc.sections.map((section, index) => (
-        <section key={`${section.heading}-${index}`}>
+        <section className="flex min-w-0 flex-col gap-1" key={`${section.heading}-${index}`}>
           {(index === 0 || section.heading !== doc.sections[index - 1].heading) && (
-            <h5>{target.kind === 'file' ? t('kubecode.work.evidence.fileNote') : section.heading}</h5>
+            <h5 className="text-sm font-medium">{target.kind === 'file' ? t('kubecode.work.evidence.fileNote') : section.heading}</h5>
           )}
           {/* A truncated section can end inside a fence, so it shows as text. */}
           {format.markdown && !section.truncated ? (
-            <div className="kubecode-record-markdown">
+            <div className="kubecode-record-markdown min-w-0 text-sm [overflow-wrap:anywhere]">
               <Streamdown {...NO_IMAGE_STREAMDOWN_PROPS} mode="static">{section.text}</Streamdown>
             </div>
           ) : (
             // The block scrolls as one region so a long file reads from the keyboard.
             <CodeBlock
-              className="kubecode-record-code"
+              className={cn('kubecode-record-code overflow-auto outline-none focus-visible:ring-2 focus-visible:ring-ring', compact ? 'max-h-[40vh]' : 'max-h-60')}
               code={section.text}
               language={format.markdown ? ('text' as BundledLanguage) : format.language}
               tabIndex={0}
             />
           )}
-          {section.truncated && (
-            <small className="kubecode-research-muted">{t('kubecode.work.evidence.truncated')}</small>
-          )}
+          {section.truncated && <p className="text-xs text-muted-foreground">{t('kubecode.work.evidence.truncated')}</p>}
         </section>
       ))}
       {doc.notes.map((note) => (
-        <small className="kubecode-research-muted" key={note}>{note}</small>
+        <p className="text-xs text-muted-foreground" key={note}>{note}</p>
       ))}
       {state.changedWhileReading && (
-        <p className="kubecode-research-notice" role="status">
-          {t('kubecode.resources.preview.changedWhileReading')}{' '}
-          <Button size="xs" variant="outline" onClick={showCurrent}>{t('kubecode.resources.preview.showNewer')}</Button>
-        </p>
+        <ReaderNotice action={showNewer}>{t('kubecode.resources.preview.changedWhileReading')}</ReaderNotice>
       )}
       {state.moreFailed && (
-        <p className="kubecode-research-error" role="alert">
-          {t('kubecode.work.evidence.moreFailed')}{' '}
-          <Button size="xs" variant="ghost" onClick={state.loadMore}>{t('kubecode.retry')}</Button>
-        </p>
+        <ReaderNotice
+          action={<Button size="xs" variant="outline" onClick={state.loadMore}>{t('kubecode.retry')}</Button>}
+          failed
+        >
+          {t('kubecode.work.evidence.moreFailed')}
+        </ReaderNotice>
       )}
       {doc.next_cursor && !state.moreFailed && (
-        <Button disabled={state.loadingMore} size="xs" variant="outline" onClick={state.loadMore}>
+        <Button className="self-start" disabled={state.loadingMore} size="xs" variant="outline" onClick={state.loadMore}>
+          {state.loadingMore && <Spinner aria-hidden="true" data-icon="inline-start" />}
           {t('kubecode.work.evidence.more')}
         </Button>
       )}
       {doc.related.length > 0 && (
-        <section>
-          <h5>{t('kubecode.work.evidence.related')}</h5>
-          <ul className="kubecode-record-preview-related">
-            {doc.related.map((item) => (
-              <li key={`${item.ref.kind}:${item.ref.id}`}>
-                {onFollow && (canFollow?.(item) ?? true) ? (
-                  <Button size="xs" variant="ghost" onClick={() => onFollow(item)}>
-                    <Icon role="identity" size="secondary" source={WORKSPACE_OBJECT_ICONS[objectKindOf(item.ref.kind)].Icon} />
-                    {item.title}
-                  </Button>
-                ) : (
-                  <span>{item.title}</span>
-                )}
-              </li>
-            ))}
-          </ul>
+        <section className="flex flex-col gap-1">
+          <h5 className="text-sm font-medium">{t('kubecode.work.evidence.related')}</h5>
+          <ItemGroup className="gap-1">
+            {doc.related.map((item) => {
+              const follows = onFollow !== undefined && (canFollow?.(item) ?? true)
+              const media = (
+                <ItemMedia variant="icon">
+                  <Icon role="identity" size="secondary" source={WORKSPACE_OBJECT_ICONS[objectKindOf(item.ref.kind)].Icon} />
+                </ItemMedia>
+              )
+              return (
+                <div key={`${item.ref.kind}:${item.ref.id}`} role="listitem">
+                  {follows ? (
+                    <Item asChild size="sm" variant="outline">
+                      <button data-focus-key={`related:${item.ref.kind}:${item.ref.id}`} type="button" onClick={() => onFollow(item)}>
+                        {media}
+                        <ItemContent><ItemTitle>{item.title}</ItemTitle></ItemContent>
+                      </button>
+                    </Item>
+                  ) : (
+                    <Item size="sm">
+                      {media}
+                      <ItemContent><ItemTitle>{item.title}</ItemTitle></ItemContent>
+                    </Item>
+                  )}
+                </div>
+              )
+            })}
+          </ItemGroup>
         </section>
       )}
     </div>

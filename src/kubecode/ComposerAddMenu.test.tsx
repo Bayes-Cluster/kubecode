@@ -185,11 +185,30 @@ describe('ComposerAddMenu', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Add context' }))
 
-    expect(screen.getByRole('dialog', { name: 'Add context' })).toHaveStyle({
-      bottom: `${window.innerHeight - 10 + 12}px`,
-      left: '10px',
-      width: '500px',
-    })
+    // The official Popover places it above the composer; it is as wide as the composer.
+    const palette = screen.getByRole('dialog', { name: 'Add context' })
+    expect(palette).toHaveAttribute('data-slot', 'popover-content')
+    expect(palette).toHaveStyle({ width: '500px' })
+  })
+
+  it('closes with Escape through the official Popover and returns focus to its button', async () => {
+    render(
+      <ComposerAddMenu
+        api={{} as KubecodeApi}
+        commands={commands}
+        conversationId="session-1"
+        onInsert={vi.fn()}
+        onReference={vi.fn()}
+        projectId="project-1"
+        t={createTranslator('en')}
+      />,
+    )
+    const trigger = screen.getByRole('button', { name: 'Add context' })
+    fireEvent.click(trigger)
+    const palette = screen.getByRole('dialog', { name: 'Add context' })
+    fireEvent.keyDown(palette, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Add context' })).not.toBeInTheDocument())
+    expect(trigger).toHaveFocus()
   })
 
   it('inserts a native Agent skill or command from the add menu', async () => {

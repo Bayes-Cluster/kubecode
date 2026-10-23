@@ -1,5 +1,14 @@
+import {
+  Attachment,
+  AttachmentAction,
+  AttachmentActions,
+  AttachmentContent,
+  AttachmentDescription,
+  AttachmentMedia,
+  AttachmentTitle,
+  AttachmentTrigger,
+} from '@/components/ui/attachment'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { Icon } from '@/kubecode/icons'
 import { WORKSPACE_COMMAND_ICONS, WORKSPACE_OBJECT_ICONS, type WorkspaceObjectKind } from '@/kubecode/icons/workspaceIcons'
 import { cn } from '@/lib/utils'
@@ -41,11 +50,15 @@ export type ReferenceChipProps = Removal & {
   className?: string
 }
 
+const STATE_BADGE = { changed: 'warning', removed: 'destructive', unavailable: 'secondary' } as const
+const ATTACHMENT_STATE = { changed: 'done', removed: 'error', unavailable: 'idle' } as const
+
 /**
  * One named reference to a Workspace object (ADR 0227): its kind glyph, its
  * title, the cited version, and — in words — whether it changed, is gone, or
- * cannot be read. Its accessible name is its visible text, preceded by the
- * kind. It composes the official Badge and Buttons (ADR 0247).
+ * cannot be read. It is the official Attachment (#258): the media holds the
+ * kind glyph, the trigger opens it, the action removes it from a draft. The
+ * open trigger is named by the visible text, preceded by the kind.
  */
 export function ReferenceChip({
   className,
@@ -58,40 +71,47 @@ export function ReferenceChip({
   title,
   version,
 }: ReferenceChipProps) {
-  const content = (
-    <>
-      <Icon role="identity" size="secondary" source={WORKSPACE_OBJECT_ICONS[kind].Icon} />
-      <span className="sr-only">{kindLabel}</span>
-      {' '}
-      <span className="kubecode-reference-chip-title" title={title}>{title}</span>
-      {version && <>{' '}<span className="kubecode-reference-chip-version">{version}</span></>}
-      {state && <>{' '}<span className="kubecode-reference-chip-state" title={state.label}>{state.label}</span></>}
-    </>
-  )
+  const name = [kindLabel, title, version, state?.label].filter(Boolean).join(' ')
+  const opens = onOpen !== undefined && state?.kind !== 'unavailable'
   return (
-    <Badge
-      className={cn('kubecode-reference-chip h-auto max-w-full overflow-visible whitespace-normal', className)}
+    <Attachment
+      className={cn('kubecode-reference-chip min-w-0', className)}
       data-kind={kind}
-      data-state={state?.kind ?? 'current'}
-      variant="outline"
+      data-reference-state={state?.kind ?? 'current'}
+      size="xs"
+      state={state ? ATTACHMENT_STATE[state.kind] : 'done'}
     >
-      {onOpen && state?.kind !== 'unavailable' ? (
-        <Button className="kubecode-reference-chip-open h-auto min-w-0 px-0 py-0" size="xs" type="button" variant="ghost" onClick={onOpen}>{content}</Button>
-      ) : (
-        <span className="kubecode-reference-chip-open inline-flex min-w-0 items-center gap-1">{content}</span>
-      )}
-      {onRemove && (
-        <Button
-          aria-label={removeLabel}
-          className="kubecode-reference-chip-remove"
-          size="icon-xs"
-          type="button"
-          variant="ghost"
-          onClick={onRemove}
+      <AttachmentMedia>
+        <Icon role="identity" size="secondary" source={WORKSPACE_OBJECT_ICONS[kind].Icon} />
+      </AttachmentMedia>
+      <AttachmentContent>
+        <span className="sr-only">{kindLabel} </span>
+        <AttachmentTitle
+          className={cn('whitespace-normal [overflow-wrap:anywhere]', state?.kind === 'removed' && 'line-through')}
+          title={title}
         >
-          <Icon role="command" size="secondary" source={WORKSPACE_COMMAND_ICONS.close.Icon} />
-        </Button>
+          {title}
+        </AttachmentTitle>
+        {(version || state) && (
+          <AttachmentDescription className="flex flex-wrap items-center gap-1 whitespace-normal">
+            {version && <span>{version}</span>}
+            {state && <Badge variant={STATE_BADGE[state.kind]}>{state.label}</Badge>}
+          </AttachmentDescription>
+        )}
+      </AttachmentContent>
+      {opens && <AttachmentTrigger aria-label={name} className="kubecode-reference-chip-open" onClick={onOpen} />}
+      {onRemove && (
+        <AttachmentActions>
+          <AttachmentAction
+            aria-label={removeLabel}
+            className="kubecode-reference-chip-remove pointer-coarse:size-11"
+            type="button"
+            onClick={onRemove}
+          >
+            <Icon role="command" size="secondary" source={WORKSPACE_COMMAND_ICONS.close.Icon} />
+          </AttachmentAction>
+        </AttachmentActions>
       )}
-    </Badge>
+    </Attachment>
   )
 }
