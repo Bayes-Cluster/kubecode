@@ -226,9 +226,12 @@ test('@smoke project, reconnect recovery, editor, terminal, and project removal'
   await page.keyboard.press('Escape')
   await page.setViewportSize({ width: 1280, height: 720 })
   await expect(page.locator('.kubecode-workspace')).toHaveAttribute('data-narrow', 'false')
-  // The navigation was put away on the phone, and stays closed here.
-  await expect(page.getByRole('button', { name: 'Toggle navigation' })).toHaveAttribute('aria-pressed', 'false')
-  await page.getByRole('button', { name: 'Toggle context panel' }).click()
+  // The phone Sheet never changed the wide-screen choice: the navigation is back open.
+  await expect(page.getByRole('button', { name: 'Toggle navigation' })).toHaveAttribute('aria-pressed', 'true')
+  // Files and Git comes back as it was left on the wide screen; open it if it is closed.
+  const wideContextToggle = page.getByRole('button', { name: 'Toggle context panel' })
+  if (await wideContextToggle.getAttribute('aria-pressed') !== 'true') await wideContextToggle.click()
+  await expect(wideContextToggle).toHaveAttribute('aria-pressed', 'true')
   await expect(page.getByRole('tab', { name: 'Explorer' })).toHaveAttribute('data-state', 'active')
   await expect(page.getByRole('button', { name: 'Files', exact: true })).toHaveAttribute('aria-expanded', 'true')
   await page.getByRole('button', { name: 'New file' }).click()
