@@ -306,7 +306,7 @@ export function SessionSidebarList({
               <SidebarMenu>
                 {!searching && (
                   <SidebarMenuItem>
-                    <SidebarMenuButton onClick={() => onNewSession(project.id)}>
+                    <SidebarMenuButton className="pointer-coarse:min-h-11" onClick={() => onNewSession(project.id)}>
                       <Plus aria-hidden="true" />
                       <span>{t('kubecode.newSession')}</span>
                     </SidebarMenuButton>
@@ -503,7 +503,7 @@ function SessionRow({
   if (nested) {
     return (
       <SidebarMenuSubItem data-archived={conversation.archived}>
-        <SidebarMenuSubButton asChild className="pr-8" isActive={active}>
+        <SidebarMenuSubButton asChild className="pointer-coarse:min-h-11 pr-8" isActive={active}>
           <button aria-label={label} type="button" onClick={() => onSelect(conversation.id)}>
             {content}
           </button>
@@ -514,7 +514,7 @@ function SessionRow({
   }
   return (
     <SidebarMenuItem data-archived={conversation.archived}>
-      <SidebarMenuButton aria-label={label} isActive={active} onClick={() => onSelect(conversation.id)}>
+      <SidebarMenuButton className="pointer-coarse:min-h-11" aria-label={label} isActive={active} onClick={() => onSelect(conversation.id)}>
         {content}
       </SidebarMenuButton>
       {actions}

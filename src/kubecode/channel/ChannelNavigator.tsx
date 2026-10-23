@@ -32,7 +32,7 @@ export function ChannelNavigator({ active, onOpen, onOpenThread, t, threads, thr
       <SidebarMenu>
         {!threadsOnly && (
           <SidebarMenuItem>
-            <SidebarMenuButton aria-current={active ? 'page' : undefined} isActive={active} onClick={onOpen}>
+            <SidebarMenuButton className="pointer-coarse:min-h-11" aria-current={active ? 'page' : undefined} isActive={active} onClick={onOpen}>
               <Hash aria-hidden="true" />
               <span>{t('kubecode.channel.general')}</span>
             </SidebarMenuButton>
@@ -40,7 +40,7 @@ export function ChannelNavigator({ active, onOpen, onOpenThread, t, threads, thr
         )}
         {threads.slice(0, 5).map((thread) => (
           <SidebarMenuItem key={thread.id}>
-            <SidebarMenuButton onClick={() => onOpenThread(thread.id)}>
+            <SidebarMenuButton className="pointer-coarse:min-h-11" onClick={() => onOpenThread(thread.id)}>
               <span className="min-w-0 flex-1 truncate">{thread.title}</span>
               {thread.research_id && (
                 <StatusBadge tone="ok">

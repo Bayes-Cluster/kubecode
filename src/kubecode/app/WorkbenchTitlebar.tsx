@@ -269,8 +269,8 @@ function RuntimeConnectionMenu({
           <Circle
             aria-hidden="true"
             className={cn(
-              connectionState === 'live' && 'text-success',
-              connectionState === 'reconnecting' && 'text-warning',
+              connectionState === 'live' && 'text-success-foreground',
+              connectionState === 'reconnecting' && 'text-warning-foreground',
               (connectionState === 'connecting' || connectionState === 'resynchronizing')
                 && 'text-muted-foreground motion-safe:animate-pulse',
             )}

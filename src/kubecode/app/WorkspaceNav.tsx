@@ -77,7 +77,7 @@ export function WorkspaceNav({
     <SidebarMenuItem key={entry.view}>
       <SidebarMenuButton
         aria-current={active === entry.view ? 'page' : undefined}
-        className="h-auto min-h-8"
+        className="pointer-coarse:min-h-11 h-auto min-h-8"
         isActive={active === entry.view}
         onClick={() => onOpen(entry.view)}
       >
@@ -146,6 +146,7 @@ export function WorkspaceNav({
             {direct.map((member) => (
               <SidebarMenuItem key={member.id}>
                 <SidebarMenuButton
+                  className="pointer-coarse:min-h-11"
                   aria-current={active === `dm:${member.id}` ? 'page' : undefined}
                   isActive={active === `dm:${member.id}`}
                   onClick={() => onOpenDm(member.id)}

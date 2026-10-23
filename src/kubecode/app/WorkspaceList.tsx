@@ -38,9 +38,9 @@ export type WorkspaceListProps = {
 
 /** A dot beside the words: the run state is read from its label, never this colour alone. */
 const STATUS_DOT: Partial<Record<string, string>> = {
-  running: 'bg-info',
-  stuck: 'bg-warning',
-  waiting_permission: 'bg-warning',
+  running: 'bg-info-foreground',
+  stuck: 'bg-warning-foreground',
+  waiting_permission: 'bg-warning-foreground',
   failed: 'bg-destructive',
   timed_out: 'bg-destructive',
   interrupted: 'bg-destructive',
@@ -85,6 +85,7 @@ export function WorkspaceList({
           return (
             <SidebarMenuItem key={project.id}>
               <SidebarMenuButton
+                className="pointer-coarse:min-h-11"
                 aria-current={active ? 'true' : undefined}
                 data-session-status={status ?? undefined}
                 data-workspaces-enabled={project.workspaces_enabled}
@@ -99,7 +100,7 @@ export function WorkspaceList({
                 <SidebarMenuBadge className="right-7">
                   <span
                     aria-label={label}
-                    className={cn('size-2 rounded-full', STATUS_DOT[status ?? 'running'] ?? 'bg-warning')}
+                    className={cn('size-2 rounded-full', STATUS_DOT[status ?? 'running'] ?? 'bg-warning-foreground')}
                     role="img"
                   />
                 </SidebarMenuBadge>
