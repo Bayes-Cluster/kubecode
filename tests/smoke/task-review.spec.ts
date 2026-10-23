@@ -157,6 +157,11 @@ test('@smoke a Task is reviewed at the version that was shown, sent back through
     await expect(accept).toBeEnabled()
     await accept.click()
     await expect(review.getByText('Changed since cited')).toHaveCount(0)
+    // Arrow keys move and select within the outcome RadioGroup (held like a real key).
+    await review.getByRole('radio', { name: 'Supports the hypothesis' }).click()
+    await page.keyboard.press('ArrowDown', { delay: 50 })
+    await expect(review.getByRole('radio', { name: 'Valid negative result' })).toBeChecked()
+    await expect(review.getByRole('radio', { name: 'Valid negative result' })).toBeFocused()
     await review.getByRole('radio', { name: 'Inconclusive' }).check()
     await review.getByRole('button', { name: 'Accept results' }).click()
     await expect(task.getByText(/^Accepted as Inconclusive\. The General Agent was told in General\./)).toBeVisible()
