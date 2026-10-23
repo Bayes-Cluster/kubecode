@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 
 import { ViewHeader } from '@/components/workspace/ViewHeader'
 import type { TranslationKey, Translator } from '@/lib/i18n'
+import { cn } from '@/lib/utils'
 
 import { Icon } from '../icons'
 import { WORKSPACE_DESTINATION_ICONS } from '../icons/workspaceIcons'
@@ -45,7 +46,7 @@ export function DestinationHeader({ actions, className, description, destination
   return (
     <ViewHeader
       actions={actions}
-      className={className ? `kubecode-destination-header ${className}` : 'kubecode-destination-header'}
+      className={cn('kubecode-destination-header', className)}
       description={description}
       destination={destination}
       icon={<Icon role="navigation" source={GLYPHS[destination].Icon} />}

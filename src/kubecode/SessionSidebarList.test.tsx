@@ -1,12 +1,16 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render as renderInDocument, screen, waitFor } from '@testing-library/react'
+import type { ReactElement } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { SidebarProvider } from '@/components/ui/sidebar'
 import { createTranslator } from '@/lib/i18n'
 
 import { SessionSidebarList } from './SessionSidebarList'
 import type { Conversation, KubecodeApi, TeamSnapshot } from './api'
 
 const t = createTranslator('en')
+/** Execution history renders inside the shell's official Sidebar. */
+const render = (ui: ReactElement) => renderInDocument(ui, { wrapper: SidebarProvider })
 const navigatorProps = {
   scopeProjectId: 'project-1',
   onNewSession: vi.fn(),
@@ -69,10 +73,9 @@ describe('session sidebar list', () => {
       />,
     )
 
-    expect(screen.getByRole('button', { name: 'Needs permission' })).toHaveAttribute(
-      'data-variant',
-      'ghost',
-    )
+    const selected = screen.getByRole('button', { name: 'Needs permission' })
+    expect(selected).toHaveAttribute('data-slot', 'sidebar-menu-button')
+    expect(selected).toHaveAttribute('data-active', 'true')
     expect(screen.getAllByRole('status', { name: 'Permission required' })).toHaveLength(1)
     fireEvent.click(screen.getByRole('button', { name: 'Documentation' }))
     expect(onSelect).toHaveBeenCalledWith('project-1', 'session-2')
@@ -154,7 +157,7 @@ describe('session sidebar list', () => {
     const { rerender } = render(<SessionSidebarList {...props} query="nothing" />)
     expect(screen.getByText('No matching sessions')).toBeInTheDocument()
     rerender(<SessionSidebarList {...props} scopeProjectId={null} />)
-    expect(screen.getByText('Select or create a project')).toBeInTheDocument()
+    expect(screen.getByText('Select or create a project').closest('[data-slot="empty"]')).not.toBeNull()
   })
 
   it('renders each Team as a named hierarchy with its Leader before its teammates', () => {
@@ -187,11 +190,16 @@ describe('session sidebar list', () => {
     )
 
     const team = screen.getByRole('group', { name: 'Paper review team' })
-    const teamSessions = Array.from(team.querySelectorAll<HTMLButtonElement>('.kubecode-session-row'))
+    const teamSessions = Array.from(team.querySelectorAll<HTMLElement>('[data-sidebar="menu-button"], [data-sidebar="menu-sub-button"]'))
     expect(teamSessions.map((row) => row.getAttribute('aria-label'))).toEqual([
       'Research lead',
       'Backend reviewer',
     ])
+    // The Leader is the Team's row; its teammates are an official SidebarMenuSub under it.
+    expect(teamSessions[0]).toHaveAttribute('data-slot', 'sidebar-menu-button')
+    expect(teamSessions[1]).toHaveAttribute('data-slot', 'sidebar-menu-sub-button')
+    expect(teamSessions[1].closest('[data-slot="sidebar-menu-sub"]')).not.toBeNull()
+    expect(teamSessions[1]).toHaveAttribute('data-active', 'true')
     expect(team).not.toContainElement(screen.getByRole('button', { name: 'Independent task' }))
   })
 

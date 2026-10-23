@@ -1,5 +1,12 @@
 import { Hash } from 'lucide-react'
 
+import {
+  SidebarGroup,
+  SidebarGroupLabel,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+} from '@/components/ui/sidebar'
 import { StatusBadge } from '@/components/workspace/StatusBadge'
 import type { Translator } from '@/lib/i18n'
 
@@ -16,47 +23,34 @@ export type ChannelNavigatorProps = {
   threads: ChannelThread[]
 }
 
-/** The Workspace conversation, above the research list and the Sessions. */
+/** The Workspace conversation, above the research list and the Sessions: a Sidebar group. */
 export function ChannelNavigator({ active, onOpen, onOpenThread, t, threads, threadsOnly = false }: ChannelNavigatorProps) {
+  const label = threadsOnly ? t('kubecode.channel.linkedThreads') : t('kubecode.channel.title')
   return (
-    <section
-      aria-label={threadsOnly ? t('kubecode.channel.linkedThreads') : t('kubecode.channel.title')}
-      className="kubecode-channel-nav"
-    >
-      <div className="kubecode-navigator-tools">
-        <span>{threadsOnly ? t('kubecode.channel.linkedThreads') : t('kubecode.channel.title')}</span>
-      </div>
-      <ul className="kubecode-research-nav-list">
+    <SidebarGroup aria-label={label} className="p-0" role="region">
+      <SidebarGroupLabel>{label}</SidebarGroupLabel>
+      <SidebarMenu>
         {!threadsOnly && (
-          <li>
-            <button
-              aria-current={active ? 'page' : undefined}
-              className="kubecode-research-nav-item"
-              type="button"
-              onClick={onOpen}
-            >
-              <Hash aria-hidden size={14} />
-              <span className="kubecode-research-nav-title">{t('kubecode.channel.general')}</span>
-            </button>
-          </li>
+          <SidebarMenuItem>
+            <SidebarMenuButton aria-current={active ? 'page' : undefined} isActive={active} onClick={onOpen}>
+              <Hash aria-hidden="true" />
+              <span>{t('kubecode.channel.general')}</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
         )}
         {threads.slice(0, 5).map((thread) => (
-          <li key={thread.id}>
-            <button
-              className="kubecode-research-nav-item kubecode-channel-nav-thread"
-              type="button"
-              onClick={() => onOpenThread(thread.id)}
-            >
-              <span className="kubecode-research-nav-title">{thread.title}</span>
+          <SidebarMenuItem key={thread.id}>
+            <SidebarMenuButton onClick={() => onOpenThread(thread.id)}>
+              <span className="min-w-0 flex-1 truncate">{thread.title}</span>
               {thread.research_id && (
                 <StatusBadge tone="ok">
                   {t('kubecode.channel.linkedBadge')}
                 </StatusBadge>
               )}
-            </button>
-          </li>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
         ))}
-      </ul>
-    </section>
+      </SidebarMenu>
+    </SidebarGroup>
   )
 }

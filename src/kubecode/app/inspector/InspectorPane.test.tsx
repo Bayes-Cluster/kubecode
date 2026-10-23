@@ -73,6 +73,7 @@ function EvidencePanel({ entry }: InspectorPanelProps<Extract<InspectorEntry, { 
 }
 
 function ResourcePanel({ entry }: InspectorPanelProps<Extract<InspectorEntry, { kind: 'resource' }>>) {
+  if (entry.ref.id === 'slow') return <InspectorPanel status="loading" title="Loading record"><p>live record</p></InspectorPanel>
   return <InspectorPanel title={entry.ref.id}><p>live record</p></InspectorPanel>
 }
 
@@ -218,10 +219,22 @@ describe('InspectorPane header', () => {
   it('keeps Back and Close on something that is no longer available', async () => {
     mount({ initial: [task] })
     fireEvent.click(await screen.findByRole('button', { name: 'open a removed member' }))
-    expect(await screen.findByText('This item is no longer available.')).toBeInTheDocument()
+    const notice = await screen.findByText('This item is no longer available.')
+    // An official Empty says so, as one status.
+    expect(notice.closest('[data-slot="empty"]')).toHaveAttribute('role', 'status')
     expect(screen.queryByText('who they are')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Back to Pruning heads' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Close details' })).toBeInTheDocument()
+  })
+})
+
+describe('InspectorPanel states', () => {
+  it('shows a record being read with an official Spinner, as one status', () => {
+    mount({ initial: [{ kind: 'resource', ref: { kind: 'finding', id: 'slow' } }] })
+    const status = screen.getByRole('status')
+    expect(status).toHaveTextContent('Loading…')
+    expect(status.querySelector('svg.animate-spin')).toHaveAttribute('aria-hidden', 'true')
+    expect(screen.queryByText('live record')).not.toBeInTheDocument()
   })
 })
 
