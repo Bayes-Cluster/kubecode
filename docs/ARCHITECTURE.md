@@ -723,8 +723,10 @@ authoritative records and dropping any response older than the newest request.
 Each round carries an execution section (`ResearchExecutionSection`) fed by
 `useResearchExecution`, which refetches on the question's durable events and
 reconnects and keeps the last known state visible, marked stale, if a refresh
-fails. Destructive controls (cancel the round's execution) ask for confirmation;
-pausing only stops future launches. Standalone Sessions, Teams, files, Git, and
+fails. Destructive controls (cancel the round's execution) ask for confirmation
+in an official `AlertDialog`; pausing only stops future launches. The research
+views compose official `Field`, `Checkbox`, `Item`, `Alert`, `Empty`, `Table`
+and `Collapsible` components and #258's reader states (ADR 0252). Standalone Sessions, Teams, files, Git, and
 terminals are unchanged.
 
 The browser workspace follows the same composition pattern.
@@ -838,6 +840,10 @@ refresh and mutation responses bypass the debounce, while Project/request
 generations and abort signals discard stale results. A truncated status exposes a
 localized warning; loading, binary, oversized, unsupported, and failed diffs are
 recoverable states with retry or refresh rather than partial patches.
+Around the CodeMirror and diff engines, the Explorer's sections, empty states,
+notices, commit box, confirmations and icon actions are official components
+(`Collapsible`, `Empty`, `Alert`, `InputGroup`, `AlertDialog`, `IconButton`);
+the lazy virtualised tree and Git rows are kept domain adapters (ADR 0252).
 
 The terminal dock manages independent shell or Agent TUI PTYs. Its recursive
 split tree and split ratios live in browser state; PTY processes, output cursors,
@@ -847,6 +853,11 @@ their original Session context. Regular terminals execute the user's shell
 directly. Agent TUI profiles execute the discovered CLI through that shell in
 interactive login mode so the same user-owned environment configuration is
 available without putting provider-specific launch behavior in a client.
+Each split is an official `ResizablePanelGroup` whose stored ratio is its
+default layout, with a named, keyboard- and touch-operable `ResizableHandle`;
+the terminal list beside the canvas is a collapsible `ResizablePanel` that
+keeps its pixel width per Project (ADR 0252). Resizing, collapsing, and theme
+changes resize panels without remounting xterm.
 Browser refresh can restore serialized xterm output and replay newer bytes from
 the server cursor. Stopping a run kills every terminal scoped to its Session
 (`TerminalManager::kill_by_session`) before the ACP cancel fires, so local
