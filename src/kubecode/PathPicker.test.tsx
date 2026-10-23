@@ -53,7 +53,7 @@ describe('PathPicker', () => {
     )
 
     const input = screen.getByRole('combobox', { name: 'Choose path' })
-    expect(input.getAttribute('aria-activedescendant')).toMatch(/-option-demo$/)
+    expect(screen.getByRole('option', { name: /demo/, selected: true })).toBeInTheDocument()
     fireEvent.keyDown(input, { key: 'Enter' })
 
     expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 'demo' }))

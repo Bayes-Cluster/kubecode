@@ -1,9 +1,11 @@
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, useId, useState, type ReactNode } from 'react'
 import {
   Check,
   CircleAlert,
   Copy,
-  RotateCw
+  Info,
+  RotateCw,
+  TerminalSquare,
 } from 'lucide-react'
 import { trackEvent } from '@/lib/telemetry'
 
@@ -16,15 +18,47 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia } from '@/components/ui/empty'
+import {
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+  FieldLegend,
+  FieldSeparator,
+  FieldSet,
+  FieldTitle,
+} from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemGroup,
+  ItemMedia,
+  ItemTitle,
+} from '@/components/ui/item'
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { StatusBadge } from '@/components/workspace/StatusBadge'
 
 import { MemberDefaultsPanel } from '../members/MemberDefaultsPanel'
 
@@ -117,6 +151,7 @@ export function SettingsDialog({
 }: SettingsDialogProps) {
   const [section, setSection] = useState<SettingsSection>(requestedSection)
   const [diagnosticsCopied, setDiagnosticsCopied] = useState(false)
+  const ids = useId()
 
   const copyDiagnostics = async () => {
     const report = {
@@ -172,350 +207,413 @@ export function SettingsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="kubecode-settings-dialog">
+      <DialogContent className="flex h-[min(620px,calc(100dvh-2rem))] w-[calc(100vw-2rem)] max-w-[980px] flex-col gap-0 overflow-hidden p-0 sm:max-w-[980px]">
         <DialogHeader className="sr-only">
           <DialogTitle>{t('kubecode.settings')}</DialogTitle>
           <DialogDescription>{t('kubecode.settingsDescription')}</DialogDescription>
         </DialogHeader>
-        <aside className="kubecode-settings-nav">
-          <strong>{t('kubecode.settings')}</strong>
-          {(['general', 'notifications', 'agents', 'members', 'wechat', 'terminal', 'editor'] as const).map((item) => (
-            <Button key={item} variant={section === item ? 'secondary' : 'ghost'} onClick={() => setSection(item)}>
-              {item === 'members' ? t('kubecode.settings.memberDefaults') : t(`kubecode.settings.${item}`)}
-            </Button>
+        <Tabs
+          className="min-h-0 flex-1 gap-0 max-md:flex-col"
+          orientation="vertical"
+          value={section}
+          onValueChange={(value) => setSection(value as SettingsSection)}
+        >
+          <TabsList
+            aria-label={t('kubecode.settings')}
+            className="h-auto w-full shrink-0 justify-start overflow-x-auto rounded-none p-2 max-md:flex-row md:w-52 md:overflow-x-visible md:p-3"
+          >
+            {SETTINGS_SECTIONS.map((item) => (
+              <TabsTrigger className="flex-none md:w-full" key={item} value={item}>
+                {sectionTitle(item, false)}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+          {SETTINGS_SECTIONS.map((item) => (
+            <TabsContent className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4 md:p-8" key={item} value={item}>
+              <div className="flex flex-col gap-6">
+                <h2 className="text-lg font-semibold">{sectionTitle(item, true)}</h2>
+                {renderSection(item)}
+              </div>
+            </TabsContent>
           ))}
-        </aside>
-        <section className="kubecode-settings-content">
-          <h2>{section === 'general'
-            ? t('kubecode.appearance')
-            : section === 'members' ? t('kubecode.settings.memberDefaults') : t(`kubecode.settings.${section}`)}</h2>
-          {section === 'general' && (
-            <div className="kubecode-settings-group">
-              <div className="kubecode-setting-row">
-                <div><strong>{t('kubecode.colorScheme')}</strong><span>{t('kubecode.colorSchemeDescription')}</span></div>
-                <Select
-                  value={appearance.colorScheme}
-                  onValueChange={(value) => updateAppearance('colorScheme', value as KubecodeAppearance['colorScheme'])}
-                >
-                  <SelectTrigger aria-label={t('kubecode.colorScheme')} className="w-44"><SelectValue /></SelectTrigger>
-                  <SelectContent>
+        </Tabs>
+      </DialogContent>
+    </Dialog>
+  )
+
+  function sectionTitle(item: SettingsSection, heading: boolean): string {
+    if (item === 'general' && heading) return t('kubecode.appearance')
+    if (item === 'members') return t('kubecode.settings.memberDefaults')
+    return t(`kubecode.settings.${item}`)
+  }
+
+  function renderSection(item: SettingsSection) {
+    if (item === 'general') {
+      return (
+        <FieldGroup>
+          <SettingField description={t('kubecode.colorSchemeDescription')} id={`${ids}-color-scheme`} label={t('kubecode.colorScheme')}>
+            {(control) => (
+              <Select
+                value={appearance.colorScheme}
+                onValueChange={(value) => updateAppearance('colorScheme', value as KubecodeAppearance['colorScheme'])}
+              >
+                <SelectTrigger {...control} className="w-full sm:w-44"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
                     <SelectItem value="system">{t('kubecode.theme.system')}</SelectItem>
                     <SelectItem value="light">{t('kubecode.theme.light')}</SelectItem>
                     <SelectItem value="dark">{t('kubecode.theme.dark')}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="kubecode-setting-row">
-                <div><strong>{t('kubecode.theme')}</strong><span>{t('kubecode.themeDescription')}</span></div>
-                <Select
-                  value={appearance.theme}
-                  onValueChange={(value) => updateAppearance('theme', value as KubecodeTheme)}
-                >
-                  <SelectTrigger aria-label={t('kubecode.theme')} className="w-52"><SelectValue /></SelectTrigger>
-                  <SelectContent>
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            )}
+          </SettingField>
+          <SettingField description={t('kubecode.themeDescription')} id={`${ids}-theme`} label={t('kubecode.theme')}>
+            {(control) => (
+              <Select value={appearance.theme} onValueChange={(value) => updateAppearance('theme', value as KubecodeTheme)}>
+                <SelectTrigger {...control} className="w-full sm:w-52"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
                     {KUBECODE_THEME_OPTIONS.map((theme) => (
                       <SelectItem key={theme} value={theme}>
                         <span
                           aria-hidden="true"
-                          className="kubecode-theme-swatch"
-                          style={{ '--theme-preview': THEME_PREVIEWS[theme] } as CSSProperties}
+                          className="size-3.5 shrink-0 rounded-full border"
+                          style={{ background: THEME_PREVIEWS[theme] }}
                         />
                         {t(`kubecode.theme.${theme}`)}
                       </SelectItem>
                     ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="kubecode-setting-row">
-                <div><strong>{t('kubecode.uiFont')}</strong><span>{t('kubecode.uiFontDescription')}</span></div>
-                <Input
-                  aria-label={t('kubecode.uiFont')}
-                  className="kubecode-font-input"
-                  value={appearance.uiFont}
-                  onBlur={() => trackEvent('kubecode_appearance_changed', { setting: 'uiFont' })}
-                  onChange={(event) => updateAppearance('uiFont', event.target.value)}
-                />
-              </div>
-              <div className="kubecode-setting-row">
-                <div>
-                  <strong>{t('kubecode.uiFontSize')}</strong>
-                  <span>{t('kubecode.uiFontSizeDescription')}</span>
-                </div>
-                <Select
-                  value={String(appearance.uiFontSize)}
-                  onValueChange={(value) => {
-                    updateAppearance('uiFontSize', Number(value))
-                    trackEvent('kubecode_appearance_changed', {
-                      setting: 'uiFontSize',
-                      value: Number(value),
-                    })
-                  }}
-                >
-                  <SelectTrigger aria-label={t('kubecode.uiFontSize')} className="w-28">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            )}
+          </SettingField>
+          <SettingField description={t('kubecode.uiFontDescription')} id={`${ids}-ui-font`} label={t('kubecode.uiFont')}>
+            {(control) => (
+              <Input
+                {...control}
+                className="w-full sm:max-w-80"
+                value={appearance.uiFont}
+                onBlur={() => trackEvent('kubecode_appearance_changed', { setting: 'uiFont' })}
+                onChange={(event) => updateAppearance('uiFont', event.target.value)}
+              />
+            )}
+          </SettingField>
+          <SettingField description={t('kubecode.uiFontSizeDescription')} id={`${ids}-ui-font-size`} label={t('kubecode.uiFontSize')}>
+            {(control) => (
+              <Select
+                value={String(appearance.uiFontSize)}
+                onValueChange={(value) => {
+                  updateAppearance('uiFontSize', Number(value))
+                  trackEvent('kubecode_appearance_changed', { setting: 'uiFontSize', value: Number(value) })
+                }}
+              >
+                <SelectTrigger {...control} className="w-full sm:w-28"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
                     {Array.from({ length: 9 }, (_, index) => index + 12).map((size) => (
                       <SelectItem key={size} value={String(size)}>{size}px</SelectItem>
                     ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="kubecode-setting-row">
-                <div><strong>{t('kubecode.codeFont')}</strong><span>{t('kubecode.codeFontDescription')}</span></div>
-                <Input
-                  aria-label={t('kubecode.codeFont')}
-                  className="kubecode-font-input kubecode-font-input-mono"
-                  value={appearance.codeFont}
-                  onBlur={() => trackEvent('kubecode_appearance_changed', { setting: 'codeFont' })}
-                  onChange={(event) => updateAppearance('codeFont', event.target.value)}
-                />
-              </div>
-              <div className="kubecode-setting-row">
-                <div><strong>{t('kubecode.terminalFont')}</strong><span>{t('kubecode.terminalFontDescription')}</span></div>
-                <Input
-                  aria-label={t('kubecode.terminalFont')}
-                  className="kubecode-font-input kubecode-font-input-mono"
-                  value={appearance.terminalFont}
-                  onBlur={() => trackEvent('kubecode_appearance_changed', { setting: 'terminalFont' })}
-                  onChange={(event) => updateAppearance('terminalFont', event.target.value)}
-                />
-              </div>
-            </div>
-          )}
-          {section === 'notifications' && (
-            <div className="kubecode-settings-group">
-              <div className="kubecode-setting-row">
-                <div>
-                  <strong>{t('kubecode.systemNotifications')}</strong>
-                  <span>{t('kubecode.systemNotificationsDescription')}</span>
-                </div>
-                <Select
-                  value={notifications.systemMode}
-                  onValueChange={(value) => {
-                    onNotificationsChange({
-                      ...notifications,
-                      systemMode: value as KubecodeNotifications['systemMode'],
-                    })
-                    if (value !== 'off' && browserPermission === 'default') {
-                      void onRequestNotificationPermission()
-                    }
-                    trackEvent('kubecode_notification_preference_changed', { setting: 'mode', value })
-                  }}
-                >
-                  <SelectTrigger aria-label={t('kubecode.systemNotifications')} className="w-44">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            )}
+          </SettingField>
+          <SettingField description={t('kubecode.codeFontDescription')} id={`${ids}-code-font`} label={t('kubecode.codeFont')}>
+            {(control) => (
+              <Input
+                {...control}
+                className="w-full sm:max-w-80"
+                value={appearance.codeFont}
+                onBlur={() => trackEvent('kubecode_appearance_changed', { setting: 'codeFont' })}
+                onChange={(event) => updateAppearance('codeFont', event.target.value)}
+              />
+            )}
+          </SettingField>
+          <SettingField description={t('kubecode.terminalFontDescription')} id={`${ids}-terminal-font`} label={t('kubecode.terminalFont')}>
+            {(control) => (
+              <Input
+                {...control}
+                className="w-full sm:max-w-80"
+                value={appearance.terminalFont}
+                onBlur={() => trackEvent('kubecode_appearance_changed', { setting: 'terminalFont' })}
+                onChange={(event) => updateAppearance('terminalFont', event.target.value)}
+              />
+            )}
+          </SettingField>
+        </FieldGroup>
+      )
+    }
+    if (item === 'notifications') {
+      return (
+        <FieldGroup>
+          <SettingField
+            description={t('kubecode.systemNotificationsDescription')}
+            id={`${ids}-system-notifications`}
+            label={t('kubecode.systemNotifications')}
+          >
+            {(control) => (
+              <Select
+                value={notifications.systemMode}
+                onValueChange={(value) => {
+                  onNotificationsChange({ ...notifications, systemMode: value as KubecodeNotifications['systemMode'] })
+                  if (value !== 'off' && browserPermission === 'default') void onRequestNotificationPermission()
+                  trackEvent('kubecode_notification_preference_changed', { setting: 'mode', value })
+                }}
+              >
+                <SelectTrigger {...control} className="w-full sm:w-44"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
                     <SelectItem value="always">{t('kubecode.notifications.always')}</SelectItem>
                     <SelectItem value="unfocused">{t('kubecode.notifications.unfocused')}</SelectItem>
                     <SelectItem value="off">{t('kubecode.notifications.off')}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              {(['completion', 'attention', 'error'] as const).map((category) => (
-                <div className="kubecode-setting-row kubecode-notification-category" key={category}>
-                  <div>
-                    <strong>{t(`kubecode.notifications.${category}`)}</strong>
-                    <span>{t(`kubecode.notifications.${category}Description`)}</span>
-                  </div>
-                  <div className="kubecode-notification-controls">
-                    <Switch
-                      aria-label={t(`kubecode.notifications.${category}`)}
-                      checked={notifications.enabled[category]}
-                      onCheckedChange={(checked) => updateNotificationCategory(category, checked)}
-                    />
-                    <Select
-                      value={notifications.sound[category]}
-                      onValueChange={(value) => updateNotificationSound(
-                        category,
-                        value as KubecodeNotifications['sound'][NotificationCategory],
-                      )}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            )}
+          </SettingField>
+          {(['completion', 'attention', 'error'] as const).map((category) => (
+            <SettingField
+              description={t(`kubecode.notifications.${category}Description`)}
+              id={`${ids}-notify-${category}`}
+              key={category}
+              label={t(`kubecode.notifications.${category}`)}
+            >
+              {(control) => (
+                <div className="flex items-center gap-3">
+                  <Switch
+                    {...control}
+                    checked={notifications.enabled[category]}
+                    onCheckedChange={(checked) => updateNotificationCategory(category, checked)}
+                  />
+                  <Select
+                    value={notifications.sound[category]}
+                    onValueChange={(value) => updateNotificationSound(
+                      category,
+                      value as KubecodeNotifications['sound'][NotificationCategory],
+                    )}
+                  >
+                    <SelectTrigger
+                      aria-label={t('kubecode.notificationSound', { category: t(`kubecode.notifications.${category}`) })}
+                      className="w-36"
                     >
-                      <SelectTrigger
-                        aria-label={t('kubecode.notificationSound', {
-                          category: t(`kubecode.notifications.${category}`),
-                        })}
-                        className="w-36"
-                      >
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
                         <SelectItem value="system">{t('kubecode.notifications.systemSound')}</SelectItem>
                         <SelectItem value="none">{t('kubecode.notifications.noSound')}</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
                 </div>
-              ))}
-              <div className="kubecode-setting-row">
-                <div>
-                  <strong>{t('kubecode.notificationPermission')}</strong>
-                  <span>{t(`kubecode.notifications.permission.${browserPermission}`)}</span>
-                  {notificationTestStatus && (
-                    <span className="kubecode-notification-test-result" data-status={notificationTestStatus} role="status">
-                      {notificationTestMessage(t, notificationTestStatus, browserPermission)}
-                    </span>
-                  )}
-                </div>
-                <div className="kubecode-notification-controls">
-                  {browserPermission === 'default' && (
-                    <Button size="sm" variant="outline" onClick={() => void onRequestNotificationPermission()}>
-                      {t('kubecode.enableNotifications')}
-                    </Button>
-                  )}
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => void onTestNotification()}
-                  >
-                    {t('kubecode.testNotification')}
-                  </Button>
-                </div>
-              </div>
+              )}
+            </SettingField>
+          ))}
+          <Field orientation="responsive">
+            <FieldContent>
+              <FieldTitle>{t('kubecode.notificationPermission')}</FieldTitle>
+              <FieldDescription>{t(`kubecode.notifications.permission.${browserPermission}`)}</FieldDescription>
+              {notificationTestStatus && (
+                <StatusBadge className="w-fit" tone={notificationTestStatus === 'sent' ? 'ok' : 'danger'}>
+                  <span role="status">{notificationTestMessage(t, notificationTestStatus, browserPermission)}</span>
+                </StatusBadge>
+              )}
+            </FieldContent>
+            <div className="flex flex-wrap gap-2">
+              {browserPermission === 'default' && (
+                <Button size="sm" variant="outline" onClick={() => void onRequestNotificationPermission()}>
+                  {t('kubecode.enableNotifications')}
+                </Button>
+              )}
+              <Button size="sm" variant="outline" onClick={() => void onTestNotification()}>
+                {t('kubecode.testNotification')}
+              </Button>
             </div>
-          )}
-          {section === 'agents' && (
-            <>
-            <div className="kubecode-settings-group">
-              <div className="kubecode-setting-row">
-                <div>
-                  <strong>{t('kubecode.allowTeammateChat')}</strong>
-                  <span>{t('kubecode.allowTeammateChatDescription')}</span>
-                </div>
-                <Switch
-                  aria-label={t('kubecode.allowTeammateChat')}
-                  checked={agentPreferences.allowTeammateChat}
-                  onCheckedChange={(allowTeammateChat) => {
-                    onAgentPreferencesChange({ ...agentPreferences, allowTeammateChat })
-                    trackEvent('kubecode_agent_preference_changed', {
-                      setting: 'allowTeammateChat',
-                      value: allowTeammateChat ? 'on' : 'off',
-                    })
-                  }}
-                />
+          </Field>
+        </FieldGroup>
+      )
+    }
+    if (item === 'agents') {
+      return (
+        <FieldGroup>
+          <SettingField
+            description={t('kubecode.allowTeammateChatDescription')}
+            id={`${ids}-teammate-chat`}
+            label={t('kubecode.allowTeammateChat')}
+          >
+            {(control) => (
+              <Switch
+                {...control}
+                checked={agentPreferences.allowTeammateChat}
+                onCheckedChange={(allowTeammateChat) => {
+                  onAgentPreferencesChange({ ...agentPreferences, allowTeammateChat })
+                  trackEvent('kubecode_agent_preference_changed', {
+                    setting: 'allowTeammateChat',
+                    value: allowTeammateChat ? 'on' : 'off',
+                  })
+                }}
+              />
+            )}
+          </SettingField>
+          <FieldSet>
+            <Field orientation="responsive">
+              <FieldContent>
+                <FieldLegend>{t('kubecode.agentReadiness')}</FieldLegend>
+                <FieldDescription>{t('kubecode.agentReadinessDescription')}</FieldDescription>
+              </FieldContent>
+              <div className="flex flex-wrap gap-2">
+                <Button disabled={agentsRefreshing} size="sm" variant="outline" onClick={() => void onRefreshAgents()}>
+                  {agentsRefreshing ? <Spinner aria-hidden="true" data-icon="inline-start" /> : <RotateCw data-icon="inline-start" />}
+                  {t('kubecode.checkAgain')}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => void copyDiagnostics()}>
+                  {diagnosticsCopied ? <Check data-icon="inline-start" /> : <Copy data-icon="inline-start" />}
+                  {diagnosticsCopied ? t('kubecode.copied') : t('kubecode.copyDiagnostics')}
+                </Button>
               </div>
-              <div className="kubecode-setting-row kubecode-agent-doctor-toolbar">
-                <div>
-                  <strong>{t('kubecode.agentReadiness')}</strong>
-                  <span>{t('kubecode.agentReadinessDescription')}</span>
-                </div>
-                <div className="kubecode-agent-doctor-actions">
-                  <Button
-                    disabled={agentsRefreshing}
-                    size="sm"
-                    variant="outline"
-                    onClick={() => void onRefreshAgents()}
-                  >
-                    <RotateCw className={agentsRefreshing ? 'animate-spin' : undefined}  size={16}/>
-                    {t('kubecode.checkAgain')}
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => void copyDiagnostics()}>
-                    {diagnosticsCopied ? <Check  size={16}/> : <Copy  size={16}/>}
-                    {diagnosticsCopied ? t('kubecode.copied') : t('kubecode.copyDiagnostics')}
-                  </Button>
-                </div>
-              </div>
+            </Field>
+            <Accordion type="multiple">
               {agents.map((agent) => (
-                <details className="kubecode-agent-diagnostic" key={agent.id}>
-                  <summary>
-                    <span>
+                <AccordionItem key={agent.id} value={agent.id}>
+                  <AccordionTrigger>
+                    <span className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
                       <AiAgentIcon agent={agent.id} size={18} />
-                      <strong>{agentName(agent.id)}</strong>
+                      <span>{agentName(agent.id)}</span>
+                      <StatusBadge tone={agent.available ? 'ok' : 'danger'}>
+                        {agent.available ? agent.version ?? t('kubecode.ready') : t('kubecode.unavailable')}
+                      </StatusBadge>
                     </span>
-                    <span data-available={agent.available}>
-                      {agent.available ? agent.version ?? t('kubecode.ready') : t('kubecode.unavailable')}
-                    </span>
-                  </summary>
-                  <div className="kubecode-agent-diagnostic-body">
-                    <AgentDiagnosticRow
-                      detail={agent.cli?.detail ?? agent.error}
-                      label={t('kubecode.agentCli')}
-                      status={agent.cli?.status ?? (agent.available ? 'ready' : 'missing')}
-                      value={agent.cli?.version ?? agent.version ?? agent.executable}
-                      t={t}
-                    />
-                    <AgentDiagnosticRow
-                      detail={agent.adapter?.detail}
-                      label={agent.adapter?.kind === 'native'
-                        ? t('kubecode.nativeAcp')
-                        : t('kubecode.acpAdapter')}
-                      status={agent.adapter?.status ?? (agent.available ? 'ready' : 'missing')}
-                      value={agent.adapter?.kind === 'native'
-                        ? t('kubecode.builtIntoAgent')
-                        : agent.adapter?.version ?? undefined}
-                      t={t}
-                    />
-                    <div className="kubecode-agent-auth-note">
-                      {t('kubecode.authenticationCheckedOnSession')}
-                    </div>
+                  </AccordionTrigger>
+                  <AccordionContent className="flex flex-col gap-3">
+                    <ItemGroup className="gap-2">
+                      <AgentDiagnosticRow
+                        detail={agent.cli?.detail ?? agent.error}
+                        label={t('kubecode.agentCli')}
+                        status={agent.cli?.status ?? (agent.available ? 'ready' : 'missing')}
+                        value={agent.cli?.version ?? agent.version ?? agent.executable}
+                        t={t}
+                      />
+                      <AgentDiagnosticRow
+                        detail={agent.adapter?.detail}
+                        label={agent.adapter?.kind === 'native' ? t('kubecode.nativeAcp') : t('kubecode.acpAdapter')}
+                        status={agent.adapter?.status ?? (agent.available ? 'ready' : 'missing')}
+                        value={agent.adapter?.kind === 'native'
+                          ? t('kubecode.builtIntoAgent')
+                          : agent.adapter?.version ?? undefined}
+                        t={t}
+                      />
+                    </ItemGroup>
+                    <FieldDescription>{t('kubecode.authenticationCheckedOnSession')}</FieldDescription>
                     {agent.checked_at && (
-                      <small>{t('kubecode.lastChecked', {
-                        time: new Date(agent.checked_at).toLocaleTimeString(),
-                      })}</small>
+                      <FieldDescription>
+                        {t('kubecode.lastChecked', { time: new Date(agent.checked_at).toLocaleTimeString() })}
+                      </FieldDescription>
                     )}
-                  </div>
-                </details>
+                  </AccordionContent>
+                </AccordionItem>
               ))}
-            </div>
-            <h3 className="kubecode-settings-section-heading">{t('kubecode.runtime')}</h3>
-            <RuntimeStatusPanel api={api} t={t} />
-            </>
-          )}
-          {section === 'members' && (
-            <div className="kubecode-settings-group">
-              {/* App-wide defaults live here; a Workspace's own members live in its Members destination (#235). */}
-              <div className="kubecode-setting-row">
-                <div>
-                  <strong>{t('kubecode.members.current.title')}</strong>
-                  <span>{activeProjectId ? t('kubecode.settings.memberDefaultsDescription') : t('kubecode.members.noProject')}</span>
-                </div>
-                {activeProjectId && onOpenWorkspaceMembers && (
-                  <Button size="sm" variant="outline" onClick={onOpenWorkspaceMembers}>
-                    {t('kubecode.settings.openWorkspaceMembers')}
-                  </Button>
-                )}
-              </div>
-              <MemberDefaultsPanel agents={agents} api={api} t={t} />
-            </div>
-          )}
-          {section === 'wechat' && (
-            <WeChatSettingsPanel
-              api={api}
-              binding={wechatBinding}
-              conversations={wechatConversations}
-              projects={wechatProjects}
-              t={t}
-              workspaceEvents={workspaceEvents}
-            />
-          )}
-          {section === 'editor' && (
-            <div className="kubecode-settings-group">
-              <div className="kubecode-setting-row">
-                <div>
-                  <strong>{t('kubecode.autoSave')}</strong>
-                  <span>{t('kubecode.autoSaveDescription')}</span>
-                </div>
-                <Switch
-                  aria-label={t('kubecode.autoSave')}
-                  checked={editorPreferences.autoSave}
-                  onCheckedChange={(autoSave) => {
-                    onEditorPreferencesChange({ ...editorPreferences, autoSave })
-                    trackEvent('kubecode_editor_preference_changed', {
-                      setting: 'autoSave',
-                      value: autoSave ? 'on' : 'off',
-                    })
-                  }}
-                />
-              </div>
-            </div>
-          )}
-          {section === 'terminal' && (
-            <div className="kubecode-settings-placeholder">{t('kubecode.settingsComingSoon')}</div>
-          )}
-        </section>
-      </DialogContent>
-    </Dialog>
+            </Accordion>
+          </FieldSet>
+          <FieldSeparator />
+          <RuntimeStatusPanel api={api} t={t} />
+        </FieldGroup>
+      )
+    }
+    if (item === 'members') {
+      return (
+        <FieldGroup>
+          {/* App-wide defaults live here; a Workspace's own members live in its Members destination (#235). */}
+          <Field orientation="responsive">
+            <FieldContent>
+              <FieldTitle>{t('kubecode.members.current.title')}</FieldTitle>
+              <FieldDescription>
+                {activeProjectId ? t('kubecode.settings.memberDefaultsDescription') : t('kubecode.members.noProject')}
+              </FieldDescription>
+            </FieldContent>
+            {activeProjectId && onOpenWorkspaceMembers && (
+              <Button size="sm" variant="outline" onClick={onOpenWorkspaceMembers}>
+                {t('kubecode.settings.openWorkspaceMembers')}
+              </Button>
+            )}
+          </Field>
+          <FieldSeparator />
+          <MemberDefaultsPanel agents={agents} api={api} t={t} />
+        </FieldGroup>
+      )
+    }
+    if (item === 'wechat') {
+      return (
+        <WeChatSettingsPanel
+          api={api}
+          binding={wechatBinding}
+          conversations={wechatConversations}
+          projects={wechatProjects}
+          t={t}
+          workspaceEvents={workspaceEvents}
+        />
+      )
+    }
+    if (item === 'editor') {
+      return (
+        <FieldGroup>
+          <SettingField description={t('kubecode.autoSaveDescription')} id={`${ids}-auto-save`} label={t('kubecode.autoSave')}>
+            {(control) => (
+              <Switch
+                {...control}
+                checked={editorPreferences.autoSave}
+                onCheckedChange={(autoSave) => {
+                  onEditorPreferencesChange({ ...editorPreferences, autoSave })
+                  trackEvent('kubecode_editor_preference_changed', {
+                    setting: 'autoSave',
+                    value: autoSave ? 'on' : 'off',
+                  })
+                }}
+              />
+            )}
+          </SettingField>
+        </FieldGroup>
+      )
+    }
+    return (
+      <Empty className="border">
+        <EmptyHeader>
+          <EmptyMedia variant="icon"><TerminalSquare /></EmptyMedia>
+          <EmptyDescription>{t('kubecode.settingsComingSoon')}</EmptyDescription>
+        </EmptyHeader>
+      </Empty>
+    )
+  }
+}
+
+const SETTINGS_SECTIONS: readonly SettingsSection[] = [
+  'general', 'notifications', 'agents', 'members', 'wechat', 'terminal', 'editor',
+]
+
+type SettingControlProps = { id: string; 'aria-describedby': string }
+
+/** One labelled, described setting: the official Field with its control. */
+function SettingField({
+  children,
+  description,
+  id,
+  label,
+}: {
+  children: (control: SettingControlProps) => ReactNode
+  description: string
+  id: string
+  label: string
+}) {
+  const descriptionId = `${id}-description`
+  return (
+    <Field orientation="responsive">
+      <FieldContent>
+        <FieldLabel htmlFor={id}>{label}</FieldLabel>
+        <FieldDescription id={descriptionId}>{description}</FieldDescription>
+      </FieldContent>
+      {children({ id, 'aria-describedby': descriptionId })}
+    </Field>
   )
 }
 
@@ -569,15 +667,12 @@ function RuntimeStatusPanel({ api, t }: { api: KubecodeApi; t: Translator }) {
 
   const busy = state.kind === 'loading' || refreshing
   return (
-    <div className="kubecode-settings-group" data-testid="runtime-status-panel">
-      <div className="kubecode-setting-row kubecode-runtime-toolbar">
-        <div>
-          <strong>{t('kubecode.runtimeStatus')}</strong>
-          <span>{t('kubecode.runtimeStatusDescription')}</span>
-          {state.kind === 'loading' && <span role="status">{t('kubecode.runtimeStatusLoading')}</span>}
-          {state.kind === 'error' && <span role="alert">{t('kubecode.runtimeStatusError')}</span>}
-          {state.kind === 'unavailable' && <span role="status">{t('kubecode.runtimeStatusUnavailable')}</span>}
-        </div>
+    <FieldSet data-testid="runtime-status-panel">
+      <Field orientation="responsive">
+        <FieldContent>
+          <FieldLegend>{t('kubecode.runtimeStatus')}</FieldLegend>
+          <FieldDescription>{t('kubecode.runtimeStatusDescription')}</FieldDescription>
+        </FieldContent>
         <Button
           aria-label={t('kubecode.runtimeRefresh')}
           disabled={busy || !runtimeStatusAvailable}
@@ -588,18 +683,42 @@ function RuntimeStatusPanel({ api, t }: { api: KubecodeApi; t: Translator }) {
             setRequest((value) => value + 1)
           }}
         >
-          <RotateCw className={busy ? 'animate-spin' : undefined}  size={16}/>
+          {busy && runtimeStatusAvailable ? <Spinner aria-hidden="true" data-icon="inline-start" /> : <RotateCw data-icon="inline-start" />}
           {t('kubecode.refresh')}
         </Button>
-      </div>
-      {state.kind === 'ready' && (
-        <dl className="kubecode-runtime-counts">
-          <div><dt>{t('kubecode.runtimeActiveActors')}</dt><dd>{state.status.active_actor_count}</dd></div>
-          <div><dt>{t('kubecode.runtimeIdleActors')}</dt><dd>{state.status.idle_actor_count}</dd></div>
-          <div><dt>{t('kubecode.runtimeWarmActorLimit')}</dt><dd>{state.status.warm_actor_limit}</dd></div>
-        </dl>
+      </Field>
+      {state.kind === 'loading' && (
+        <FieldDescription role="status">{t('kubecode.runtimeStatusLoading')}</FieldDescription>
       )}
-    </div>
+      {state.kind === 'error' && (
+        <Alert variant="destructive">
+          <CircleAlert />
+          <AlertDescription>{t('kubecode.runtimeStatusError')}</AlertDescription>
+        </Alert>
+      )}
+      {state.kind === 'unavailable' && (
+        <Alert role="status">
+          <Info />
+          <AlertDescription>{t('kubecode.runtimeStatusUnavailable')}</AlertDescription>
+        </Alert>
+      )}
+      {state.kind === 'ready' && (
+        <ItemGroup className="grid gap-2 sm:grid-cols-3">
+          {([
+            ['kubecode.runtimeActiveActors', state.status.active_actor_count],
+            ['kubecode.runtimeIdleActors', state.status.idle_actor_count],
+            ['kubecode.runtimeWarmActorLimit', state.status.warm_actor_limit],
+          ] as const).map(([label, value]) => (
+            <Item key={label} variant="outline">
+              <ItemContent>
+                <ItemDescription>{t(label)}</ItemDescription>
+                <ItemTitle>{value}</ItemTitle>
+              </ItemContent>
+            </Item>
+          ))}
+        </ItemGroup>
+      )}
+    </FieldSet>
   )
 }
 
@@ -617,14 +736,19 @@ function AgentDiagnosticRow({
   value?: string | null
 }) {
   return (
-    <div className="kubecode-agent-diagnostic-row">
-      <span data-status={status}>{status === 'ready' ? <Check  size={16}/> : <CircleAlert  size={16}/>}</span>
-      <div>
-        <strong>{label}</strong>
-        <small>{value || (status === 'ready' ? t('kubecode.ready') : t('kubecode.unavailable'))}</small>
-        {detail && <code>{detail}</code>}
-      </div>
-    </div>
+    <Item size="sm" variant="muted">
+      <ItemMedia variant="icon">{status === 'ready' ? <Check /> : <CircleAlert />}</ItemMedia>
+      <ItemContent className="min-w-0">
+        <ItemTitle>{label}</ItemTitle>
+        <ItemDescription>{value || (status === 'ready' ? t('kubecode.ready') : t('kubecode.unavailable'))}</ItemDescription>
+        {detail && <code className="break-all text-xs">{detail}</code>}
+      </ItemContent>
+      <ItemActions>
+        <StatusBadge tone={status === 'ready' ? 'ok' : 'danger'}>
+          {status === 'ready' ? t('kubecode.ready') : t('kubecode.unavailable')}
+        </StatusBadge>
+      </ItemActions>
+    </Item>
   )
 }
 

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import type { AgentDescriptor, KubecodeApi, Member } from '../api'
 import { DEFAULT_KUBECODE_AGENT_PREFERENCES } from '../agentPreferences'
+import { DEFAULT_KUBECODE_NOTIFICATIONS } from '../notificationPreferences'
 import { SettingsDialog, type SettingsDialogProps } from './SettingsDialog'
 
 const t = ((key: string) => key) as never
@@ -31,7 +32,7 @@ function dialog(overrides: Partial<SettingsDialogProps> = {}, api: Partial<Recor
     agentsRefreshing: false,
     appearance: {},
     editorPreferences: {},
-    notifications: {},
+    notifications: DEFAULT_KUBECODE_NOTIFICATIONS,
     notificationPermission: 'default',
     notificationTestStatus: null,
     open: true,
@@ -72,7 +73,44 @@ describe('Settings > Agent defaults', () => {
 
   it('is reachable from the settings navigation', async () => {
     dialog({ activeProjectId: 'p1', requestedSection: 'general' })
-    fireEvent.click(screen.getByRole('button', { name: 'kubecode.settings.memberDefaults' }))
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'kubecode.settings.memberDefaults' }))
     expect(await screen.findByLabelText('kubecode.members.defaults.generalInstructions')).toBeInTheDocument()
+  })
+})
+
+describe('Settings forms', () => {
+  it('lists sections as tabs and selects the requested one', () => {
+    dialog({ requestedSection: 'general' })
+    expect(screen.getByRole('tab', { name: 'kubecode.settings.general' })).toHaveAttribute('aria-selected', 'true')
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'kubecode.settings.notifications' }))
+    expect(screen.getByRole('tab', { name: 'kubecode.settings.notifications' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('heading', { name: 'kubecode.settings.notifications', level: 2 })).toBeInTheDocument()
+  })
+
+  it('labels and describes each setting through its field', () => {
+    dialog({
+      requestedSection: 'general',
+      appearance: { colorScheme: 'system', theme: 'system', uiFont: 'Inter', uiFontSize: 14, codeFont: '', terminalFont: '' },
+    } as never)
+    expect(screen.getByRole('combobox', { name: 'kubecode.colorScheme' })).toHaveAccessibleDescription('kubecode.colorSchemeDescription')
+    expect(screen.getByRole('textbox', { name: 'kubecode.uiFont' })).toHaveAccessibleDescription('kubecode.uiFontDescription')
+  })
+
+  it('collapses each agent diagnosis into a disclosure', () => {
+    dialog({
+      requestedSection: 'agents',
+      agents: [{ id: 'codex', available: true, version: '1.0' }] as unknown as AgentDescriptor[],
+    }, { runtimeStatus: vi.fn(() => new Promise(() => undefined)) })
+    const trigger = screen.getByRole('button', { name: /Codex/ })
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(trigger)
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByText('kubecode.authenticationCheckedOnSession')).toBeVisible()
+    expect(screen.getByTestId('runtime-status-panel')).toHaveTextContent('kubecode.runtimeStatusLoading')
+  })
+
+  it('shows the terminal section as an empty state', () => {
+    dialog({ requestedSection: 'terminal' })
+    expect(screen.getByText('kubecode.settingsComingSoon').closest('[data-slot="empty"]')).not.toBeNull()
   })
 })

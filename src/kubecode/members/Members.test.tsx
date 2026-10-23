@@ -216,7 +216,9 @@ describe('MemberRoster', () => {
 
   it('says so when the roster cannot be loaded', async () => {
     roster(api({ listMembers: vi.fn().mockRejectedValue(new Error('down')) }))
-    expect(await screen.findByRole('alert')).toHaveTextContent('kubecode.members.loadFailed')
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('kubecode.members.loadFailed')
+    expect(alert).toHaveAttribute('data-slot', 'alert')
   })
 })
 
@@ -338,6 +340,7 @@ describe('MemberDefaultsPanel and the locked manager (ADR 0226)', () => {
     fireEvent.change(await screen.findByLabelText('kubecode.members.defaults.configKey 1'), { target: { value: 'mode' } })
     expect(screen.getByRole('alert')).toHaveTextContent('kubecode.members.defaults.modeLocked:{"key":"mode"}')
     expect(screen.getByLabelText('kubecode.members.defaults.configKey 1')).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByLabelText('kubecode.members.defaults.configKey 1')).toHaveAccessibleDescription('kubecode.members.defaults.modeLocked:{"key":"mode"}')
     expect(screen.getByRole('button', { name: 'kubecode.members.save' })).toBeDisabled()
     // Discarding returns to what was saved.
     fireEvent.click(screen.getByRole('button', { name: 'kubecode.members.cancel' }))

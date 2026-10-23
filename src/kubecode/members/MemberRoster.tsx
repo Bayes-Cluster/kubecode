@@ -1,15 +1,17 @@
-import { Lock, MessageCircle, Plus, RotateCw, Trash2, UserRound } from 'lucide-react'
+import { CircleAlert, Info, Lock, MessageCircle, Plus, RotateCw, Trash2, UserRound } from 'lucide-react'
 import { useId, useState } from 'react'
 
 import { IconButton } from '@/components/workspace/IconButton'
 import { StatusBadge } from '@/components/workspace/StatusBadge'
 
 import { AiAgentIcon } from '@/components/AiAgentIcon'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
+import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import { Item, ItemActions, ItemContent } from '@/components/ui/item'
+import { Item, ItemActions, ItemContent, ItemDescription, ItemTitle } from '@/components/ui/item'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 import type { Translator } from '@/lib/i18n'
 
@@ -153,26 +155,33 @@ export function MemberRoster({
 
   if (!roster) {
     return (
-      <div>
-        <p className="kubecode-research-muted" role={status === 'error' ? 'alert' : 'status'}>
-          {status === 'error' ? t('kubecode.members.loadFailed') : t('kubecode.members.loading')}
+      status === 'error' ? (
+        <Alert variant="destructive">
+          <CircleAlert />
+          <AlertTitle>{t('kubecode.members.loadFailed')}</AlertTitle>
+          <AlertDescription>
+            <Button size="sm" variant="outline" onClick={reload}>{t('kubecode.members.retryLoad')}</Button>
+          </AlertDescription>
+        </Alert>
+      ) : (
+        <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
+          <Spinner aria-hidden="true" />
+          {t('kubecode.members.loading')}
         </p>
-        {status === 'error' && (
-          <Button size="xs" variant="outline" onClick={reload}>{t('kubecode.members.retryLoad')}</Button>
-        )}
-      </div>
+      )
     )
   }
 
   const draftForm = draft && (
         <form
           aria-label={draft.id === null ? t('kubecode.members.add') : t('kubecode.members.edit')}
-          className="kubecode-member-form"
+          className="w-full rounded-md border p-4"
           onSubmit={(event) => {
             event.preventDefault()
             if (!busy) save()
           }}
         >
+          <FieldGroup className="gap-4">
           <Field>
             <FieldLabel htmlFor={`${fieldId}-name`}>{t('kubecode.members.name')}</FieldLabel>
             <Input
@@ -184,10 +193,10 @@ export function MemberRoster({
             />
           </Field>
           {draft.id !== null && roster.members.find((m) => m.id === draft.id)?.role === 'general' && (
-            <p className="kubecode-member-locked" role="note">
-              <Lock aria-hidden size={12} />
-              <span>{t('kubecode.members.managerLocked')}</span>
-            </p>
+            <Alert role="note">
+              <Lock />
+              <AlertDescription>{t('kubecode.members.managerLocked')}</AlertDescription>
+            </Alert>
           )}
           {(draft.id === null || roster.members.find((m) => m.id === draft.id)?.role === 'specialist') && (
             <Field>
@@ -207,7 +216,7 @@ export function MemberRoster({
                   })
                 }}
               >
-                <SelectTrigger className="kubecode-member-select" id={`${fieldId}-role`}>
+                <SelectTrigger className="w-full sm:w-56" id={`${fieldId}-role`}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -244,21 +253,23 @@ export function MemberRoster({
               onChange={(event) => setDraft({ ...draft, instructions: event.target.value })}
             />
           </Field>
-          <div className="kubecode-work-command-row">
+          <Field orientation="horizontal">
             <Button disabled={busy || draft.name.trim() === ''} size="sm" type="submit">
+              {busy && <Spinner aria-hidden="true" data-icon="inline-start" />}
               {t('kubecode.members.save')}
             </Button>
             <Button size="sm" type="button" variant="ghost" onClick={() => setDraft(null)}>
               {t('kubecode.members.cancel')}
             </Button>
-          </div>
+          </Field>
+          </FieldGroup>
         </form>
   )
 
   const replacingForm = replacing && (
         <form
           aria-label={t('kubecode.members.replaceSession')}
-          className="kubecode-member-form"
+          className="w-full rounded-md border p-4"
           onSubmit={(event) => {
             event.preventDefault()
             if (busy) return
@@ -270,7 +281,8 @@ export function MemberRoster({
             ))
           }}
         >
-          <p className="kubecode-research-muted">{t('kubecode.members.replaceHelp')}</p>
+          <FieldGroup className="gap-4">
+          <FieldDescription>{t('kubecode.members.replaceHelp')}</FieldDescription>
           <Field>
             <FieldLabel htmlFor={`${fieldId}-replace-provider`}>{t('kubecode.members.provider')}</FieldLabel>
             <ProviderSelect
@@ -281,52 +293,63 @@ export function MemberRoster({
               onChange={(agentId) => setReplacing({ ...replacing, agentId })}
             />
           </Field>
-          <div className="kubecode-work-command-row">
+          <Field orientation="horizontal">
             <Button disabled={busy} size="sm" type="submit">{t('kubecode.members.replaceConfirm')}</Button>
             <Button size="sm" type="button" variant="ghost" onClick={() => setReplacing(null)}>
               {t('kubecode.members.cancel')}
             </Button>
-          </div>
+          </Field>
+          </FieldGroup>
         </form>
   )
 
   return (
-    <section aria-label={t('kubecode.members.title')} className="kubecode-members">
-      <header className="kubecode-members-header">
-        <div>
-          <h3>{t('kubecode.members.current.title')}</h3>
-          <p className="kubecode-research-muted">{t('kubecode.members.current.description')}</p>
-        </div>
-        <Button disabled={busy} size="sm" variant="outline" onClick={startAdd}>
-          <Plus aria-hidden size={14} />
-          {t('kubecode.members.add')}
-        </Button>
-      </header>
-      {error && <p className="kubecode-research-error" role="alert">{error}</p>}
+    <section aria-label={t('kubecode.members.title')} className="flex flex-col gap-4">
+      <Item size="sm">
+        <ItemContent>
+          <ItemTitle><h3>{t('kubecode.members.current.title')}</h3></ItemTitle>
+          <ItemDescription>{t('kubecode.members.current.description')}</ItemDescription>
+        </ItemContent>
+        <ItemActions>
+          <Button disabled={busy} size="sm" variant="outline" onClick={startAdd}>
+            <Plus data-icon="inline-start" />
+            {t('kubecode.members.add')}
+          </Button>
+        </ItemActions>
+      </Item>
+      {error && (
+        <Alert variant="destructive">
+          <CircleAlert />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
       {refreshFailed && (
-        <p className="kubecode-research-muted" role="status">{t('kubecode.members.refreshFailed')}</p>
+        <Alert role="status">
+          <Info />
+          <AlertDescription>{t('kubecode.members.refreshFailed')}</AlertDescription>
+        </Alert>
       )}
       {draft?.id === null && draftForm}
-      <ul className="kubecode-member-list">
+      <ul className="flex flex-col gap-2">
         {roster.members.map((member) => {
           const activity = memberActivity(member, sessions)
           const manager = member.role === 'general'
           return (
-          <Item asChild key={member.id} size="sm">
+          <Item asChild key={member.id} size="sm" variant="outline">
           <li
-            className="kubecode-member-row"
+            className="flex-wrap items-start"
             data-focus-key={`member:${member.id}`}
             data-role={member.role}
             data-scroll-anchor={`member:${member.id}`}
             data-state={member.state}
           >
-            <ItemContent className="kubecode-member-main">
+            <ItemContent className="min-w-60">
               <Identity
                 activity={activity ? (
                   <StatusBadge tone={activity === 'running' ? 'info' : 'warn'}>{t(ACTIVITY_LABELS[activity])}</StatusBadge>
                 ) : undefined}
                 meta={(
-                  <span className="kubecode-member-provider">
+                  <span className="inline-flex items-center gap-1">
                     <AiAgentIcon agent={member.spec.agent_id} size={14} />
                     {agentName(member.spec.agent_id)}
                   </span>
@@ -335,24 +358,24 @@ export function MemberRoster({
                 onOpen={onOpenMember ? () => onOpenMember(member) : undefined}
               />
               {manager && (
-                <p className="kubecode-member-locked">
-                  <Lock aria-hidden size={12} />
+                <ItemDescription className="flex items-start gap-1.5">
+                  <Lock aria-hidden className="mt-0.5 shrink-0" size={12} />
                   <span>{t('kubecode.members.managerNote')}</span>
-                </p>
+                </ItemDescription>
               )}
               {member.setup_code === 'provider_unavailable' && (
-                <small className="kubecode-research-error">
+                <small className="text-destructive">
                   {t('kubecode.members.setup.providerUnavailable', { provider: agentName(member.spec.agent_id) })}
                 </small>
               )}
               {member.setup_code === 'config_rejected' && (
-                <small className="kubecode-research-error">
+                <small className="text-destructive">
                   {t('kubecode.members.setup.configRejected')}
                   {member.setup_error ? ` (${member.setup_error})` : ''}
                 </small>
               )}
             </ItemContent>
-            <ItemActions className="kubecode-member-actions">
+            <ItemActions className="flex-wrap">
             {member.state === 'setup_required' && (
               <Button
                 aria-label={`${t('kubecode.members.retrySetup')}: ${member.name}`}
@@ -362,7 +385,7 @@ export function MemberRoster({
                 variant="outline"
                 onClick={() => void run(() => api.retryMemberSetup(projectId, member.id))}
               >
-                <RotateCw aria-hidden size={14} />
+                <RotateCw data-icon="inline-start" />
                 {t('kubecode.members.retrySetup')}
               </Button>
             )}

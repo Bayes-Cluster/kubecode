@@ -402,7 +402,7 @@ test('@smoke project, reconnect recovery, editor, terminal, and project removal'
   await expect(page.locator('.kubecode-terminal-pane')).toHaveAttribute('data-open', 'false')
 
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
-  await page.getByRole('button', { name: 'Agents' }).click()
+  await page.getByRole('tab', { name: 'Agents' }).click()
   const runtimePanel = page.getByTestId('runtime-status-panel')
   await expect(runtimePanel).toContainText('Active')
   await expect(runtimePanel).toContainText('Idle')
