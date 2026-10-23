@@ -253,6 +253,10 @@ describe('TaskResults', () => {
     expect(negative).toHaveAccessibleDescription(/.+/)
     fireEvent.click(negative)
     expect(negative).toBeChecked()
+    // Arrow keys choose the next outcome, as native radios did.
+    negative.focus()
+    fireEvent.keyDown(negative, { key: 'ArrowDown' })
+    await waitFor(() => expect(within(group).getByRole('radio', { name: 'Inconclusive' })).toBeChecked())
     expect(screen.getByLabelText('Feedback for the team').closest('[data-slot="field"]')).not.toBeNull()
   })
 
