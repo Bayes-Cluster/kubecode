@@ -55,9 +55,11 @@ function parseInput(raw: string): unknown {
 /**
  * One tool call on the official AI Elements Tool (ADR 0245): the header
  * names the call and its state in words, Input shows the parameters, and
- * Output shows what came back in a Code Block — shell output included, as
- * the Terminal element is not published. A failed call keeps its output in
- * the same Code Block under an Error heading (Stack Trace is not published).
+ * Output shows what came back in a Code Block, shell output included, and a
+ * failed call keeps its output in the same Code Block under an Error heading.
+ * The registry now publishes Terminal and Stack Trace; adopting them is
+ * recorded as a follow-up in ADR 0253 (Terminal needs a new ANSI dependency,
+ * and ACP tool output carries no parsed stack frames to give Stack Trace).
  * A call without details that names a file opens it instead of expanding.
  */
 export function AiActionCard({

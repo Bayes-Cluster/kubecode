@@ -15,7 +15,7 @@ import type { SubagentEntry } from './conversationReducer'
 
 /**
  * Inline subagent in the parent transcript (#108) on the official Task
- * element (ADR 0245; the Subagent element is not published), driven purely
+ * element (ADR 0245; a registry search on 2026-10-23 found no Subagent element, ADR 0253), driven purely
  * by the agent-agnostic envelope: open while `running`, collapsed once
  * `completed` unless the reader toggled it.
  */
@@ -46,20 +46,20 @@ export function SubagentBubble({
     >
       <TaskTrigger title={title}>
         <button
-          className="kubecode-session-subagent-trigger"
+          className="flex w-full cursor-pointer items-center gap-2 text-left text-sm text-muted-foreground transition-colors hover:text-foreground"
           data-testid="subagent-bubble-toggle"
           type="button"
         >
-          <Bot aria-hidden size={14} />
+          <Bot aria-hidden className="size-4 shrink-0" />
           <span className="min-w-0 flex-1 truncate">
             {running ? <Shimmer as="span" duration={1.5}>{title}</Shimmer> : title}
           </span>
           <Badge data-testid="subagent-bubble-status" variant="secondary">{statusLabel}</Badge>
-          <ChevronDown aria-hidden className="kubecode-session-subagent-caret" size={14} />
+          <ChevronDown aria-hidden className="size-4 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
         </button>
       </TaskTrigger>
       <TaskContent role="group" aria-label={t('kubecode.session.subagentEvents')}>
-        {entry.prompt && <TaskItem className="kubecode-session-subagent-prompt">{entry.prompt}</TaskItem>}
+        {entry.prompt && <TaskItem className="italic">{entry.prompt}</TaskItem>}
         {entry.events.map((subEvent, index) => (
           <TaskItem data-testid="subagent-bubble-event" key={`${subEvent.seq}-${index}`}>
             {textOf(subEvent)}

@@ -67,7 +67,9 @@ describe('TeamProposalView', () => {
       />,
     )
 
-    expect(screen.getByTestId('team-lineup-proposal')).toHaveTextContent('Reviewer')
+    const proposal = screen.getByTestId('team-lineup-proposal')
+    expect(proposal).toHaveAttribute('data-slot', 'card')
+    expect(screen.getByText('Reviewer')).toHaveAttribute('data-slot', 'badge')
     fireEvent.click(screen.getByRole('button', { name: 'kubecode.teamProposalApprove' }))
     await waitFor(() => expect(resolveTeamProposal).toHaveBeenCalledWith(
       'team-1',

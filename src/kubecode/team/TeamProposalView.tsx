@@ -1,4 +1,13 @@
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
 
 import type { TeamProposal } from '../api'
 import type { Translator } from '@/lib/i18n'
@@ -9,18 +18,23 @@ export function TeamProposalView({ busyAction, onResolve, proposal, t }: {
   proposal: TeamProposal
   t: Translator
 }) {
+  const names = proposalMemberNames(proposal.members_json)
   return (
-    <section className="kubecode-team-proposal" data-testid="team-lineup-proposal">
-      <div>
-        <strong>{t('kubecode.teamProposalTitle')}</strong>
-        <span>{proposal.summary}</span>
-        <ProposalMembers membersJson={proposal.members_json} />
-      </div>
-      <footer>
+    <Card className="kubecode-team-proposal" data-testid="team-lineup-proposal">
+      <CardHeader>
+        <CardTitle>{t('kubecode.teamProposalTitle')}</CardTitle>
+        <CardDescription>{proposal.summary}</CardDescription>
+      </CardHeader>
+      {names.length > 0 && (
+        <CardContent className="flex flex-wrap gap-1.5">
+          {names.map((name) => <Badge key={name} variant="outline">{name}</Badge>)}
+        </CardContent>
+      )}
+      <CardFooter className="flex-wrap justify-end gap-2">
         <Button
           disabled={busyAction !== null}
           size="sm"
-          variant="ghost"
+          variant="outline"
           onClick={() => onResolve('rejected')}
         >
           {t('kubecode.teamProposalReject')}
@@ -32,31 +46,27 @@ export function TeamProposalView({ busyAction, onResolve, proposal, t }: {
         >
           {t('kubecode.teamProposalApprove')}
         </Button>
-      </footer>
-    </section>
+      </CardFooter>
+    </Card>
   )
 }
 
-function ProposalMembers({ membersJson }: { membersJson: string }) {
-  let names: string[] = []
+function proposalMemberNames(membersJson: string): string[] {
   try {
     const parsed = JSON.parse(membersJson) as unknown
-    if (Array.isArray(parsed)) {
-      names = parsed.flatMap((value) => {
-        if (typeof value === 'string') return [value]
-        if (!value || typeof value !== 'object') return []
-        const member = value as Record<string, unknown>
-        const name = typeof member.name === 'string'
-          ? member.name
-          : typeof member.role === 'string'
-            ? member.role
-            : null
-        return name ? [name] : []
-      })
-    }
+    if (!Array.isArray(parsed)) return []
+    return parsed.flatMap((value) => {
+      if (typeof value === 'string') return [value]
+      if (!value || typeof value !== 'object') return []
+      const member = value as Record<string, unknown>
+      const name = typeof member.name === 'string'
+        ? member.name
+        : typeof member.role === 'string'
+          ? member.role
+          : null
+      return name ? [name] : []
+    })
   } catch {
-    names = []
+    return []
   }
-  if (names.length === 0) return null
-  return <div className="kubecode-team-proposal-members">{names.map((name) => <span key={name}>{name}</span>)}</div>
 }

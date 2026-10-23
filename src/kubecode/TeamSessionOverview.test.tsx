@@ -44,11 +44,14 @@ describe('TeamSessionOverview', () => {
     expect(screen.queryByText('1/2')).not.toBeInTheDocument()
     expect(screen.queryByText('Implement parser')).not.toBeInTheDocument()
     expect(screen.queryByText('Review parser')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Reviewer' }))
+    const reviewer = screen.getByRole('button', { name: /^Reviewer/ })
+    expect(reviewer).toHaveAttribute('data-slot', 'item')
+    expect(screen.getByRole('button', { name: /^Lead/ })).toHaveAttribute('aria-current', 'true')
+    fireEvent.click(reviewer)
     expect(onSelectMember).toHaveBeenCalledWith('reviewer')
   })
 
-  it('labels each member status icon next to the status dot', () => {
+  it('labels each member status with an official status badge', () => {
     render(
       <TooltipProvider>
         <TeamSessionOverview
@@ -60,10 +63,7 @@ describe('TeamSessionOverview', () => {
       </TooltipProvider>,
     )
 
-    expect(screen.getByRole('img', { name: 'Working' })).toBeInTheDocument()
-    expect(screen.getByRole('img', { name: 'Idle' })).toBeInTheDocument()
-    expect(
-      document.querySelector('.kubecode-team-member-status[data-status="working"]'),
-    ).not.toBeNull()
+    expect(screen.getByText('Idle').closest('[data-slot="badge"]')).toHaveAttribute('data-tone', 'muted')
+    expect(screen.getByText('Working').closest('[data-slot="badge"]')).toHaveAttribute('data-tone', 'info')
   })
 })

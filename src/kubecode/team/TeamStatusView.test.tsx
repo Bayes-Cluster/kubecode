@@ -117,10 +117,14 @@ describe('TeamStatusView', () => {
       />,
     )
 
-    expect(screen.getByText('kubecode.teamStandard')).toHaveClass('kubecode-team-mode-badge')
+    expect(screen.getByText('kubecode.teamStandard')).toHaveAttribute('data-slot', 'badge')
     expect(screen.getByText('kubecode.teamStandard')).toHaveAttribute('data-mode', 'standard')
     expect(screen.queryByText(/kubecode\.teamConcurrency/)).not.toBeInTheDocument()
-    expect(screen.getByText('1', { selector: '[data-metric="running"] strong' })).toBeInTheDocument()
+    const running = document.querySelector('[data-metric="running"]')
+    expect(running).toHaveAttribute('data-slot', 'item')
+    expect(running).toHaveTextContent('1')
+    const attention = screen.getByRole('region', { name: 'kubecode.teamNeedsAttention' })
+    expect(attention.querySelector('[data-slot="item"]')).not.toBeNull()
   })
 
   it('lets the user answer a durable Leader question inline', async () => {

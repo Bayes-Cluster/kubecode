@@ -1,11 +1,5 @@
 import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import {
-  ArrowDown,
-  Link,
-  Plus,
-  Sparkle,
-  X,
-} from 'lucide-react'
+import { ArrowDown, Sparkle } from 'lucide-react'
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import {
   PromptInputBody,
@@ -15,17 +9,19 @@ import {
 import { InputGroup } from '@/components/ui/input-group'
 import { AiMessage } from './AiMessage'
 import { Button } from '@/components/ui/button'
-import { ActionTooltip } from '@/components/ui/action-tooltip'
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from '@/components/ui/empty'
+import { FieldDescription, FieldError } from '@/components/ui/field'
 import { StopButton } from '@/components/workspace/SendButton'
 import { ICON_SIZES } from '@/kubecode/icons'
 import { WORKSPACE_COMMAND_ICONS } from '@/kubecode/icons/workspaceIcons'
-import { TooltipProvider } from '@/components/ui/tooltip'
 import { WikilinkChatInput } from './WikilinkChatInput'
 import { extractInlineWikilinkReferences } from './inlineWikilinkText'
-import {
-  aiAgentPermissionModeLabels,
-  type AiAgentPermissionMode,
-} from '../lib/aiAgentPermissionMode'
 import { createTranslator, type AppLocale, type Translator } from '../lib/i18n'
 import type { AiAgentMessage } from '../lib/aiAgentConversation'
 import type { AiAgentReadiness } from '../lib/aiAgents'
@@ -33,26 +29,6 @@ import type { NoteReference } from '../utils/ai-context'
 import type { VaultEntry } from '../types'
 import { scrollBehavior } from '@/lib/reducedMotion'
 import { cn } from '@/lib/utils'
-
-interface AiPanelHeaderProps {
-  agentLabel: string
-  agentReadiness: AiAgentReadiness
-  agentIcon?: ReactNode
-  targetKind?: 'agent' | 'api_model'
-  locale?: AppLocale
-  permissionMode: AiAgentPermissionMode
-  permissionModeControlLabels?: Partial<Record<AiAgentPermissionMode, string>>
-  permissionModeDisabled: boolean
-  onPermissionModeChange: (mode: AiAgentPermissionMode) => void
-  onClose: () => void
-  onNewChat: () => void
-}
-
-interface AiPanelContextBarProps {
-  activeEntry: VaultEntry
-  locale?: AppLocale
-  linkedCount: number
-}
 
 interface AiPanelMessageHistoryProps {
   agentLabel: string
@@ -225,33 +201,6 @@ function ComposerStopButton({
   )
 }
 
-function permissionModeTooltip(
-  mode: AiAgentPermissionMode,
-  t: Translator,
-): { label: string } {
-  return {
-    label: t(mode === 'power_user'
-      ? 'ai.permission.powerUser.tooltip'
-      : 'ai.permission.safe.tooltip'),
-  }
-}
-
-function headerStatusText({
-  agentLabel,
-  agentReadiness,
-  modeLabel,
-  t,
-}: {
-  agentLabel: string
-  agentReadiness: AiAgentReadiness
-  modeLabel: string
-  t: Translator
-}): string {
-  if (agentReadiness === 'checking') return t('ai.panel.status.checking')
-  if (agentReadiness === 'missing') return t('ai.panel.status.missing', { agent: agentLabel })
-  return t('ai.panel.status.ready', { agent: agentLabel, mode: modeLabel })
-}
-
 function AiPanelEmptyState({
   agentLabel,
   agentReadiness,
@@ -259,213 +208,27 @@ function AiPanelEmptyState({
   locale = 'en',
 }: Pick<AiPanelMessageHistoryProps, 'agentLabel' | 'agentReadiness' | 'hasContext' | 'locale'>) {
   const t = createTranslator(locale)
-
-  if (agentReadiness === 'checking') {
-    return (
-      <div
-        className="flex flex-col items-center justify-center text-center text-muted-foreground"
-        style={{ paddingTop: 40 }}
-      >
-        <Sparkle size={24} style={{ marginBottom: 8, opacity: 0.5 }} />
-        <p style={{ fontSize: 13, margin: '0 0 4px' }}>
-          {t('ai.panel.empty.checkingTitle')}
-        </p>
-        <p style={{ fontSize: 11, margin: 0, opacity: 0.6 }}>
-          {t('ai.panel.empty.checkingDescription')}
-        </p>
-      </div>
-    )
-  }
-
-  if (agentReadiness === 'missing') {
-    return (
-      <div
-        className="flex flex-col items-center justify-center text-center text-muted-foreground"
-        style={{ paddingTop: 40 }}
-      >
-        <Sparkle size={24} style={{ marginBottom: 8, opacity: 0.5 }} />
-        <p style={{ fontSize: 13, margin: '0 0 4px' }}>
-          {t('ai.panel.empty.missingTitle', { agent: agentLabel })}
-        </p>
-        <p style={{ fontSize: 11, margin: 0, opacity: 0.6 }}>
-          {t('ai.panel.empty.missingDescription')}
-        </p>
-      </div>
-    )
-  }
+  const [title, description] = agentReadiness === 'checking'
+    ? [t('ai.panel.empty.checkingTitle'), t('ai.panel.empty.checkingDescription')]
+    : agentReadiness === 'missing'
+      ? [t('ai.panel.empty.missingTitle', { agent: agentLabel }), t('ai.panel.empty.missingDescription')]
+      : hasContext
+        ? [t('ai.panel.empty.withContextTitle', { agent: agentLabel }), t('ai.panel.empty.withContextDescription')]
+        : [t('ai.panel.empty.noContextTitle', { agent: agentLabel }), t('ai.panel.empty.noContextDescription')]
 
   return (
-    <div
-      className="flex flex-col items-center justify-center text-center text-muted-foreground"
-      style={{ paddingTop: 40 }}
-    >
-      <Sparkle size={24} style={{ marginBottom: 8, opacity: 0.5 }} />
-      <p style={{ fontSize: 13, margin: '0 0 4px' }}>
-        {hasContext
-          ? t('ai.panel.empty.withContextTitle', { agent: agentLabel })
-          : t('ai.panel.empty.noContextTitle', { agent: agentLabel })
-        }
-      </p>
-      <p style={{ fontSize: 11, margin: 0, opacity: 0.6 }}>
-        {hasContext
-          ? t('ai.panel.empty.withContextDescription')
-          : t('ai.panel.empty.noContextDescription')
-        }
-      </p>
-    </div>
+    <Empty>
+      <EmptyHeader>
+        <EmptyMedia variant="icon"><Sparkle /></EmptyMedia>
+        <EmptyTitle>{title}</EmptyTitle>
+        <EmptyDescription>{description}</EmptyDescription>
+      </EmptyHeader>
+    </Empty>
   )
 }
 
-export const AiPanelHeader = memo(function AiPanelHeader({
-  agentIcon,
-  agentLabel,
-  agentReadiness,
-  targetKind = 'agent',
-  locale = 'en',
-  permissionMode,
-  permissionModeControlLabels,
-  permissionModeDisabled,
-  onPermissionModeChange,
-  onClose,
-  onNewChat,
-}: AiPanelHeaderProps) {
-  const t = createTranslator(locale)
-  const modeLabel = targetKind === 'api_model'
-    ? t('ai.panel.mode.chat')
-    : aiAgentPermissionModeLabels(permissionMode, locale).short
-
-  return (
-    <div
-      className="flex shrink-0 flex-col border-b border-border"
-      style={{ padding: '8px 12px', gap: 8 }}
-    >
-      <div className="flex items-center" style={{ gap: 8 }}>
-        {agentIcon ?? <Sparkle size={16} className="shrink-0 text-muted-foreground" />}
-        <div className="flex flex-1 flex-col overflow-hidden">
-          <span className="text-muted-foreground" style={{ fontSize: 13, fontWeight: 600 }}>
-            {t('ai.panel.title')}
-          </span>
-          <span className="truncate text-[11px] text-muted-foreground">
-            {headerStatusText({ agentLabel, agentReadiness, modeLabel, t })}
-          </span>
-        </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-xs"
-          className="h-6 w-6 p-0 [&_svg:not([class*=size-])]:size-4"
-          onClick={onNewChat}
-          aria-label={t('ai.panel.newChat')}
-          title={t('ai.panel.newChat')}
-        >
-          <Plus size={16} />
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-xs"
-          className="h-6 w-6 p-0 [&_svg:not([class*=size-])]:size-4"
-          onClick={onClose}
-          aria-label={t('ai.panel.close')}
-          title={t('ai.panel.close')}
-        >
-          <X size={16} />
-        </Button>
-      </div>
-      {targetKind === 'agent' ? (
-        <AiPermissionModeToggle
-          value={permissionMode}
-          locale={locale}
-          controlLabels={permissionModeControlLabels}
-          disabled={permissionModeDisabled}
-          onChange={onPermissionModeChange}
-        />
-      ) : (
-        <div className="rounded-md border border-border bg-muted px-3 py-2 text-[11px] leading-5 text-muted-foreground">
-          {t('ai.panel.mode.chatDescription')}
-        </div>
-      )}
-    </div>
-  )
-})
-
-function AiPermissionModeToggle({
-  value,
-  locale = 'en',
-  controlLabels,
-  disabled,
-  onChange,
-}: {
-  value: AiAgentPermissionMode
-  locale?: AppLocale
-  controlLabels?: Partial<Record<AiAgentPermissionMode, string>>
-  disabled: boolean
-  onChange: (mode: AiAgentPermissionMode) => void
-}) {
-  const t = createTranslator(locale)
-
-  return (
-    <TooltipProvider>
-      <div
-        className="inline-flex w-full rounded-md border border-border bg-muted p-1"
-        role="radiogroup"
-        aria-label={t('ai.permission.modeAria')}
-        data-testid="ai-permission-mode-toggle"
-      >
-        {(['safe', 'power_user'] as const).map((mode) => {
-          const selected = value === mode
-          return (
-            <ActionTooltip
-              key={mode}
-              copy={permissionModeTooltip(mode, t)}
-              side="bottom"
-              contentTestId="ai-permission-mode-tooltip"
-            >
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                role="radio"
-                aria-checked={selected}
-                disabled={disabled}
-                className={
-                  selected
-                    ? 'h-7 flex-1 border border-border bg-background text-foreground shadow-xs hover:bg-background'
-                    : 'h-7 flex-1 text-muted-foreground hover:text-foreground'
-                }
-                onClick={() => onChange(mode)}
-              >
-                {controlLabels?.[mode] ?? aiAgentPermissionModeLabels(mode, locale).control}
-              </Button>
-            </ActionTooltip>
-          )
-        })}
-      </div>
-    </TooltipProvider>
-  )
-}
-
-export const AiPanelContextBar = memo(function AiPanelContextBar({
-  activeEntry,
-  linkedCount,
-  locale = 'en',
-}: AiPanelContextBarProps) {
-  const t = createTranslator(locale)
-
-  return (
-    <div
-      className="flex shrink-0 items-center border-b border-border text-muted-foreground"
-      style={{ padding: '6px 12px', gap: 6, fontSize: 11 }}
-      data-testid="context-bar"
-    >
-      <Link size={12} className="shrink-0" />
-      <span className="truncate" style={{ fontWeight: 500 }}>{activeEntry.title}</span>
-      {linkedCount > 0 && (
-        <span style={{ opacity: 0.6 }}>{t('ai.panel.linkedCount', { count: linkedCount })}</span>
-      )}
-    </div>
-  )
-})
+/** The reading column: centred, the chat width, with breathing room above and below. */
+const HISTORY_LAYOUT = 'mx-auto w-full max-w-(--chat-content-max) px-2.5 pt-5 pb-3'
 
 export const AiPanelMessageHistory = memo(function AiPanelMessageHistory({
   agentLabel,
@@ -551,7 +314,7 @@ export const AiPanelMessageHistory = memo(function AiPanelMessageHistory({
       <>
       <Virtuoso
         ref={virtuosoRef}
-        className="kubecode-virtual-message-history"
+        className={cn(HISTORY_LAYOUT, 'kubecode-virtual-message-history')}
         components={{
           Header: () => <>{leadingContent}</>,
         }}
@@ -590,9 +353,9 @@ export const AiPanelMessageHistory = memo(function AiPanelMessageHistory({
     <>
     <div
       ref={containerRef}
-      className="kubecode-message-history min-h-0 flex-1 overflow-y-auto overscroll-contain"
+      className={cn(HISTORY_LAYOUT, 'kubecode-message-history min-h-0 flex-1 overflow-y-auto overscroll-contain')}
       data-testid="ai-message-history"
-      style={{ overflowAnchor: 'none', padding: 12 }}
+      style={{ overflowAnchor: 'none' }}
       onScroll={updateScrollState}
     >
       {leadingContent}
@@ -703,26 +466,19 @@ export function AiPanelComposer({
       )
 
   return (
-    <div
-      className="flex shrink-0 flex-col"
-      style={{ padding: '6px 10px' }}
-    >
+    <div className="flex shrink-0 flex-col gap-1">
       {disabled && disabledPlaceholder && (
-        <span className="px-2 pb-1 text-xs text-muted-foreground">
-          {disabledPlaceholder}
-        </span>
+        <FieldDescription className="px-2">{disabledPlaceholder}</FieldDescription>
       )}
       {statusMessage && (
-        <span className="px-2 pb-1 text-xs text-destructive" role="status">
-          {statusMessage}
-        </span>
+        <FieldError className="px-2" role="status">{statusMessage}</FieldError>
       )}
       <InputGroup
         className={cn(
           'kubecode-session-prompt-input h-auto',
           hasControls
-            ? 'min-h-[50px] max-h-[202px] items-end gap-1 overflow-visible rounded-[20px] border border-border bg-background px-2.5 py-2 shadow-xs'
-            : 'items-end gap-2 border-0 shadow-none',
+            ? 'max-h-[202px] min-h-[50px] items-end gap-1 overflow-visible px-2 py-1.5'
+            : 'items-end gap-2',
         )}
         data-layout={hasControls ? 'single-row' : undefined}
         data-testid="agent-composer-surface"

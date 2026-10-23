@@ -904,6 +904,23 @@ Queue, Context for usage, and Prompt Input parts on an InputGroup composer.
 Its history stays virtualised, with a jump-to-latest button wired to
 `autoFollowRef`. The view loads lazily from `AgentSessionWorkspace.tsx`.
 
+UI G (ADR 0253) moved the rest of the Session and Team execution views onto
+official components without changing their data adapters or the ACP
+capabilities they expose. The Agent control is a `DropdownMenu` (a radio
+sub menu per native select, a checkbox item per native boolean, a disabled
+item with its reason when the mode is locked), so Claude Code, Codex and
+OpenCode still show only the controls their session advertises. Slash command
+suggestions are a `Command` list driven by the composer's own selection, side
+questions a `Collapsible` of Items, workspace and application notices an
+`Alert` (`SystemMessageNotice`), the leader-review wait and read-only states
+Alerts, the revision switcher a `ButtonGroup`, a recreated context a
+`Checkpoint`, the Chat/Team switch `Tabs`, and the run status a `StatusBadge`.
+The empty Session is an `Empty` with an Item per Agent. Team views use Field,
+`RadioGroup` choice cards, `ToggleGroup`, Card, Item and `AlertDialog`; the
+work board's filters are Select, Checkbox and a single `ToggleGroup` of
+attention conditions, and the inspector's forms are Field, Select and Input.
+None of these surfaces restyle official internals in `kubecode.css`.
+
 After the slices, ADR 0246 removed the hand-rolled composer and recipient row,
 the official files nothing rendered (with the `sonner`, `next-themes` and
 `@shadcn/react` dependencies), dead `kubecode-*` CSS and unused locale keys.

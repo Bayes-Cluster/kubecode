@@ -15,6 +15,7 @@ import {
   X
 } from 'lucide-react'
 
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import {
@@ -99,46 +100,52 @@ export function SystemMessageNotice({
 }: SystemMessageNoticeProps) {
   const [expanded, setExpanded] = useState(false)
   const Icon = LEVEL_ICONS[level]
-  const role = level === 'warning' || level === 'error' ? 'alert' : 'status'
+  const urgent = level === 'warning' || level === 'error'
 
   return (
-    <div
+    <Alert
+      aria-live={urgent ? 'assertive' : 'polite'}
       className={cn('kubecode-system-message', className)}
       data-expanded={expanded}
       data-level={level}
-      role={role}
+      role={urgent ? 'alert' : 'status'}
       title={message}
+      variant={level === 'error' ? 'destructive' : 'default'}
     >
-      <Icon className="kubecode-system-message-icon" fill="currentColor" />
-      <div
-        className="kubecode-system-message-content"
-        title={message}
-      >
-        {source && <strong>{source}</strong>}
-        <span>{message}</span>
-      </div>
-      <Button
-        aria-expanded={expanded}
-        aria-label={detailsLabel}
-        className="kubecode-system-message-expand"
-        size="icon-xs"
-        title={detailsLabel}
-        variant="ghost"
-        onClick={() => setExpanded((current) => !current)}
-      >
-        <ChevronDown  size={16}/>
-      </Button>
-      {onDismiss && (
-        <Button
-          aria-label={dismissLabel}
-          className="kubecode-system-message-dismiss"
-          size="icon-xs"
-          variant="ghost"
-          onClick={onDismiss}
+      <Icon />
+      {source && <AlertTitle>{source}</AlertTitle>}
+      <AlertDescription className="flex min-w-0 items-start gap-1">
+        <span
+          className={cn(
+            'min-w-0 flex-1 select-text',
+            expanded ? 'max-h-[min(180px,30vh)] overflow-auto whitespace-pre-wrap break-words' : 'truncate',
+          )}
         >
-          <X  size={16}/>
-        </Button>
-      )}
-    </div>
+          {message}
+        </span>
+        <span className="flex shrink-0 items-center">
+          <Button
+            aria-expanded={expanded}
+            aria-label={detailsLabel}
+            size="icon-xs"
+            title={detailsLabel}
+            variant="ghost"
+            onClick={() => setExpanded((current) => !current)}
+          >
+            <ChevronDown className={expanded ? 'rotate-180' : undefined} />
+          </Button>
+          {onDismiss && (
+            <Button
+              aria-label={dismissLabel}
+              size="icon-xs"
+              variant="ghost"
+              onClick={onDismiss}
+            >
+              <X />
+            </Button>
+          )}
+        </span>
+      </AlertDescription>
+    </Alert>
   )
 }

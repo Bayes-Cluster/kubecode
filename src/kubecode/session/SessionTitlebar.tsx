@@ -1,6 +1,7 @@
-import { Ellipsis } from 'lucide-react'
+import { Ellipsis, TriangleAlert } from 'lucide-react'
 
 import { AiAgentIcon } from '@/components/AiAgentIcon'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -9,8 +10,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { Spinner } from '@/components/ui/spinner'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { StatusBadge } from '@/components/workspace/StatusBadge'
 import type { Translator } from '@/lib/i18n'
 import { trackEvent } from '@/lib/telemetry'
+import { cn } from '@/lib/utils'
 
 import type { Conversation, TeamSnapshot } from '../api'
 import { UsageMeter } from './UsageMeter'
@@ -62,46 +67,48 @@ export function SessionTitlebar({
       </div>
       <UsageMeter locale={locale} t={t} usage={usage} />
       {team && (
-        <div className="kubecode-team-view-switch" role="tablist">
-          <Button
-            aria-selected={teamView === 'chat'}
-            role="tab"
-            size="xs"
-            variant={teamView === 'chat' ? 'secondary' : 'ghost'}
-            onClick={() => onTeamViewChange('chat')}
-          >
-            {t('kubecode.chat')}
-          </Button>
-          <Button
-            aria-selected={teamView === 'team'}
-            role="tab"
-            size="xs"
-            variant={teamView === 'team' ? 'secondary' : 'ghost'}
-            onClick={() => {
-              onTeamViewChange('team')
+        <Tabs
+          className="kubecode-team-view-switch"
+          value={teamView}
+          onValueChange={(value) => {
+            const view = value === 'team' ? 'team' : 'chat'
+            onTeamViewChange(view)
+            if (view === 'team') {
               trackEvent('kubecode_team_view_opened', { team_size: team.members.length })
-            }}
-          >
-            {t('kubecode.teamSession')}
-            {team.summary?.needs_attention > 0 && <span>{team.summary.needs_attention}</span>}
-          </Button>
-        </div>
+            }
+          }}
+        >
+          <TabsList>
+            <TabsTrigger value="chat">{t('kubecode.chat')}</TabsTrigger>
+            <TabsTrigger value="team">
+              {t('kubecode.teamSession')}
+              {team.summary?.needs_attention > 0 && (
+                <Badge variant="destructive">{team.summary.needs_attention}</Badge>
+              )}
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
       )}
       <div className="kubecode-session-status">
-        <span data-state={waitingForInput ? 'stuck' : active ? 'running' : 'idle'} />
-        <span className="kubecode-session-status-label">
-          {waitingForInput
-            ? t(pendingElicitation
-              ? 'kubecode.answerAgentQuestion'
-              : leaderReviewPending
-                ? 'kubecode.waitingForLeaderPermission'
-                : 'kubecode.permissionRequired')
-            : active ? t('kubecode.running') : t('kubecode.ready')}
-        </span>
+        <StatusBadge
+          className={cn('kubecode-session-status-badge', !waitingForInput && !active && 'is-idle')}
+          tone={waitingForInput ? 'warn' : active ? 'info' : 'muted'}
+        >
+          {waitingForInput ? <TriangleAlert aria-hidden="true" /> : active && <Spinner />}
+          <span className="kubecode-session-status-label">
+            {waitingForInput
+              ? t(pendingElicitation
+                ? 'kubecode.answerAgentQuestion'
+                : leaderReviewPending
+                  ? 'kubecode.waitingForLeaderPermission'
+                  : 'kubecode.permissionRequired')
+              : active ? t('kubecode.running') : t('kubecode.ready')}
+          </span>
+        </StatusBadge>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button aria-label={t('kubecode.sessionActions')} size="icon-xs" variant="ghost">
-              <Ellipsis  size={16}/>
+              <Ellipsis />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">

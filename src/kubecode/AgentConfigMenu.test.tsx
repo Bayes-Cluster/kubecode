@@ -28,8 +28,19 @@ const groups = [
   },
 ]
 
+function openMenu() {
+  const trigger = screen.getByRole('button', { name: 'Agent settings' })
+  fireEvent.keyDown(trigger, { key: 'Enter' })
+  return screen.getByRole('menu', { name: 'Agent settings' })
+}
+
+function openSub(name: RegExp) {
+  const item = screen.getByRole('menuitem', { name })
+  fireEvent.keyDown(item, { key: 'ArrowRight' })
+}
+
 describe('AgentControlMenu', () => {
-  it('keeps mode and every Agent-native option behind one summary button', () => {
+  it('keeps mode and every Agent-native option behind one official dropdown menu', () => {
     const onChange = vi.fn()
     render(
       <AgentControlMenu
@@ -43,19 +54,43 @@ describe('AgentControlMenu', () => {
       />,
     )
 
-    const trigger = screen.getByRole('button', { name: 'Agent settings' })
-    expect(trigger).toHaveTextContent('Plan')
-    fireEvent.click(trigger)
-    const menu = screen.getByRole('dialog', { name: 'Agent settings' })
-    expect(menu).toBeInTheDocument()
-    expect(menu.parentElement?.parentElement).toBe(document.body)
-    fireEvent.click(screen.getByRole('button', { name: /GPT-5.6 Sol.*Model/i }))
-    fireEvent.click(screen.getByRole('button', { name: 'GPT-5.5' }))
+    expect(screen.getByRole('button', { name: 'Agent settings' })).toHaveTextContent('Plan')
+    const menu = openMenu()
+    expect(menu).toHaveAttribute('data-slot', 'dropdown-menu-content')
+    openSub(/Model/)
+    const model = screen.getByRole('menuitemradio', { name: 'GPT-5.6 Sol' })
+    expect(model).toHaveAttribute('aria-checked', 'true')
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'GPT-5.5' }))
 
     expect(onChange).toHaveBeenCalledWith('model', 'gpt-5.5')
   })
 
-  it('keeps a long OpenCode model catalog inside a scrollable viewport', () => {
+  it('shows a locked mode as a disabled item with its reason and keeps boolean options as checkbox items', () => {
+    const onChange = vi.fn()
+    render(
+      <AgentControlMenu
+        agent="claude"
+        configs={[{ currentValue: false, id: 'thinking', kind: 'config', name: 'Thinking', type: 'boolean' }]}
+        mode={{ currentValue: 'plan', id: 'mode', kind: 'mode', name: 'Mode', options: [{ id: 'plan', name: 'Plan' }], type: 'select' }}
+        modeDisabled
+        modeDisabledReason="Locked by the team"
+        onConfigChange={onChange}
+        onModeChange={vi.fn()}
+        t={createTranslator('en')}
+      />,
+    )
+
+    openMenu()
+    const mode = screen.getByRole('menuitem', { name: /Plan/ })
+    expect(mode).toHaveAttribute('data-disabled')
+    expect(mode).toHaveAttribute('title', 'Locked by the team')
+    const thinking = screen.getByRole('menuitemcheckbox', { name: 'Thinking' })
+    expect(thinking).toHaveAttribute('aria-checked', 'false')
+    fireEvent.click(thinking)
+    expect(onChange).toHaveBeenCalledWith('thinking', true)
+  })
+
+  it('keeps a long OpenCode model catalog inside a scrollable sub menu', () => {
     const modelOptions = Array.from({ length: 40 }, (_, index) => ({
       id: `model-${index}`,
       name: `Provider model ${index}`,
@@ -75,12 +110,12 @@ describe('AgentControlMenu', () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Agent settings' }))
-    fireEvent.click(screen.getByRole('button', { name: /Provider model 0.*Model/i }))
+    openMenu()
+    openSub(/Provider model 0/)
 
-    expect(screen.getByRole('menu', { name: 'Model' })).toHaveClass(
-      'max-h-[min(520px,calc(100vh-80px))]',
-      'overflow-y-auto',
-    )
+    const sub = document.querySelector('[data-slot="dropdown-menu-sub-content"]')
+    expect(sub).toHaveTextContent('Model')
+    expect(sub).toHaveClass('overflow-y-auto')
+    expect(screen.getAllByRole('menuitemradio')).toHaveLength(40)
   })
 })

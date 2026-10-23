@@ -8,15 +8,27 @@ import {
   LoaderCircle,
   Pause,
   Play,
-  Users
+  Users,
 } from 'lucide-react'
 
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemFooter,
+  ItemGroup,
+  ItemMedia,
+  ItemTitle,
+} from '@/components/ui/item'
 import { Textarea } from '@/components/ui/textarea'
+import { StatusBadge, type StatusTone } from '@/components/workspace/StatusBadge'
 import type { TranslationKey, Translator } from '@/lib/i18n'
 
 import type { KubecodeApi, TeamSnapshot } from '../api'
-import { Icon } from '../icons'
 import { TEAM_STATUS_ICONS } from '../icons/statusIcons'
 import { SystemMessageNotice } from '../SystemMessageNotice'
 
@@ -69,28 +81,26 @@ export function TeamStatusView({
     }
   }
 
+  const statusEntry = TEAM_STATUS_ICONS[snapshot.team.status] ?? TEAM_STATUS_ICONS.active
+  const StatusIcon = statusEntry.Icon
   return (
     <>
       <header className="kubecode-team-control-header">
-        <div>
-          <Users fill="currentColor"  size={16}/>
-          <div>
-            <strong>{snapshot.team.title || snapshot.leader_conversation.title}</strong>
-            <span>{t('kubecode.teamControlCenter')}</span>
+        <div className="flex min-w-0 items-start gap-2">
+          <Users aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <h2 className="truncate text-sm font-medium">{snapshot.team.title || snapshot.leader_conversation.title}</h2>
+            <p className="text-xs text-muted-foreground">{t('kubecode.teamControlCenter')}</p>
           </div>
         </div>
         <div className="kubecode-team-settings">
-          <span className="kubecode-team-status" data-status={snapshot.team.status}>
-            <Icon
-              role="status"
-              size="secondary"
-              source={TEAM_STATUS_ICONS[snapshot.team.status].Icon}
-            />
+          <StatusBadge tone={teamStatusTone(snapshot.team.status)}>
+            <StatusIcon aria-hidden="true" />
             {teamStatusLabel(snapshot.team.status, t)}
-          </span>
-          <span className="kubecode-team-mode-badge" data-mode={snapshot.team.mode}>
+          </StatusBadge>
+          <Badge data-mode={snapshot.team.mode} variant={snapshot.team.mode === 'yolo' ? 'warning' : 'outline'}>
             {snapshot.team.mode === 'yolo' ? t('kubecode.teamYolo') : t('kubecode.teamStandard')}
-          </span>
+          </Badge>
           {snapshot.team.status === 'needs_attention' && (
             <Button size="sm" variant="outline" onClick={onReconfigure}>
               {t('kubecode.teamReconfigure')}
@@ -103,7 +113,7 @@ export function TeamStatusView({
               variant="outline"
               onClick={onResume}
             >
-              <Play fill="currentColor"  size={16}/> {t('kubecode.teamResume')}
+              <Play data-icon="inline-start" /> {t('kubecode.teamResume')}
             </Button>
           ) : ['active', 'verifying', 'needs_attention'].includes(snapshot.team.status) ? (
             <Button
@@ -112,7 +122,7 @@ export function TeamStatusView({
               variant="outline"
               onClick={onPause}
             >
-              <Pause fill="currentColor"  size={16}/> {t('kubecode.teamPause')}
+              <Pause data-icon="inline-start" /> {t('kubecode.teamPause')}
             </Button>
           ) : null}
         </div>
@@ -136,67 +146,86 @@ export function TeamStatusView({
         />
       )}
 
-      <div className="kubecode-team-metrics">
+      <ItemGroup className="kubecode-team-metrics">
         <Metric icon={<LoaderCircle />} label={t('kubecode.teamRunning')} name="running" value={summary.running} />
         <Metric icon={<Clock />} label={t('kubecode.teamQueued')} name="queued" value={summary.queued} />
         <Metric icon={<CircleAlert />} label={t('kubecode.teamNeedsAttention')} name="attention" value={summary.needs_attention} />
         <Metric icon={<CircleCheck />} label={t('kubecode.teamDone')} name="done" value={summary.done} />
-      </div>
+      </ItemGroup>
 
       {attention.length > 0 && (
-        <section className="kubecode-team-attention">
-          <header><CircleAlert fill="currentColor"  size={16}/> {t('kubecode.teamNeedsAttention')}</header>
-          <div>
+        <section aria-labelledby="team-attention-title" className="kubecode-team-attention flex flex-col gap-2">
+          <h3 className="flex items-center gap-2 text-sm font-medium" id="team-attention-title">
+            <CircleAlert aria-hidden="true" className="size-4" />
+            {t('kubecode.teamNeedsAttention')}
+          </h3>
+          <ItemGroup className="gap-1">
             {attention.map((attentionItem) => {
               const userRequest = snapshot.user_input_requests?.find(
                 (request) => request.id === attentionItem.id,
               )
               if (userRequest) {
+                const fieldId = `team-user-input-${userRequest.id}`
                 return (
-                  <article className="kubecode-team-user-input" key={attentionItem.id}>
-                    <div>
-                      <strong>{userRequest.title}</strong>
-                      <span>{userRequest.prompt}</span>
-                    </div>
-                    <Textarea
-                      aria-label={userRequest.title}
-                      placeholder={t('kubecode.teamAnswerPlaceholder')}
-                      value={answers[userRequest.id] ?? ''}
-                      onChange={(event) => setAnswers((current) => ({
-                        ...current,
-                        [userRequest.id]: event.target.value,
-                      }))}
-                    />
-                    <Button
-                      disabled={!answers[userRequest.id]?.trim()}
-                      size="sm"
-                      onClick={() => void resolveUserInput(userRequest.id)}
-                    >
-                      {t('kubecode.teamSubmitAnswer')}
-                    </Button>
-                  </article>
+                  <Item className="kubecode-team-user-input" key={attentionItem.id} variant="outline">
+                    <ItemContent>
+                      <Field>
+                        <FieldLabel htmlFor={fieldId}>{userRequest.title}</FieldLabel>
+                        <FieldDescription>{userRequest.prompt}</FieldDescription>
+                        <Textarea
+                          id={fieldId}
+                          placeholder={t('kubecode.teamAnswerPlaceholder')}
+                          value={answers[userRequest.id] ?? ''}
+                          onChange={(event) => setAnswers((current) => ({
+                            ...current,
+                            [userRequest.id]: event.target.value,
+                          }))}
+                        />
+                      </Field>
+                    </ItemContent>
+                    <ItemFooter className="justify-end">
+                      <Button
+                        disabled={!answers[userRequest.id]?.trim()}
+                        size="sm"
+                        onClick={() => void resolveUserInput(userRequest.id)}
+                      >
+                        {t('kubecode.teamSubmitAnswer')}
+                      </Button>
+                    </ItemFooter>
+                  </Item>
                 )
               }
               return (
-                <Button
-                  key={attentionItem.id}
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => {
-                    const member = snapshot.members.find((candidate) => candidate.id === attentionItem.member_id)
-                    if (member) onSelectMember(member.conversation_id)
-                  }}
-                >
-                  <span>{attentionItem.summary}</span>
-                  <ArrowRight  size={16}/>
-                </Button>
+                <Item asChild key={attentionItem.id} size="sm" variant="outline">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const member = snapshot.members.find((candidate) => candidate.id === attentionItem.member_id)
+                      if (member) onSelectMember(member.conversation_id)
+                    }}
+                  >
+                    <ItemContent>
+                      <ItemTitle>{attentionItem.summary}</ItemTitle>
+                    </ItemContent>
+                    <ItemActions>
+                      <ArrowRight aria-hidden="true" className="size-4" />
+                    </ItemActions>
+                  </button>
+                </Item>
               )
             })}
-          </div>
+          </ItemGroup>
         </section>
       )}
     </>
   )
+}
+
+function teamStatusTone(status: TeamSnapshot['team']['status']): StatusTone {
+  if (status === 'active' || status === 'starting' || status === 'verifying') return 'info'
+  if (status === 'needs_attention') return 'warn'
+  if (status === 'completed') return 'ok'
+  return 'muted'
 }
 
 function teamStatusLabel(status: TeamSnapshot['team']['status'], t: Translator): string {
@@ -221,5 +250,13 @@ function Metric({ icon, label, name, value }: {
   name: string
   value: number
 }) {
-  return <div data-metric={name}>{icon}<span><strong>{value}</strong><small>{label}</small></span></div>
+  return (
+    <Item data-metric={name} size="sm" variant="outline">
+      <ItemMedia variant="icon">{icon}</ItemMedia>
+      <ItemContent>
+        <ItemTitle className="tabular-nums">{value}</ItemTitle>
+        <ItemDescription>{label}</ItemDescription>
+      </ItemContent>
+    </Item>
+  )
 }
