@@ -446,7 +446,8 @@
    context; :root default matches the light app theme. */
 .kubecode-material-icon { flex: 0 0 auto; }
 .kubecode-material-icon [data-variant='light'] { display: none; }
-[data-theme='light'] .kubecode-material-icon [data-variant='dark'] { display: none; }
+/* Only an icon that has a light variant swaps; the rest keep their one group. */
+[data-theme='light'] .kubecode-material-icon:has([data-variant='light']) [data-variant='dark'] { display: none; }
 [data-theme='light'] .kubecode-material-icon [data-variant='light'] { display: inline; }
 
 .kubecode-context-editor { display: grid; grid-template-rows: 40px minmax(0, 1fr); }
