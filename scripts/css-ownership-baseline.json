@@ -254,27 +254,6 @@
     },
     {
       "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-research-row > [data-slot='select-trigger'] { flex: 1 1 140px; }",
-      "context": "@media (max-width: 720px) / .kubecode-research-row > button, .kubecode-research-row > [data-slot='select-trigger']",
-      "kind": "official-internal",
-      "owner": "#262"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": "flex-direction: row !important;",
-      "context": ".kubecode-research-check",
-      "kind": "important",
-      "owner": "#262"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": "gap: 8px !important;",
-      "context": ".kubecode-research-check",
-      "kind": "important",
-      "owner": "#262"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
       "text": "[data-slot='dialog-content'].kubecode-add-context-dialog {",
       "context": "[data-slot='dialog-content'].kubecode-add-context-dialog",
       "kind": "official-internal",

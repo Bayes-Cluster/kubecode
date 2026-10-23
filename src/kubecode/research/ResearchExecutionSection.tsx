@@ -1,7 +1,22 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
+import { CircleAlert, TriangleAlert } from 'lucide-react'
 
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
+import { Empty, EmptyDescription } from '@/components/ui/empty'
+import { Field, FieldError, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { Item, ItemGroup, ItemTitle } from '@/components/ui/item'
+import { Spinner } from '@/components/ui/spinner'
 import { StatusBadge } from '@/components/workspace/StatusBadge'
 import type { Translator } from '@/lib/i18n'
 
@@ -117,13 +132,19 @@ export function ResearchExecutionSection({
 
   if (!execution) {
     return (
-      <div className="kubecode-research-execution" aria-busy={status === 'loading'}>
-        {status === 'loading' && <p className="kubecode-research-muted" role="status">{t('kubecode.research.exec.loading')}</p>}
-        {status === 'error' && (
-          <p className="kubecode-research-error" role="alert">
-            {t('kubecode.research.exec.loadFailed')}{' '}
-            <Button size="xs" variant="outline" onClick={reload}>{t('kubecode.retry')}</Button>
+      <div className={EXECUTION} aria-busy={status === 'loading'}>
+        {status === 'loading' && (
+          <p className="m-0 flex items-center gap-2 text-xs text-muted-foreground" role="status">
+            <Spinner aria-hidden="true" role="presentation" /> {t('kubecode.research.exec.loading')}
           </p>
+        )}
+        {status === 'error' && (
+          <Alert variant="destructive">
+            <AlertDescription>
+              <p>{t('kubecode.research.exec.loadFailed')}</p>
+              <Button size="xs" variant="outline" onClick={reload}>{t('kubecode.retry')}</Button>
+            </AlertDescription>
+          </Alert>
         )}
       </div>
     )
@@ -143,42 +164,48 @@ export function ResearchExecutionSection({
   }
 
   return (
-    <div className="kubecode-research-execution">
-      <header>
-        <h4>{t('kubecode.research.exec.title')}</h4>
+    <div className={EXECUTION}>
+      <header className="flex flex-wrap items-center gap-2">
+        <h4 className="m-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t('kubecode.research.exec.title')}</h4>
         {envelope && (
           <>
             <StatusBadge tone={envelope.state === 'active' ? 'ok' : 'warn'}>
               {t(`kubecode.research.exec.envelopeState.${envelope.state}` as Parameters<Translator>[0])}
             </StatusBadge>
-            <span className="kubecode-research-muted">
+            <span className="text-xs text-muted-foreground">
               {t('kubecode.research.exec.policyRevision', { revision: envelope.revision })}
             </span>
           </>
         )}
       </header>
       {status === 'error' && (
-        <p className="kubecode-research-notice" role="status">{t('kubecode.research.exec.stale')}</p>
+        <Alert role="status"><TriangleAlert /><AlertDescription>{t('kubecode.research.exec.stale')}</AlertDescription></Alert>
       )}
 
       {execution.launch_blockers.length > 0 && envelope && (
-        <ul className="kubecode-research-attention" aria-label={t('kubecode.research.exec.attention')}>
-          {execution.launch_blockers
-            .filter((blocker) => blocker !== 'no_envelope')
-            .map((blocker) => (
-              <li key={blocker}>{t(BLOCKER_LABELS[blocker])}</li>
-            ))}
-        </ul>
+        <Alert role="note">
+          <TriangleAlert />
+          <AlertDescription>
+            <ul className="m-0 list-disc pl-5" aria-label={t('kubecode.research.exec.attention')}>
+              {execution.launch_blockers
+                .filter((blocker) => blocker !== 'no_envelope')
+                .map((blocker) => (
+                  <li key={blocker}>{t(BLOCKER_LABELS[blocker])}</li>
+                ))}
+            </ul>
+          </AlertDescription>
+        </Alert>
       )}
       {owed.length > 0 && (
-        <p className="kubecode-research-notice" role="status">
-          {t('kubecode.research.exec.owed', { count: owed.length })}
-        </p>
+        <Alert role="status">
+          <CircleAlert />
+          <AlertDescription>{t('kubecode.research.exec.owed', { count: owed.length })}</AlertDescription>
+        </Alert>
       )}
 
       {!envelope ? (
         <>
-          <p className="kubecode-research-muted">{t('kubecode.research.exec.noEnvelope')}</p>
+          <p className="m-0 text-sm text-muted-foreground">{t('kubecode.research.exec.noEnvelope')}</p>
           {!archived && (
             <EnvelopeEditor
               api={api}
@@ -196,7 +223,7 @@ export function ResearchExecutionSection({
       ) : (
         <>
           <EnvelopeSummary envelope={envelope} active={active.length} now={execution.now} t={t} />
-          <div className="kubecode-research-row">
+          <div className="flex flex-wrap items-center gap-2">
             {envelope.state === 'active' && (
               <Button
                 disabled={control.busy}
@@ -235,36 +262,42 @@ export function ResearchExecutionSection({
                 {t('kubecode.research.exec.editEnvelope')}
               </Button>
             )}
-            {envelope.state !== 'closed' && !confirmCancel && (
+            {envelope.state !== 'closed' && (
               <Button size="xs" variant="ghost" onClick={() => setConfirmCancel(true)}>
                 {t('kubecode.research.exec.cancelAll')}
               </Button>
             )}
           </div>
           {envelope.state === 'active' && (
-            <p className="kubecode-research-muted">{t('kubecode.research.exec.pauseHint')}</p>
+            <p className="m-0 text-xs text-muted-foreground">{t('kubecode.research.exec.pauseHint')}</p>
           )}
-          {confirmCancel && (
-            <ConfirmCancel label={t('kubecode.research.exec.cancelAll')}>
-              <p>{t('kubecode.research.exec.cancelAllConfirm', { count: active.length })}</p>
-              <div className="kubecode-research-row">
+          <AlertDialog open={confirmCancel} onOpenChange={setConfirmCancel}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>{t('kubecode.research.exec.cancelAll')}</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {t('kubecode.research.exec.cancelAllConfirm', { count: active.length })}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>{t('kubecode.research.exec.keepRunning')}</AlertDialogCancel>
+                {/* Not AlertDialogAction: the dialog stays until the server accepts the cancel. */}
                 <Button
+                  aria-busy={control.busy}
                   disabled={control.busy}
-                  size="xs"
+                  variant="destructive"
                   onClick={() => void control.run(async () => {
                     await api.cancelResearchExecution(projectId, researchId, round.id)
                     setConfirmCancel(false)
                     reload()
                   })}
                 >
+                  {control.busy && <Spinner data-icon="inline-start" />}
                   {t('kubecode.research.exec.cancelAllYes')}
                 </Button>
-                <Button size="xs" variant="ghost" onClick={() => setConfirmCancel(false)}>
-                  {t('kubecode.research.exec.keepRunning')}
-                </Button>
-              </div>
-            </ConfirmCancel>
-          )}
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
           {editing && (
             <EnvelopeEditor
               api={api}
@@ -285,12 +318,14 @@ export function ResearchExecutionSection({
           )}
         </>
       )}
-      {control.error && <p className="kubecode-research-error" role="alert">{control.error}</p>}
+      {control.error && <Alert variant="destructive"><AlertDescription>{control.error}</AlertDescription></Alert>}
 
       {execution.experiments.length === 0 && envelope && (
-        <p className="kubecode-research-muted">{t('kubecode.research.exec.noExperiments')}</p>
+        <Empty className="items-start p-0 text-left">
+          <EmptyDescription>{t('kubecode.research.exec.noExperiments')}</EmptyDescription>
+        </Empty>
       )}
-      <ul className="kubecode-research-cards">
+      <ItemGroup className="gap-2 empty:hidden">
         {execution.experiments.map((experiment) => (
           <ExperimentCard
             api={api}
@@ -305,7 +340,7 @@ export function ResearchExecutionSection({
             waits={execution.waits.filter((wait) => wait.experiment_id === experiment.id)}
           />
         ))}
-      </ul>
+      </ItemGroup>
     </div>
   )
 }
@@ -323,22 +358,22 @@ function EnvelopeSummary({
 }) {
   const { limits } = envelope
   return (
-    <dl className="kubecode-research-facts">
-      <div>
-        <dt>{t('kubecode.research.exec.launches')}</dt>
-        <dd>{envelope.launches_reserved} / {limits.max_launches}</dd>
+    <dl className="m-0 grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-x-4 gap-y-2 text-sm">
+      <div className="min-w-0">
+        <dt className="text-xs text-muted-foreground">{t('kubecode.research.exec.launches')}</dt>
+        <dd className="m-0 [overflow-wrap:anywhere]">{envelope.launches_reserved} / {limits.max_launches}</dd>
       </div>
-      <div>
-        <dt>{t('kubecode.research.exec.processes')}</dt>
-        <dd>{active} / {limits.max_concurrent}</dd>
+      <div className="min-w-0">
+        <dt className="text-xs text-muted-foreground">{t('kubecode.research.exec.processes')}</dt>
+        <dd className="m-0 [overflow-wrap:anywhere]">{active} / {limits.max_concurrent}</dd>
       </div>
-      <div>
-        <dt>{t('kubecode.research.exec.runtimeCap')}</dt>
-        <dd>{t('kubecode.research.exec.minutes', { count: Math.round(limits.max_runtime_secs / 60) })}</dd>
+      <div className="min-w-0">
+        <dt className="text-xs text-muted-foreground">{t('kubecode.research.exec.runtimeCap')}</dt>
+        <dd className="m-0 [overflow-wrap:anywhere]">{t('kubecode.research.exec.minutes', { count: Math.round(limits.max_runtime_secs / 60) })}</dd>
       </div>
-      <div>
-        <dt>{t('kubecode.research.exec.deadline')}</dt>
-        <dd>
+      <div className="min-w-0">
+        <dt className="text-xs text-muted-foreground">{t('kubecode.research.exec.deadline')}</dt>
+        <dd className="m-0 [overflow-wrap:anywhere]">
           {limits.deadline_at === null
             ? t('kubecode.research.exec.noDeadline')
             : limits.deadline_at <= now
@@ -346,10 +381,10 @@ function EnvelopeSummary({
               : formatUnix(limits.deadline_at)}
         </dd>
       </div>
-      <div>
-        <dt>{t('kubecode.research.exec.allowedCommands')}</dt>
-        <dd>
-          <ul className="kubecode-research-sources">
+      <div className="min-w-0">
+        <dt className="text-xs text-muted-foreground">{t('kubecode.research.exec.allowedCommands')}</dt>
+        <dd className="m-0 [overflow-wrap:anywhere]">
+          <ul className="m-0 flex list-none flex-col gap-0.5 p-0">
             {limits.allowed_commands.map((command) => (
               <li key={command.join('\u0000')}><code>{commandText(command)}</code></li>
             ))}
@@ -431,7 +466,7 @@ function EnvelopeEditor({
   }
   return (
     <form
-      className="kubecode-research-form"
+      className="flex flex-col gap-2"
       ref={formRef}
       onSubmit={(event) => {
         event.preventDefault()
@@ -439,9 +474,9 @@ function EnvelopeEditor({
       }}
     >
       <ExecutionEnvelopeFields draft={draft} invalid={invalid} onChange={setDraft} t={t} />
-      {baseRevision !== null && <p className="kubecode-research-muted">{t('kubecode.research.exec.runningKeepsRevision')}</p>}
-      {action.error && <p className="kubecode-research-error" role="alert">{action.error}</p>}
-      <div className="kubecode-research-panel-actions">
+      {baseRevision !== null && <p className="m-0 text-xs text-muted-foreground">{t('kubecode.research.exec.runningKeepsRevision')}</p>}
+      {action.error && <Alert variant="destructive"><AlertDescription>{action.error}</AlertDescription></Alert>}
+      <div className="flex flex-wrap justify-end gap-2">
         {(onCancel || baseRevision === null) && (
           <Button
             type="button"
@@ -486,6 +521,7 @@ function ExperimentCard({
   const [logs, setLogs] = useState<{ stdout: ExperimentLogTail; stderr: ExperimentLogTail } | null>(null)
   const [exitCode, setExitCode] = useState('')
   const action = useAction(t)
+  const fieldId = useId()
   const title = experiment.label || commandText(experiment.argv)
   const openWait = waits.find((wait) => wait.state === 'open')
 
@@ -516,9 +552,9 @@ function ExperimentCard({
   }
 
   return (
-    <li data-state={experiment.state}>
-      <header>
-        <strong>{title}</strong>
+    <Item className="flex-col items-stretch gap-2" data-state={experiment.state} role="listitem" size="sm" variant="outline">
+      <div className="flex flex-wrap items-center gap-2">
+        <ItemTitle className="[overflow-wrap:anywhere]">{title}</ItemTitle>
         <StatusBadge tone={experiment.state === 'unknown' ? 'warn' : experiment.state === 'running' ? 'ok' : 'muted'}>
           {t(STATE_LABELS[experiment.state])}
         </StatusBadge>
@@ -531,32 +567,35 @@ function ExperimentCard({
                 : t('kubecode.research.exec.notYetAnalyzable')}
           </StatusBadge>
         )}
-        <span className="kubecode-research-muted">
+        <span className="text-xs text-muted-foreground">
           {t('kubecode.research.exec.policyRevision', { revision: experiment.policy_revision })}
         </span>
-      </header>
-      {experiment.label && <code>{commandText(experiment.argv)}</code>}
-      <span className="kubecode-research-muted">
+      </div>
+      {experiment.label && <code className="text-xs [overflow-wrap:anywhere]">{commandText(experiment.argv)}</code>}
+      <span className="text-xs text-muted-foreground empty:hidden">
         {experiment.exit_code !== null && t('kubecode.research.exec.exitCode', { code: experiment.exit_code })}
         {experiment.signal !== null && ` · ${t('kubecode.research.exec.signal', { signal: experiment.signal })}`}
         {experiment.reason ? ` · ${experiment.reason}` : ''}
       </span>
       {experiment.state === 'unknown' && (
-        <div className="kubecode-research-confirm" role="group" aria-label={`${t('kubecode.research.exec.reconcile')}: ${title}`}>
+        <Alert aria-label={`${t('kubecode.research.exec.reconcile')}: ${title}`} role="group">
+          <TriangleAlert />
+          <AlertDescription className="gap-2">
           <p>{t('kubecode.research.exec.unknownHint')}</p>
-          <label>
-            <span>{t('kubecode.research.exec.exitCodeOptional')}</span>
+          <Field data-invalid={exitCodeInvalid || undefined}>
+            <FieldLabel htmlFor={`${fieldId}-exit-code`}>{t('kubecode.research.exec.exitCodeOptional')}</FieldLabel>
             <Input
               aria-invalid={exitCodeInvalid}
+              id={`${fieldId}-exit-code`}
               inputMode="numeric"
               value={exitCode}
               onChange={(event) => setExitCode(event.target.value)}
             />
-          </label>
-          {exitCodeInvalid && (
-            <p className="kubecode-research-error" role="alert">{t('kubecode.research.exec.invalidExitCode')}</p>
-          )}
-          <div className="kubecode-research-row">
+            {exitCodeInvalid && (
+              <FieldError role="alert">{t('kubecode.research.exec.invalidExitCode')}</FieldError>
+            )}
+          </Field>
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               aria-label={`${t('kubecode.research.exec.neverStarted')}: ${title}`}
               disabled={action.busy}
@@ -576,10 +615,11 @@ function ExperimentCard({
               {t('kubecode.research.exec.didFinish')}
             </Button>
           </div>
-        </div>
+          </AlertDescription>
+        </Alert>
       )}
       {openWait && (
-        <p className="kubecode-research-muted">
+        <p className="m-0 text-xs text-muted-foreground">
           {t('kubecode.research.exec.waiting', {
             member: memberName(openWait),
             until: openWait.deadline_at === null ? '—' : formatUnix(openWait.deadline_at),
@@ -588,26 +628,26 @@ function ExperimentCard({
         </p>
       )}
       {experiment.artifact_state.length > 0 && (
-        <ul className="kubecode-research-sources" aria-label={t('kubecode.research.exec.artifacts')}>
+        <ul className="m-0 flex list-none flex-col gap-0.5 p-0 text-xs" aria-label={t('kubecode.research.exec.artifacts')}>
           {experiment.artifact_state.map((artifact) => (
-            <li key={artifact.path}>
-              <code>{artifact.path}</code>
+            <li className="flex flex-wrap items-center gap-1.5" key={artifact.path}>
+              <code className="[overflow-wrap:anywhere]">{artifact.path}</code>
               <AvailabilityBadge availability={artifact.availability} t={t} />
             </li>
           ))}
         </ul>
       )}
       {decisions.length > 0 && (
-        <ul className="kubecode-research-decisions" aria-label={t('kubecode.research.exec.decisions')}>
+        <ul className="m-0 flex list-none flex-col gap-1 p-0 text-sm" aria-label={t('kubecode.research.exec.decisions')}>
           {decisions.map((decision) => (
-            <li key={decision.id}>
+            <li className="[overflow-wrap:anywhere]" key={decision.id}>
               <StatusBadge tone="ok">{t(DECISION_LABELS[decision.kind])}</StatusBadge>{' '}
               {decision.rationale}
             </li>
           ))}
         </ul>
       )}
-      <div className="kubecode-research-row">
+      <div className="flex flex-wrap items-center gap-2">
         <Button
           aria-label={`${logs ? t('kubecode.research.exec.refreshOutput') : t('kubecode.research.exec.viewOutput')}: ${title}`}
           disabled={action.busy}
@@ -633,13 +673,13 @@ function ExperimentCard({
         )}
       </div>
       {logs && (
-        <div className="kubecode-research-logs">
+        <div className="flex flex-col gap-2">
           {(['stdout', 'stderr'] as const).map((stream) => (
-            <section key={stream} aria-label={t(`kubecode.research.exec.${stream}` as Parameters<Translator>[0])}>
-              <h5>{t(`kubecode.research.exec.${stream}` as Parameters<Translator>[0])}</h5>
-              <pre tabIndex={0}>{logs[stream].text || t('kubecode.research.exec.emptyOutput')}</pre>
+            <section className="flex min-w-0 flex-col gap-1" key={stream} aria-label={t(`kubecode.research.exec.${stream}` as Parameters<Translator>[0])}>
+              <h5 className="m-0 text-xs font-semibold text-muted-foreground">{t(`kubecode.research.exec.${stream}` as Parameters<Translator>[0])}</h5>
+              <pre className="m-0 max-h-60 overflow-auto rounded-md border bg-muted p-2 font-mono text-xs whitespace-pre-wrap [overflow-wrap:anywhere]" tabIndex={0}>{logs[stream].text || t('kubecode.research.exec.emptyOutput')}</pre>
               {logs[stream].truncated && (
-                <span className="kubecode-research-muted">
+                <span className="text-xs text-muted-foreground">
                   {t('kubecode.research.exec.truncated', { bytes: logs[stream].total_bytes })}
                 </span>
               )}
@@ -647,26 +687,9 @@ function ExperimentCard({
           ))}
         </div>
       )}
-      {action.error && <p className="kubecode-research-error" role="alert">{action.error}</p>}
-    </li>
+      {action.error && <Alert variant="destructive"><AlertDescription>{action.error}</AlertDescription></Alert>}
+    </Item>
   )
 }
 
-/** The destructive confirmation takes focus, so the keyboard lands on it. */
-function ConfirmCancel({ children, label }: { children: ReactNode; label: string }) {
-  const reference = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    reference.current?.focus()
-  }, [])
-  return (
-    <div
-      aria-label={label}
-      className="kubecode-research-confirm"
-      ref={reference}
-      role="alertdialog"
-      tabIndex={-1}
-    >
-      {children}
-    </div>
-  )
-}
+const EXECUTION = 'mt-1 flex flex-col gap-2 border-t pt-2'
