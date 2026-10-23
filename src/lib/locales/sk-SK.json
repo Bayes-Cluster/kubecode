@@ -1201,6 +1201,8 @@
   "kubecode.resizeNavigation": "Zmeniť veľkosť navigácie",
   "kubecode.resizeContextPanel": "Zmeniť veľkosť panela kontextu",
   "kubecode.resizeTerminal": "Zmeniť veľkosť terminálu",
+  "kubecode.resizeTerminalSplit": "Zmeniť veľkosť rozdelených terminálov",
+  "kubecode.resizeTerminalNavigator": "Zmeniť veľkosť zoznamu terminálov",
   "kubecode.collapse": "Collapse",
   "kubecode.settings": "Settings",
   "kubecode.settingsDescription": "Configure the Kubecode workspace.",

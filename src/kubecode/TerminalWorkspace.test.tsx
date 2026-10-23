@@ -181,9 +181,15 @@ describe('TerminalWorkspace', () => {
     )
 
     expect(screen.getAllByTestId(/^terminal-terminal-/)).toHaveLength(2)
-    const children = container.querySelectorAll('.kubecode-terminal-split-child')
-    expect((children[0] as HTMLElement).style.flexBasis).toBe('82%')
-    expect((children[1] as HTMLElement).style.flexBasis).toBe('18%')
+    // The split is an official Resizable group whose saved ratio is its layout.
+    const split = container.querySelector('[data-split-direction="horizontal"]')!
+    expect(split).toHaveAttribute('data-slot', 'resizable-panel-group')
+    const panes = split.querySelectorAll(':scope > [data-slot="resizable-panel"]')
+    expect(panes).toHaveLength(2)
+    expect((panes[0] as HTMLElement).style.flexGrow).toBe('82')
+    expect((panes[1] as HTMLElement).style.flexGrow).toBe('18')
+    expect(within(split as HTMLElement).getByRole('separator', { name: 'kubecode.resizeTerminalSplit' }))
+      .toHaveAttribute('data-slot', 'resizable-handle')
     const navigator = screen.getByRole('tree', { name: 'kubecode.terminal' })
     expect(within(navigator).getByRole('treeitem', { name: /Shell/ })).toHaveAttribute('data-active', 'true')
     expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
@@ -236,16 +242,21 @@ describe('TerminalWorkspace', () => {
 
     const toggle = screen.getByRole('button', { name: 'kubecode.collapse' })
     expect(toggle).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('tree', { name: 'kubecode.terminal' })).toHaveStyle({ width: '120px' })
-    expect(container.querySelector('.kubecode-terminal-body > .cursor-col-resize')).toBeInTheDocument()
+    const tree = screen.getByRole('tree', { name: 'kubecode.terminal' })
+    expect(tree).toHaveAttribute('data-narrow', 'false')
+    expect(tree.closest('[data-slot="resizable-panel"]')).toBeInTheDocument()
+    expect(screen.getByRole('separator', { name: 'kubecode.resizeTerminalNavigator' }))
+      .toHaveAttribute('data-slot', 'resizable-handle')
+    expect(container.querySelector('.cursor-col-resize')).not.toBeInTheDocument()
 
     fireEvent.click(toggle)
     expect(toggle).toHaveAttribute('aria-pressed', 'false')
-    expect(screen.getByRole('tree', { name: 'kubecode.terminal' })).toHaveStyle({ width: '46px' })
     expect(screen.getByRole('tree', { name: 'kubecode.terminal' })).toHaveAttribute('data-narrow', 'true')
+    expect(JSON.parse(localStorage.getItem('kubecode:terminal-navigator:project-1')!)).toEqual({ width: 46 })
 
     fireEvent.click(toggle)
-    expect(screen.getByRole('tree', { name: 'kubecode.terminal' })).toHaveStyle({ width: '120px' })
+    expect(screen.getByRole('tree', { name: 'kubecode.terminal' })).toHaveAttribute('data-narrow', 'false')
+    expect(JSON.parse(localStorage.getItem('kubecode:terminal-navigator:project-1')!)).toEqual({ width: 120 })
   })
 
   it('folds the dock when its final server terminal disappears', async () => {

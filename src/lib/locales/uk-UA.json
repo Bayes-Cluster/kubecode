@@ -1201,6 +1201,8 @@
   "kubecode.resizeNavigation": "Змінити розмір навігації",
   "kubecode.resizeContextPanel": "Змінити розмір панелі контексту",
   "kubecode.resizeTerminal": "Змінити розмір термінала",
+  "kubecode.resizeTerminalSplit": "Змінити розмір розділених терміналів",
+  "kubecode.resizeTerminalNavigator": "Змінити розмір списку терміналів",
   "kubecode.collapse": "Collapse",
   "kubecode.settings": "Settings",
   "kubecode.settingsDescription": "Configure the Kubecode workspace.",

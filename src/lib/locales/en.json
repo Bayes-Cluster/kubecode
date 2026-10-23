@@ -1515,6 +1515,8 @@
   "kubecode.resizeNavigation": "Resize navigation",
   "kubecode.resizeContextPanel": "Resize context panel",
   "kubecode.resizeTerminal": "Resize terminal",
+  "kubecode.resizeTerminalSplit": "Resize split terminals",
+  "kubecode.resizeTerminalNavigator": "Resize terminal list",
   "kubecode.closeSidePanels": "Close side panels",
   "kubecode.collapse": "Collapse",
   "kubecode.settings": "Settings",
