@@ -1296,7 +1296,7 @@ describe('Kubecode workspace', () => {
 
     expect(await screen.findByRole('button', { name: 'Demo' })).toBeInTheDocument()
     expect(await screen.findByTestId('agent-session-workspace')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'New session' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'New session' })[0])
     expect(screen.getByRole('radio', { name: 'Start new' })).toHaveAttribute('aria-checked', 'true')
     expect(screen.getByRole('radio', { name: 'Start new' })).toHaveAttribute('data-slot', 'toggle-group-item')
     fireEvent.click(screen.getByRole('radio', { name: 'Team' }))
