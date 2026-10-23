@@ -23,6 +23,12 @@ function startOnSessions(projectId = 'project-1') {
   }))
 }
 
+/** Opens execution history (an official Collapsible) as the researcher does. */
+async function openHistory() {
+  const trigger = await screen.findByRole('button', { name: 'History and execution' }, { timeout: 5_000 })
+  if (trigger.getAttribute('aria-expanded') !== 'true') fireEvent.click(trigger)
+}
+
 describe('Kubecode workspace', () => {
   beforeEach(() => localStorage.clear())
   afterEach(() => vi.unstubAllGlobals())
@@ -99,6 +105,7 @@ describe('Kubecode workspace', () => {
 
       try {
         render(<KubecodeApp api={api} />)
+        await openHistory()
         await screen.findByRole('button', { name: 'New session' })
         fireEvent.click(screen.getByRole('button', { name: 'New session' }))
         if (mode === 'import') {
@@ -820,6 +827,7 @@ describe('Kubecode workspace', () => {
 
     try {
       render(<KubecodeApp api={api} />)
+      await openHistory()
       // The sharded coverage run instruments and parallelizes heavily; the
       // initial Project load can exceed the 1s default there.
       expect(await screen.findByRole(
@@ -1033,6 +1041,7 @@ describe('Kubecode workspace', () => {
 
     try {
       render(<KubecodeApp api={api} />)
+      await openHistory()
       expect(await screen.findByRole('button', { name: 'Initial session' })).toBeInTheDocument()
       await waitFor(() => expect(ReconnectingEventSource.current).not.toBeNull())
 
@@ -1107,6 +1116,7 @@ describe('Kubecode workspace', () => {
     } as unknown as KubecodeApi
 
     render(<KubecodeApp api={api} />)
+    await openHistory()
 
     expect(await screen.findByRole(
       'button',
@@ -1410,12 +1420,12 @@ describe('Kubecode workspace', () => {
     } as unknown as KubecodeApi
     const { container } = render(<KubecodeApp api={api} />)
 
-    // The phone sheet sizes the navigation; the stored width is for wide screens.
+    // The phone sheet sizes the navigation (it fills it); the stored width is for wide screens.
     const sheet = await screen.findByRole('dialog', { name: 'Workspaces' })
     await within(sheet).findByRole('button', { name: 'Demo' })
     const sessionsToggle = screen.getByRole('button', { name: 'Toggle navigation', hidden: true })
     const contextToggle = screen.getByRole('button', { name: 'Toggle context panel', hidden: true })
-    expect((container.ownerDocument.querySelector('.kubecode-session-sidebar') as HTMLElement).style.width).toBe('')
+    expect((container.ownerDocument.querySelector('.kubecode-session-sidebar') as HTMLElement).style.width).toBe('100%')
 
     await waitFor(() => expect(contextToggle).toHaveAttribute('aria-pressed', 'false'))
     expect(sessionsToggle).toHaveAttribute('aria-pressed', 'true')
@@ -1458,7 +1468,7 @@ describe('Kubecode workspace', () => {
       gitStatus: vi.fn().mockResolvedValue({ is_repository: false, branch: null, files: [] }),
     } as unknown as KubecodeApi
 
-    const { container } = render(<KubecodeApp api={api} />)
+    render(<KubecodeApp api={api} />)
     await screen.findByRole('button', { name: 'Demo' })
     fireEvent.click(screen.getByRole('button', { name: 'Toggle navigation' }))
     expect(screen.queryByRole('navigation', { name: 'Workspaces' })).not.toBeInTheDocument()
@@ -1466,7 +1476,7 @@ describe('Kubecode workspace', () => {
     fireEvent.keyDown(document, { key: 'k', metaKey: true })
     // The navigation opens, then execution history, then the search inside it.
     const search = await screen.findByRole('textbox', { name: 'Search Sessions in all Workspaces' })
-    expect(container.querySelector('details.kubecode-history-nav')).toHaveAttribute('open')
+    expect(screen.getByRole('button', { name: 'History and execution' })).toHaveAttribute('aria-expanded', 'true')
     await waitFor(() => expect(search).toHaveFocus())
   })
 
@@ -1485,6 +1495,7 @@ describe('Kubecode workspace', () => {
     } as unknown as KubecodeApi
 
     render(<KubecodeApp api={api} />)
+    await openHistory()
     const search = await screen.findByRole('textbox', { name: 'Search Sessions in all Workspaces' })
     search.focus()
     fireEvent.keyDown(document, { key: 'p', ctrlKey: true, shiftKey: true })

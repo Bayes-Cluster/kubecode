@@ -1200,7 +1200,6 @@
   "kubecode.contextPanel": "Bảng ngữ cảnh",
   "kubecode.collapse": "Collapse",
   "kubecode.settings": "Settings",
-  "kubecode.help": "Help",
   "kubecode.settingsDescription": "Configure the Kubecode workspace.",
   "kubecode.settings.general": "General",
   "kubecode.settings.agents": "Agents",

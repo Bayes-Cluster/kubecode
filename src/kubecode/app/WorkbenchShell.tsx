@@ -7,6 +7,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
+import { SidebarProvider } from '@/components/ui/sidebar'
 import { ResizeHandle } from '@/components/ResizeHandle'
 
 import { AgentSessionWorkspace, type SessionPlanEntry } from '../AgentSessionWorkspace'
@@ -1191,7 +1192,14 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
         titlebarTargetRef={setTitlebarTarget}
       />
 
-      <div className="kubecode-workspace" data-narrow={narrowLayout} ref={workspaceRef}>
+      {/* The official Sidebar context: one open state, the navigation's, and its Cmd/Ctrl+B shortcut. */}
+      <SidebarProvider
+        className="kubecode-workspace min-h-0"
+        data-narrow={narrowLayout}
+        open={sessionSidebarOpen}
+        ref={workspaceRef}
+        onOpenChange={setSessionSidebarOpen}
+      >
         {sessionSidebarOpen && !narrowLayout && navigatorPanel}
         {narrowLayout && (
           <Sheet open={sessionSidebarOpen} onOpenChange={setSessionSidebarOpen}>
@@ -1200,6 +1208,16 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
               className="w-[min(86vw,420px)] gap-0 p-0 sm:max-w-none"
               closeLabel={t('kubecode.closeSidePanels')}
               side="left"
+              onOpenAutoFocus={(event) => {
+                // Focus lands where the researcher is (the current place, else the
+                // current Workspace, else the sheet), not on the first header
+                // action, whose tooltip would take the first Escape.
+                event.preventDefault()
+                const content = event.currentTarget as HTMLElement
+                const current = content.querySelector<HTMLElement>('[aria-current="page"]')
+                  ?? content.querySelector<HTMLElement>('[aria-current]')
+                ;(current ?? content).focus()
+              }}
             >
               <SheetTitle className="sr-only">{t('kubecode.nav.workspaces')}</SheetTitle>
               {navigatorPanel}
@@ -1398,7 +1416,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
             ) : null}
           </div>
         </div>
-      </div>
+      </SidebarProvider>
 
       <WorkspaceNotificationBridge
         conversations={sessionCatalog}

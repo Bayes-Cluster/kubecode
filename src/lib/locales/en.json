@@ -1515,7 +1515,6 @@
   "kubecode.closeSidePanels": "Close side panels",
   "kubecode.collapse": "Collapse",
   "kubecode.settings": "Settings",
-  "kubecode.help": "Help",
   "kubecode.settingsDescription": "Configure the Kubecode workspace.",
   "kubecode.settings.general": "General",
   "kubecode.settings.notifications": "Notifications",

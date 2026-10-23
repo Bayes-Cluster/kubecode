@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
+import { SidebarProvider } from '@/components/ui/sidebar'
 import { createTranslator } from '@/lib/i18n'
 
 import type { Conversation, Project } from '../api'
@@ -21,7 +22,7 @@ function list(overrides: Partial<WorkspaceListProps> = {}) {
     onWorkspaceSelect: vi.fn(),
   }
   render(
-    <WorkspaceList
+    <SidebarProvider><WorkspaceList
       activeProjectId="project-1"
       conversations={[]}
       projects={projects}
@@ -29,7 +30,7 @@ function list(overrides: Partial<WorkspaceListProps> = {}) {
       t={t}
       {...handlers}
       {...overrides}
-    />,
+    /></SidebarProvider>,
   )
   return handlers
 }
@@ -51,6 +52,9 @@ describe('WorkspaceList', () => {
     expect(demo).toHaveAttribute('data-active', 'true')
     expect(demo).toHaveAttribute('data-session-status', 'running')
     expect(demo).toHaveAttribute('data-workspaces-enabled', 'false')
+    expect(demo).toHaveAttribute('data-slot', 'sidebar-menu-button')
+    expect(rows).toHaveAttribute('data-slot', 'sidebar-menu')
+    expect(screen.getByRole('button', { name: 'Actions for project Demo' })).toHaveAttribute('data-sidebar', 'menu-action')
     const other = within(rows).getByRole('button', { name: 'Other' })
     expect(other).not.toHaveAttribute('aria-current')
     expect(other).not.toHaveAttribute('data-session-status')
@@ -94,6 +98,6 @@ describe('WorkspaceList', () => {
 
   it('says how to start when there is no Project', () => {
     list({ projects: [], activeProjectId: null })
-    expect(screen.getByText('Select or create a project')).toBeInTheDocument()
+    expect(screen.getByText('Select or create a project').closest('[data-slot="empty"]')).not.toBeNull()
   })
 })

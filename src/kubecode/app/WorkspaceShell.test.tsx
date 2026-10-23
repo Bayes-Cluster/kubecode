@@ -182,6 +182,18 @@ function composer() {
   return screen.findByLabelText('Message the Workspace', { selector: 'textarea' })
 }
 
+/** Execution history's official Collapsible trigger. */
+function historyTrigger() {
+  return screen.getByRole('button', { name: 'History and execution' })
+}
+
+/** Opens execution history, as the researcher does, and returns its content. */
+function openHistory() {
+  const trigger = historyTrigger()
+  if (trigger.getAttribute('aria-expanded') !== 'true') fireEvent.click(trigger)
+  return document.getElementById(historyTrigger().getAttribute('aria-controls') ?? '') as HTMLElement
+}
+
 /** On a phone the navigation opens as a Sheet; the researcher dismisses it to reach the view. */
 async function dismissNavigationSheet() {
   const sheet = await screen.findByRole('dialog', { name: 'Workspaces' })
@@ -595,7 +607,7 @@ describe('Workspace navigation and routes', () => {
       listConversations: vi.fn().mockResolvedValue([session]),
     }))
     await screen.findByRole('heading', { name: 'General', exact: true, level: 2 })
-    fireEvent.click(await screen.findByRole('button', { name: /^Earlier chat/ }))
+    fireEvent.click(await within(openHistory()).findByRole('button', { name: /^Earlier chat/ }))
     await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/sessions/c/s1'))
     expect(await screen.findByTestId('agent-session-workspace')).toBeInTheDocument()
 
@@ -932,12 +944,7 @@ describe('Workspace navigation and routes', () => {
 
   it.each([
     ['execution history', async () => {
-      const history = document.querySelector('details.kubecode-history-nav') as HTMLDetailsElement
-      act(() => {
-        history.open = true
-        history.dispatchEvent(new Event('toggle'))
-      })
-      fireEvent.click(await within(history).findByRole('button', { name: /Pruning thread/ }))
+      fireEvent.click(await within(openHistory()).findByRole('button', { name: /Pruning thread/ }))
     }],
     ['a reference in Resources', async () => {
       fireEvent.click(within(await screen.findByRole('region', { name: 'Workspace' })).getByRole('button', { name: 'Resources' }))
@@ -974,10 +981,6 @@ describe('Workspace navigation and routes', () => {
 })
 
 describe('The Workspaces navigation', () => {
-  function history() {
-    return document.querySelector('details.kubecode-history-nav') as HTMLDetailsElement
-  }
-
   it('is one navigation of Workspaces, and the title bar names the Workspace and the place', async () => {
     const { container } = await start('#/p/project-1/board')
     expect(screen.getByRole('navigation', { name: 'Workspaces' })).toBeInTheDocument()
@@ -985,7 +988,7 @@ describe('The Workspaces navigation', () => {
     expect(container.querySelector('.kubecode-topbar-leading')).toHaveTextContent('DemoKanban')
     expect(screen.queryByRole('textbox', { name: 'Search Sessions in all Workspaces' })?.closest('.kubecode-topbar')).toBeFalsy()
     expect(screen.getAllByRole('button', { name: 'Demo' })).toHaveLength(1)
-    expect(history().open).toBe(false)
+    expect(historyTrigger()).toHaveAttribute('aria-expanded', 'false')
   })
 
   it('opens a member’s profile over the view from the roster, and Members from execution history', async () => {
@@ -996,14 +999,14 @@ describe('The Workspaces navigation', () => {
     expect(await inspector('Analyst')).toBeInTheDocument()
     await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/board?inspect=member~m-analyst'))
 
-    fireEvent.click(within(history()).getByRole('button', { name: 'New session' }))
+    fireEvent.click(within(openHistory()).getByRole('button', { name: 'New session' }))
     await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
   })
 
   it('opens Members with the profile when execution history is on screen', async () => {
     const { nav } = await start('#/p/project-1/sessions')
     await screen.findByTestId('agent-session-workspace')
-    expect(history().open).toBe(true)
+    expect(historyTrigger()).toHaveAttribute('aria-expanded', 'true')
     fireEvent.click(within(await within(nav).findByRole('list', { name: 'Agents' })).getByRole('button', { name: 'Analyst' }))
     await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/members?member=m-analyst'))
     expect(await inspector('Analyst')).toBeInTheDocument()
@@ -1025,21 +1028,21 @@ describe('The Workspaces navigation', () => {
   it('searches Sessions from execution history and opens the one chosen', async () => {
     await start('#/p/project-1/resources', api({ listConversations: vi.fn().mockResolvedValue([session]) }))
     await screen.findByRole('heading', { name: 'Resources', level: 2 })
-    const search = within(history()).getByRole('textbox', { name: 'Search Sessions in all Workspaces' })
+    const search = within(openHistory()).getByRole('textbox', { name: 'Search Sessions in all Workspaces' })
     fireEvent.change(search, { target: { value: 'earlier' } })
-    expect(history().open).toBe(true)
-    expect(within(history()).getByRole('heading', { name: 'Demo', level: 3 })).toBeInTheDocument()
-    fireEvent.click(await within(history()).findByRole('button', { name: /^Earlier chat/ }))
+    // A search pins it open: closing it is not offered while it holds results.
+    fireEvent.click(historyTrigger())
+    expect(historyTrigger()).toHaveAttribute('aria-expanded', 'true')
+    const history = openHistory()
+    expect(within(history).getByRole('heading', { name: 'Demo', level: 3 })).toBeInTheDocument()
+    fireEvent.click(await within(history).findByRole('button', { name: /^Earlier chat/ }))
     await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/sessions/c/s1'))
   })
 
   it('remembers execution history being opened', async () => {
     await start('#/p/project-1/general')
     await screen.findByRole('heading', { name: 'General', exact: true, level: 2 })
-    act(() => {
-      history().open = true
-      history().dispatchEvent(new Event('toggle'))
-    })
+    openHistory()
     await waitFor(() => expect(
       JSON.parse(localStorage.getItem('kubecode:workbench-layout:v2') ?? '{}').historyOpen,
     ).toBe(true))

@@ -5,19 +5,23 @@ export function workspaceNav(page: Page) {
   return page.getByRole('region', { name: 'Workspace', exact: true })
 }
 
-/** Legacy questions and Threads live under History; open it if it is closed. */
+/** Execution history's trigger (an official Collapsible). */
+export function historyTrigger(page: Page) {
+  return page.getByRole('button', { name: 'History and execution' })
+}
+
+/** Legacy questions and Threads live under History; open it if it is closed, and return its content. */
 export async function openHistory(page: Page) {
-  const history = page.locator('.kubecode-history-nav')
-  if (!(await history.evaluate((element) => (element as HTMLDetailsElement).open))) {
-    await history.locator('summary').click()
-  }
-  await expect(history).toHaveJSProperty('open', true)
+  const trigger = historyTrigger(page)
+  if (await trigger.getAttribute('aria-expanded') !== 'true') await trigger.click()
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true')
+  const id = await trigger.getAttribute('aria-controls')
+  return page.locator(`[id="${id}"]`)
 }
 
 /** Execution history (Sessions, Teams, the Session search), opened. */
 export async function openExecutionHistory(page: Page) {
-  await openHistory(page)
-  const history = page.locator('.kubecode-history-nav')
+  const history = await openHistory(page)
   await expect(history.getByRole('textbox', { name: 'Search Sessions in all Workspaces' })).toBeVisible()
   return history
 }
@@ -32,12 +36,13 @@ export async function toggleNavigation(page: Page) {
   await page.getByRole('button', { name: 'Toggle navigation' }).click()
 }
 
-/** On a phone the navigation is a sheet over the view: once the layout is narrow, put it away. */
+/** On a phone the navigation is an official Sheet over the view: once the layout is narrow, put it away. */
 export async function closeNavigationSheet(page: Page) {
   await expect(page.locator('.kubecode-workspace')).toHaveAttribute('data-narrow', 'true')
-  const toggle = page.getByRole('button', { name: 'Toggle navigation' })
-  if (await toggle.getAttribute('aria-pressed') === 'true') await toggle.click()
-  await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+  const sheet = page.getByRole('dialog', { name: 'Workspaces' })
+  if (await sheet.isVisible()) await page.keyboard.press('Escape')
+  await expect(sheet).toBeHidden()
+  await expect(page.getByRole('button', { name: 'Toggle navigation' })).toHaveAttribute('aria-pressed', 'false')
 }
 
 /** Enters a Workspace from the Workspaces list, at the place it was left in. */

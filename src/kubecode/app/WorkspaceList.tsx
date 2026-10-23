@@ -1,14 +1,23 @@
 import { Ellipsis, Folder, Plus, Trash2 } from 'lucide-react'
 
-import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { Empty, EmptyDescription, EmptyHeader } from '@/components/ui/empty'
+import {
+  SidebarMenu,
+  SidebarMenuAction,
+  SidebarMenuBadge,
+  SidebarMenuButton,
+  SidebarMenuItem,
+} from '@/components/ui/sidebar'
 import type { Translator } from '@/lib/i18n'
+import { cn } from '@/lib/utils'
 
 import type { Conversation, Project } from '../api'
 import { projectStatusLabel, sessionsRunState } from '../runStatusLabels'
@@ -25,6 +34,16 @@ export type WorkspaceListProps = {
   onProjectDelete: (projectId: string) => void
   onProjectWorkspacesToggle: (projectId: string) => void
   onWorkspaceSelect: (projectId: string) => void
+}
+
+/** A dot beside the words: the run state is read from its label, never this colour alone. */
+const STATUS_DOT: Partial<Record<string, string>> = {
+  running: 'bg-info',
+  stuck: 'bg-warning',
+  waiting_permission: 'bg-warning',
+  failed: 'bg-destructive',
+  timed_out: 'bg-destructive',
+  interrupted: 'bg-destructive',
 }
 
 /**
@@ -45,7 +64,13 @@ export function WorkspaceList({
   onWorkspaceSelect,
 }: WorkspaceListProps) {
   if (projects.length === 0) {
-    return <p className="kubecode-empty-small">{t('kubecode.selectProject')}</p>
+    return (
+      <Empty className="p-4">
+        <EmptyHeader>
+          <EmptyDescription>{t('kubecode.selectProject')}</EmptyDescription>
+        </EmptyHeader>
+      </Empty>
+    )
   }
   const rows = projects.map((project) => {
     const status = projectStatuses[project.id]
@@ -54,61 +79,61 @@ export function WorkspaceList({
   })
   return (
     <>
-      <ul aria-label={t('kubecode.nav.workspaces')} className="kubecode-workspace-list">
+      <SidebarMenu aria-label={t('kubecode.nav.workspaces')}>
         {rows.map(({ label, project, status }) => {
           const active = project.id === activeProjectId
           return (
-            <li className="kubecode-workspace-row" data-active={active} key={project.id}>
-              <Button
+            <SidebarMenuItem key={project.id}>
+              <SidebarMenuButton
                 aria-current={active ? 'true' : undefined}
-                className="kubecode-workspace-row-main"
-                data-active={active}
                 data-session-status={status ?? undefined}
                 data-workspaces-enabled={project.workspaces_enabled}
+                isActive={active}
                 title={project.name}
-                variant="ghost"
                 onClick={() => onWorkspaceSelect(project.id)}
               >
-                <Folder size={16} />
+                <Folder aria-hidden="true" />
                 <span>{project.name}</span>
-              </Button>
-              <span
-                aria-hidden={label ? undefined : true}
-                aria-label={label}
-                className="kubecode-navigator-status"
-                data-status={status ?? undefined}
-                role={label ? 'img' : undefined}
-              />
+              </SidebarMenuButton>
+              {label && (
+                <SidebarMenuBadge className="right-7">
+                  <span
+                    aria-label={label}
+                    className={cn('size-2 rounded-full', STATUS_DOT[status ?? 'running'] ?? 'bg-warning')}
+                    role="img"
+                  />
+                </SidebarMenuBadge>
+              )}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button
+                  <SidebarMenuAction
                     aria-label={t('kubecode.projectActionsFor', { name: project.name })}
-                    className="kubecode-workspace-row-actions"
-                    size="icon-xs"
-                    variant="ghost"
+                    showOnHover
                   >
-                    <Ellipsis size={16} />
-                  </Button>
+                    <Ellipsis aria-hidden="true" />
+                  </SidebarMenuAction>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start">
-                  <DropdownMenuItem onSelect={() => onNewSession(project.id)}>
-                    <Plus size={16} /> {t('kubecode.newSession')}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => onProjectWorkspacesToggle(project.id)}>
-                    {project.workspaces_enabled
-                      ? t('kubecode.disableWorkspaces')
-                      : t('kubecode.enableWorkspaces')}
-                  </DropdownMenuItem>
+                  <DropdownMenuGroup>
+                    <DropdownMenuItem onSelect={() => onNewSession(project.id)}>
+                      <Plus aria-hidden="true" /> {t('kubecode.newSession')}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => onProjectWorkspacesToggle(project.id)}>
+                      {project.workspaces_enabled
+                        ? t('kubecode.disableWorkspaces')
+                        : t('kubecode.enableWorkspaces')}
+                    </DropdownMenuItem>
+                  </DropdownMenuGroup>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem variant="destructive" onSelect={() => onProjectDelete(project.id)}>
-                    <Trash2 size={16} /> {t('kubecode.delete')}
+                    <Trash2 aria-hidden="true" /> {t('kubecode.delete')}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-            </li>
+            </SidebarMenuItem>
           )
         })}
-      </ul>
+      </SidebarMenu>
       {/* One live region for the list: each Workspace's run state, so a change is announced once. */}
       <p className="sr-only" role="status">
         {rows.filter((row) => row.label).map(({ label, project }) => (

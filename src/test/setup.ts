@@ -36,6 +36,20 @@ globalThis.WebSocket = class MockWebSocket {
 // Mock scrollIntoView for jsdom (not implemented)
 Element.prototype.scrollIntoView = vi.fn()
 
+// jsdom has no matchMedia; the official Sidebar's useIsMobile needs one. Nothing matches by default.
+if (typeof window.matchMedia !== 'function') {
+  window.matchMedia = ((query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+    addListener: () => undefined,
+    removeListener: () => undefined,
+    dispatchEvent: () => false,
+  })) as typeof window.matchMedia
+}
+
 // Mock ResizeObserver for jsdom (not implemented)
 globalThis.ResizeObserver = class {
   observe() {}

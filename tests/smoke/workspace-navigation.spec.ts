@@ -113,7 +113,7 @@ test('@smoke workspace navigation returns to each place, through the inspector s
     for (const role of ['button', 'link'] as const) {
       await expect(mainPane.getByRole(role, { name: /^back\b|sessions/i }).and(page.locator(':not([aria-pressed])'))).toHaveCount(0)
     }
-    await expect(page.locator('.kubecode-history-nav')).toHaveJSProperty('open', false)
+    await expect(page.getByRole('button', { name: 'History and execution' })).toHaveAttribute('aria-expanded', 'false')
     const nav = workspaceNav(page)
     const order = await Promise.all([
       nav.getByRole('button', { name: 'General' }).first(),

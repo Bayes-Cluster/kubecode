@@ -1,9 +1,17 @@
 import { useId } from 'react'
 
-import { IconButton } from '@/components/workspace/IconButton'
+import {
+  SidebarGroup,
+  SidebarGroupLabel,
+  SidebarMenu,
+  SidebarMenuAction,
+  SidebarMenuButton,
+  SidebarMenuItem,
+} from '@/components/ui/sidebar'
 import { MemberAvatar, type MemberRoleKind } from '@/components/workspace/MemberIdentity'
 import { StatusBadge } from '@/components/workspace/StatusBadge'
 import type { Translator } from '@/lib/i18n'
+import { cn } from '@/lib/utils'
 
 import type { Member } from '../api'
 import { Icon } from '../icons'
@@ -66,15 +74,15 @@ export function WorkspaceNav({
   ] as const
   const waiting = needsYou.length
   const destination = (entry: typeof places[number]) => (
-    <li key={entry.view}>
-      <button
+    <SidebarMenuItem key={entry.view}>
+      <SidebarMenuButton
         aria-current={active === entry.view ? 'page' : undefined}
-        className="kubecode-research-nav-item"
-        type="button"
+        className="h-auto min-h-8"
+        isActive={active === entry.view}
         onClick={() => onOpen(entry.view)}
       >
         <Icon role="navigation" size="secondary" source={entry.icon} />
-        <span className="kubecode-research-nav-title">{entry.label}</span>
+        <span className="min-w-0 flex-1 truncate">{entry.label}</span>
         {entry.view === 'board' && taskCount > 0 && (
           <StatusBadge tone="muted">{taskCount}</StatusBadge>
         )}
@@ -84,60 +92,71 @@ export function WorkspaceNav({
         {entry.view === 'general' && undeliveredGeneral > 0 && (
           <StatusBadge tone="danger">{t('kubecode.nav.notDelivered', { count: undeliveredGeneral })}</StatusBadge>
         )}
-      </button>
-    </li>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
   )
   const rosterHeading = useId()
   const directHeading = useId()
   // A private conversation shows once it exists, and while it is being opened.
   const direct = members.filter((member) => member.dm_conversation_id !== null || active === `dm:${member.id}`)
   return (
-    <section aria-label={t('kubecode.nav.workspace')} className="kubecode-workspace-nav">
-      <ul className="kubecode-research-nav-list">
-        {places.map(destination)}
-      </ul>
+    <section aria-label={t('kubecode.nav.workspace')} className="flex flex-col">
+      <SidebarGroup>
+        <SidebarMenu>
+          {places.map(destination)}
+        </SidebarMenu>
+      </SidebarGroup>
       {members.length > 0 && (
-        <div className="kubecode-nav-roster">
-          <h3 className="kubecode-nav-heading" id={rosterHeading}>{t('kubecode.nav.roster')}</h3>
-          <ul aria-labelledby={rosterHeading} className="kubecode-nav-members">
+        <SidebarGroup>
+          <SidebarGroupLabel asChild>
+            <h3 id={rosterHeading}>{t('kubecode.nav.roster')}</h3>
+          </SidebarGroupLabel>
+          <SidebarMenu aria-labelledby={rosterHeading}>
             {members.map((member) => (
-              <li data-state={member.state} key={member.id}>
+              <SidebarMenuItem
+                className={cn('px-2 py-1', member.state === 'active' && 'pr-8')}
+                data-state={member.state}
+                key={member.id}
+              >
                 <Identity
                   size="sm"
                   view={memberView(member, t)}
                   onOpen={() => onInspectMember(member.id)}
                 />
                 {member.state === 'active' && (
-                  <IconButton
-                    icon={<Icon role="navigation" size="secondary" source={DESTINATIONS.directMessage.Icon} />}
-                    label={t('kubecode.members.messagePrivately', { name: member.name })}
+                  <SidebarMenuAction
+                    aria-label={t('kubecode.members.messagePrivately', { name: member.name })}
+                    title={t('kubecode.members.messagePrivately', { name: member.name })}
                     onClick={() => onOpenDm(member.id)}
-                  />
+                  >
+                    <Icon role="navigation" size="secondary" source={DESTINATIONS.directMessage.Icon} />
+                  </SidebarMenuAction>
                 )}
-              </li>
+              </SidebarMenuItem>
             ))}
-          </ul>
-        </div>
+          </SidebarMenu>
+        </SidebarGroup>
       )}
       {direct.length > 0 && (
-        <div className="kubecode-nav-direct">
-          <h3 className="kubecode-nav-heading" id={directHeading}>{t('kubecode.nav.directMessages')}</h3>
-          <ul aria-labelledby={directHeading} className="kubecode-research-nav-list">
+        <SidebarGroup>
+          <SidebarGroupLabel asChild>
+            <h3 id={directHeading}>{t('kubecode.nav.directMessages')}</h3>
+          </SidebarGroupLabel>
+          <SidebarMenu aria-labelledby={directHeading}>
             {direct.map((member) => (
-              <li key={member.id}>
-                <button
+              <SidebarMenuItem key={member.id}>
+                <SidebarMenuButton
                   aria-current={active === `dm:${member.id}` ? 'page' : undefined}
-                  className="kubecode-research-nav-item"
-                  type="button"
+                  isActive={active === `dm:${member.id}`}
                   onClick={() => onOpenDm(member.id)}
                 >
                   <MemberAvatar name={member.name} role={roleKind(member)} size="sm" />
-                  <span className="kubecode-research-nav-title">{member.name}</span>
-                </button>
-              </li>
+                  <span>{member.name}</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
             ))}
-          </ul>
-        </div>
+          </SidebarMenu>
+        </SidebarGroup>
       )}
     </section>
   )

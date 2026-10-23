@@ -1200,7 +1200,6 @@
   "kubecode.contextPanel": "脈絡面板",
   "kubecode.collapse": "收合",
   "kubecode.settings": "設定",
-  "kubecode.help": "說明",
   "kubecode.settingsDescription": "設定 Kubecode 工作區。",
   "kubecode.settings.general": "一般",
   "kubecode.settings.agents": "Agents",
