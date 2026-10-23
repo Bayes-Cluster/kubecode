@@ -1,5 +1,7 @@
 import { useEffect, type ReactNode } from 'react'
 
+import { Empty, EmptyContent, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
+import { Spinner } from '@/components/ui/spinner'
 import { ViewHeader } from '@/components/workspace/ViewHeader'
 
 import { useInspectorEntry, useInspectorServices } from './inspectorContext'
@@ -41,11 +43,19 @@ export function InspectorPanel({ actions, children, icon, meta, recovery, status
       />
       <div className="kubecode-inspector-body">
         {status === 'ready' && children}
-        {status === 'loading' && <p className="kubecode-research-muted" role="status">{t('kubecode.loading')}</p>}
+        {status === 'loading' && (
+          <div className="flex items-center gap-2 p-4 text-sm text-muted-foreground" role="status">
+            <Spinner aria-hidden="true" role="presentation" />
+            {t('kubecode.loading')}
+          </div>
+        )}
         {status === 'unavailable' && (
-          <p className="kubecode-research-notice" role="status">
-            {t('kubecode.inspector.unavailable')}{recovery && ' '}{recovery}
-          </p>
+          <Empty role="status">
+            <EmptyHeader>
+              <EmptyTitle>{t('kubecode.inspector.unavailable')}</EmptyTitle>
+            </EmptyHeader>
+            {recovery && <EmptyContent>{recovery}</EmptyContent>}
+          </Empty>
         )}
       </div>
     </div>

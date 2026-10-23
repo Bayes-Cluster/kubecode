@@ -2,6 +2,7 @@ import { createRef } from 'react'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { SidebarProvider } from '@/components/ui/sidebar'
 import { createTranslator } from '@/lib/i18n'
 
 import type { Conversation, KubecodeApi, Project } from '../api'
@@ -33,13 +34,12 @@ function navigator(overrides: Partial<ProjectNavigatorProps> = {}) {
     onProjectDelete: vi.fn(),
     onProjectWorkspacesToggle: vi.fn(),
     onQueryChange: vi.fn(),
-    onResize: vi.fn(),
     onSelect: vi.fn(),
     onWorkspaceSelect: vi.fn(),
   }
   const searchRef = createRef<HTMLInputElement>()
   const view = render(
-    <ProjectNavigator
+    <SidebarProvider><ProjectNavigator
       activeConversationId={null}
       activeProjectId="project-1"
       api={{} as KubecodeApi}
@@ -56,7 +56,7 @@ function navigator(overrides: Partial<ProjectNavigatorProps> = {}) {
       workspaceSection={<section aria-label="Workspace">Places</section>}
       {...handlers}
       {...overrides}
-    />,
+    /></SidebarProvider>,
   )
   return { ...view, handlers, searchRef }
 }
@@ -65,15 +65,16 @@ describe('ProjectNavigator', () => {
   beforeEach(() => localStorage.clear())
 
   it('is the Workspaces navigation: the Workspaces, this Workspace’s places, then its history', () => {
-    const { container, handlers } = navigator()
+    const { handlers } = navigator()
     const nav = screen.getByRole('navigation', { name: 'Workspaces' })
-    expect(within(nav).getByText('Workspaces', { selector: 'strong' })).toBeInTheDocument()
+    expect(nav.closest('[data-slot="sidebar"]')).not.toBeNull()
+    expect(within(nav).getByRole('heading', { name: 'Workspaces', level: 2 })).toBeInTheDocument()
     fireEvent.click(within(nav).getByRole('button', { name: 'Add project' }))
     expect(handlers.onAddProject).toHaveBeenCalled()
 
     const list = within(nav).getByRole('list', { name: 'Workspaces' })
     const places = within(nav).getByRole('region', { name: 'Workspace' })
-    const history = container.querySelector('details.kubecode-history-nav') as HTMLDetailsElement
+    const history = within(nav).getByRole('button', { name: 'History and execution' })
     expect(list.compareDocumentPosition(places) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(places.compareDocumentPosition(history) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
 
@@ -82,11 +83,31 @@ describe('ProjectNavigator', () => {
   })
 
   it('keeps execution history collapsed, holding the search, this Workspace’s Sessions, and the older threads', () => {
-    const { container, handlers, searchRef } = navigator()
-    const history = container.querySelector('details.kubecode-history-nav') as HTMLDetailsElement
-    expect(history.open).toBe(false)
-    expect(within(history).getByText('History and execution', { selector: 'summary' })).toBeInTheDocument()
+    const { handlers, rerender, searchRef } = navigator()
+    const trigger = screen.getByRole('button', { name: 'History and execution' })
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+    expect(trigger.closest('[data-slot="collapsible"]')).not.toBeNull()
+    rerender(
+      <SidebarProvider><ProjectNavigator
+        activeConversationId={null}
+        activeProjectId="project-1"
+        api={{} as KubecodeApi}
+        conversations={[session('s1', 'Earlier chat'), session('s2', 'Elsewhere chat', 'project-2')]}
+        historyOpen
+        historySection={<p>Threads and questions</p>}
+        navigatorWidth={280}
+        projectRuns={{}}
+        projects={projects}
+        query=""
+        searchRef={searchRef}
+        t={t}
+        teams={[]}
+        {...handlers}
+      /></SidebarProvider>,
+    )
+    const history = document.getElementById(trigger.getAttribute('aria-controls') ?? '') as HTMLElement
     const search = within(history).getByRole('textbox', { name: 'Search Sessions in all Workspaces' })
+    expect(search).toHaveAttribute('data-slot', 'input-group-control')
     expect(searchRef.current).toBe(search)
     expect(within(history).getByRole('button', { name: 'Earlier chat' })).toBeInTheDocument()
     expect(within(history).queryByRole('button', { name: 'Elsewhere chat' })).not.toBeInTheDocument()
@@ -103,43 +124,23 @@ describe('ProjectNavigator', () => {
   })
 
   it('reports the researcher opening and closing execution history', () => {
-    const { container, handlers, rerender } = navigator()
-    const history = container.querySelector('details.kubecode-history-nav') as HTMLDetailsElement
-    history.open = true
-    fireEvent(history, new Event('toggle'))
+    const { handlers } = navigator()
+    fireEvent.click(screen.getByRole('button', { name: 'History and execution' }))
     expect(handlers.onHistoryOpenChange).toHaveBeenLastCalledWith(true)
-    rerender(
-      <ProjectNavigator
-        activeConversationId={null}
-        activeProjectId="project-1"
-        api={{} as KubecodeApi}
-        conversations={[]}
-        historyOpen
-        navigatorWidth={280}
-        projectRuns={{}}
-        projects={projects}
-        query=""
-        searchRef={createRef()}
-        t={t}
-        teams={[]}
-        {...handlers}
-      />,
-    )
-    expect(history.open).toBe(true)
   })
 
-  it('stays open while it holds what is on screen, even when its summary is clicked', () => {
-    const { container, handlers } = navigator({ historyOpen: true, historyPinned: true })
-    const history = container.querySelector('details.kubecode-history-nav') as HTMLDetailsElement
-    expect(history.open).toBe(true)
-    history.open = false
-    fireEvent(history, new Event('toggle'))
-    expect(history.open).toBe(true)
+  it('stays open while it holds what is on screen, even when its trigger is clicked', () => {
+    const { handlers } = navigator({ historyOpen: true, historyPinned: true })
+    const trigger = screen.getByRole('button', { name: 'History and execution' })
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+    fireEvent.click(trigger)
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
     expect(handlers.onHistoryOpenChange).not.toHaveBeenCalled()
   })
 
   it('searches every Workspace’s Sessions under plain headings', () => {
-    navigator({ query: 'chat' })
+    // A search pins execution history open (the shell's contract).
+    navigator({ historyOpen: true, historyPinned: true, query: 'chat' })
     const nav = screen.getByRole('navigation', { name: 'Workspaces' })
     expect(within(nav).getByRole('heading', { name: 'Other', level: 3 })).toBeInTheDocument()
     expect(within(nav).getByRole('button', { name: 'Elsewhere chat' })).toBeInTheDocument()

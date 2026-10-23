@@ -6,13 +6,22 @@ import {
   Settings,
   Sparkle,
   SquareTerminal,
-  Zap
+  Zap,
 } from 'lucide-react'
-import { useId, useMemo, useState, type ReactNode } from 'react'
+import { useId, useMemo, useState } from 'react'
 
+import { Alert, AlertTitle } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { cn } from '@/lib/utils'
+import { Spinner } from '@/components/ui/spinner'
 import type { TranslationKey, Translator } from '@/lib/i18n'
 
 import type { ComposerCatalogSnapshot } from './api'
@@ -86,96 +95,48 @@ function itemScopeLabel(item: RankedCommandPaletteItem, t: Translator): string {
   return t(SCOPE_LABEL_KEYS[item.scope])
 }
 
-function PaletteGroup({
-  children,
-  id,
-  label,
-}: {
-  children: ReactNode
-  id: string
-  label: string
-}) {
-  return (
-    <section aria-labelledby={id} className="min-w-0" role="group">
-      <h3 className="px-3 pb-1 pt-2 text-xs font-medium text-muted-foreground" id={id}>
-        {label}
-      </h3>
-      {children}
-    </section>
-  )
-}
-
 function PaletteOption({
-  active,
-  id,
-  onHover,
-  onSelect,
   row,
+  onSelect,
   t,
 }: {
-  active: boolean
-  id: string
-  onHover: () => void
-  onSelect: () => void
   row: PaletteRow
+  onSelect: () => void
   t: Translator
 }) {
-  const reasonId = `${id}-reason`
+  const reasonId = useId()
   return (
-    <button
+    <CommandItem
       aria-describedby={!row.enabled ? reasonId : undefined}
-      aria-disabled={!row.enabled}
-      aria-selected={active}
-      className={cn(
-        'flex min-h-12 w-full min-w-0 items-start gap-2 px-3 py-2 text-left outline-none',
-        row.enabled && active && 'bg-accent text-accent-foreground',
-        row.enabled && !active && 'hover:bg-accent/60',
-        !row.enabled && 'cursor-not-allowed opacity-65',
-      )}
-      id={id}
-      onClick={() => row.enabled && onSelect()}
-      onMouseEnter={() => row.enabled && onHover()}
-      onPointerMove={() => row.enabled && onHover()}
-      role="option"
-      tabIndex={-1}
-      type="button"
+      className="items-start"
+      disabled={!row.enabled}
+      onSelect={onSelect}
+      value={row.key}
     >
-      <span className="mt-0.5 shrink-0 [&>svg]:size-4">
-        {row.group === 'host'
-          ? <HostActionIcon id={row.action.id} />
-          : <CatalogItemIcon item={row.item} />}
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="flex min-w-0 flex-wrap items-center gap-1">
-          <strong className="min-w-0 max-w-full truncate text-sm font-medium">
+      {row.group === 'host'
+        ? <HostActionIcon id={row.action.id} />
+        : <CatalogItemIcon item={row.item} />}
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <div className="flex min-w-0 flex-wrap items-center gap-1">
+          <span className="min-w-0 max-w-full truncate font-medium">
             {row.group === 'command' ? `/${row.label}` : row.label}
-          </strong>
+          </span>
           {row.group !== 'host' && (
             <>
-              <span className="rounded-sm border border-border px-1 text-[10px] text-muted-foreground">
-                {itemKindLabel(row.item, t)}
-              </span>
-              <span className="max-w-full truncate rounded-sm border border-border px-1 text-[10px] text-muted-foreground">
-                {row.item.source_label}
-              </span>
-              <span className="rounded-sm border border-border px-1 text-[10px] text-muted-foreground">
-                {itemScopeLabel(row.item, t)}
-              </span>
+              <Badge variant="outline">{itemKindLabel(row.item, t)}</Badge>
+              <Badge className="max-w-full truncate" variant="outline">{row.item.source_label}</Badge>
+              <Badge variant="outline">{itemScopeLabel(row.item, t)}</Badge>
             </>
           )}
-        </span>
+        </div>
         {row.group !== 'host' && row.item.description && (
-          <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-            {row.item.description}
-          </span>
+          <span className="truncate text-xs text-muted-foreground">{row.item.description}</span>
         )}
         {!row.enabled && row.disabledReason && (
-          <span className="mt-0.5 block text-xs text-destructive" id={reasonId}>
-            {row.disabledReason}
-          </span>
+          <span className="text-xs text-destructive" id={reasonId}>{row.disabledReason}</span>
         )}
-      </span>
-    </button>
+      </div>
+    </CommandItem>
   )
 }
 
@@ -205,9 +166,6 @@ export function GlobalCommandPalette({
   t: Translator
 }) {
   const [query, setQuery] = useState('')
-  const [selectedKey, setSelectedKey] = useState<string | null>(null)
-  const listboxId = useId()
-  const groupIdPrefix = useId()
   const catalogGroups = useMemo(
     () => commandPaletteCatalogGroups(catalog, query),
     [catalog, query],
@@ -253,45 +211,27 @@ export function GlobalCommandPalette({
       label: item.name,
     })),
   ], [catalogGroups, hostRows, sessionDisabledReason, sessionWritable, t])
-  const enabledRows = rows.filter((row) => row.enabled)
-  const selectedRow = rows.find((row) => row.key === selectedKey && row.enabled)
-    ?? enabledRows[0]
-    ?? null
-
   const select = (row: PaletteRow) => {
     if (!row.enabled) return
     setQuery('')
-    setSelectedKey(null)
     if (row.group === 'host') onHostAction(row.action)
     else onCatalogItem(row.item)
   }
 
   const changeOpen = (nextOpen: boolean) => {
-    if (!nextOpen) {
-      setQuery('')
-      setSelectedKey(null)
-    }
+    if (!nextOpen) setQuery('')
     onOpenChange(nextOpen)
   }
 
   const renderRows = (group: PaletteRow['group'], label: string) => {
     const matching = rows.filter((row) => row.group === group)
     if (matching.length === 0) return null
-    const groupId = `${groupIdPrefix}-${group}`
     return (
-      <PaletteGroup id={groupId} label={label}>
+      <CommandGroup heading={label}>
         {matching.map((row) => (
-          <PaletteOption
-            active={row.key === selectedRow?.key}
-            id={`${listboxId}-${row.key}`}
-            key={row.key}
-            onHover={() => setSelectedKey(row.key)}
-            onSelect={() => select(row)}
-            row={row}
-            t={t}
-          />
+          <PaletteOption key={row.key} onSelect={() => select(row)} row={row} t={t} />
         ))}
-      </PaletteGroup>
+      </CommandGroup>
     )
   }
 
@@ -307,70 +247,42 @@ export function GlobalCommandPalette({
           <DialogTitle>{t('menu.view.commandPalette')}</DialogTitle>
           <DialogDescription>{t('command.palettePlaceholder')}</DialogDescription>
         </DialogHeader>
-        <div className="flex min-w-0 items-center gap-2 border-b border-border px-3">
-          <Search aria-hidden className="shrink-0 text-muted-foreground"  size={16}/>
-          <Input
-            aria-activedescendant={selectedRow ? `${listboxId}-${selectedRow.key}` : undefined}
-            aria-autocomplete="list"
-            aria-controls={listboxId}
-            aria-expanded={open}
+        {/* The ranking is shared with the composer, so cmdk does not filter again. */}
+        <Command label={t('command.palettePlaceholder')} shouldFilter={false}>
+          <CommandInput
             aria-label={t('command.palettePlaceholder')}
             autoFocus
-            className="h-12 min-w-0 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
-            onChange={(event) => {
-              setQuery(event.target.value)
-              setSelectedKey(null)
-            }}
-            onKeyDown={(event) => {
-              if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-                if (enabledRows.length === 0) return
-                event.preventDefault()
-                const currentIndex = Math.max(0, enabledRows.findIndex((row) => row.key === selectedRow?.key))
-                const direction = event.key === 'ArrowDown' ? 1 : -1
-                const next = (currentIndex + direction + enabledRows.length) % enabledRows.length
-                setSelectedKey(enabledRows[next].key)
-              }
-              if (event.key === 'Home' || event.key === 'End') {
-                if (enabledRows.length === 0) return
-                event.preventDefault()
-                setSelectedKey(enabledRows[event.key === 'Home' ? 0 : enabledRows.length - 1].key)
-              }
-              if (event.key === 'Enter' && selectedRow) {
-                event.preventDefault()
-                select(selectedRow)
-              }
-            }}
+            className="h-12"
+            onValueChange={setQuery}
             placeholder={t('command.palettePlaceholder')}
-            role="combobox"
             value={query}
           />
-        </div>
-        <div className="min-w-0 flex-1 overflow-y-auto py-1" id={listboxId} role="listbox">
-          {renderRows('host', t('kubecode.commandPaletteHostActions'))}
-          {renderRows('command', t('kubecode.commandPaletteAgentCommands'))}
-          {renderRows('capability', t('kubecode.commandPaletteCapabilities'))}
-          {renderRows('plugin', t('kubecode.commandPalettePluginActions'))}
-          {catalogStatus === 'loading' && (
-            <p className="px-3 py-3 text-sm text-muted-foreground" role="status">
-              {t('kubecode.loadingCapabilities')}
-            </p>
-          )}
-          {catalogStatus === 'error' && (
-            <p className="px-3 py-3 text-sm text-destructive" role="status">
-              {t('kubecode.capabilitiesLoadFailed')}
-            </p>
-          )}
-          {!catalog && catalogStatus === 'ready' && sessionDisabledReason && (
-            <p className="px-3 py-3 text-sm text-muted-foreground" role="status">
-              {sessionDisabledReason}
-            </p>
-          )}
-          {rows.length === 0 && catalogStatus === 'ready' && (
-            <p className="px-3 py-3 text-sm text-muted-foreground" role="status">
-              {t('command.noMatches')}
-            </p>
-          )}
-        </div>
+          <CommandList className="max-h-[min(32rem,calc(100vh-5rem))]">
+            {renderRows('host', t('kubecode.commandPaletteHostActions'))}
+            {renderRows('command', t('kubecode.commandPaletteAgentCommands'))}
+            {renderRows('capability', t('kubecode.commandPaletteCapabilities'))}
+            {renderRows('plugin', t('kubecode.commandPalettePluginActions'))}
+            {catalogStatus === 'loading' && (
+              <div className="flex items-center gap-2 px-3 py-3 text-sm text-muted-foreground" role="status">
+                <Spinner aria-hidden="true" />
+                {t('kubecode.loadingCapabilities')}
+              </div>
+            )}
+            {catalogStatus === 'error' && (
+              <Alert className="m-2 w-auto" variant="destructive">
+                <AlertTitle>{t('kubecode.capabilitiesLoadFailed')}</AlertTitle>
+              </Alert>
+            )}
+            {!catalog && catalogStatus === 'ready' && sessionDisabledReason && (
+              <p className="px-3 py-3 text-sm text-muted-foreground" role="status">
+                {sessionDisabledReason}
+              </p>
+            )}
+            {rows.length === 0 && catalogStatus === 'ready' && (
+              <CommandEmpty role="status">{t('command.noMatches')}</CommandEmpty>
+            )}
+          </CommandList>
+        </Command>
       </DialogContent>
     </Dialog>
   )

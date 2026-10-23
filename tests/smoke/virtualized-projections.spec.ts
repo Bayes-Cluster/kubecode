@@ -129,8 +129,11 @@ test('@smoke virtualized projections stay bounded and contained on desktop and m
     // Both overlays were open on desktop, so narrow entry settles the panel closed.
     await expect(mobileContextToggle).toHaveAttribute('aria-pressed', 'false')
     await mobileContextToggle.click()
-    await expect(mobileContextToggle).toHaveAttribute('aria-pressed', 'true')
+    // On a phone Files and Git is a modal official Sheet over the view.
+    await expect(page.getByRole('dialog', { name: 'Context panel' })).toBeVisible()
     await expect(page.getByTestId('context-workbench')).toBeVisible()
+    // Measure once the Sheet has finished sliding in.
+    await expect.poll(() => page.evaluate(() => document.getAnimations().filter((animation) => animation.playState === 'running').length)).toBe(0)
     await assertContained()
   } finally {
     const projects = await request.get(`${workspaceUrl}/api/v1/projects`)

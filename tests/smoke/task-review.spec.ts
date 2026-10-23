@@ -3,7 +3,7 @@ import { writeFile } from 'node:fs/promises'
 import { expect, test, type Page } from '@playwright/test'
 
 import { MemberAgent } from './agents'
-import { closeNavigationSheet, inspector, toggleNavigation, workspaceNav } from './shell'
+import { closeNavigationSheet, inspector, workspaceNav } from './shell'
 import { seedTaskInReview } from './taskFixtures'
 
 /**
@@ -114,7 +114,7 @@ test('@smoke a Task is reviewed at the version that was shown, sent back through
     })
     await writeFile(`${projectPath}/results.csv`, Buffer.from([0xff, 0xfe, 0x00]))
     await page.setViewportSize({ width: 1440, height: 900 })
-    await toggleNavigation(page)
+    // The phone Sheet never changed the wide-screen layout: the navigation is a column again.
     await expect(workspaceNav(page)).toBeVisible()
     await workspaceNav(page).getByRole('button', { name: /^Kanban/ }).click()
     await expect(page.locator('[draggable="true"]')).toHaveCount(0)

@@ -8,6 +8,7 @@ import { MoreActions } from '@/components/workspace/MoreActions'
 import { ReferenceChip } from '@/components/workspace/ReferenceChip'
 import { PauseButton, StopButton } from '@/components/workspace/SendButton'
 import { ViewHeader } from '@/components/workspace/ViewHeader'
+import { SidebarProvider } from '@/components/ui/sidebar'
 import { WorkspaceNav } from '@/kubecode/app/WorkspaceNav'
 import { WORKSPACE_COMMAND_ICONS, WORKSPACE_DESTINATION_ICONS } from '@/kubecode/icons/workspaceIcons'
 
@@ -279,6 +280,8 @@ describe('what the controls draw (ADR 0227)', () => {
         onOpenDm={vi.fn()}
         onOpenTarget={vi.fn()}
       />,
+      // The navigation renders inside the shell's official Sidebar.
+      { wrapper: SidebarProvider },
     )
     const expected = {
       'kubecode.channel.general': WORKSPACE_DESTINATION_ICONS.general,

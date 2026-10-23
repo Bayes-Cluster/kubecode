@@ -64,7 +64,8 @@ describe('GlobalCommandPalette', () => {
     expect(screen.getByRole('group', { name: 'Agent commands' })).toBeInTheDocument()
     expect(screen.getByRole('group', { name: 'Skills and capabilities' })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: /review/i })).toHaveAttribute('aria-disabled', 'true')
-    expect(screen.getByRole('option', { name: /review/i })).toHaveAttribute('tabindex', '-1')
+    expect(screen.getByRole('option', { name: /review/i })).toHaveAttribute('data-slot', 'command-item')
+    expect(listbox).toHaveAttribute('data-slot', 'command-list')
     expect(screen.getByRole('option', { name: /review/i })).toHaveTextContent('Codex command')
     expect(screen.getByRole('option', { name: /test/i })).toHaveTextContent('Project')
 
@@ -133,6 +134,8 @@ describe('GlobalCommandPalette', () => {
       />,
     )
     expect(screen.getByRole('status')).toHaveTextContent('Loading capabilities')
+    expect(screen.getByRole('status').querySelector('[data-slot="spinner"], [aria-label="Loading"]'))
+      .not.toBeNull()
 
     rerender(
       <GlobalCommandPalette
@@ -148,6 +151,6 @@ describe('GlobalCommandPalette', () => {
         t={createTranslator('en')}
       />,
     )
-    expect(screen.getByRole('status')).toHaveTextContent('Could not load capabilities')
+    expect(screen.getByRole('alert')).toHaveTextContent('Could not load capabilities')
   })
 })

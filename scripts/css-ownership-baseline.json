@@ -8,6 +8,13 @@
       "owner": "#255 (app-level exception: overlay zoom compensation)"
     },
     {
+      "file": "src/kubecode/kubecode.css",
+      "text": ".kubecode-conversation-avatar[data-role='researcher'] > [data-slot='avatar-fallback'] { background: var(--accent-purple-light); box-shadow: inset 0 0 0 1px var(--accent-purple); }",
+      "context": ".kubecode-conversation-avatar[data-role='researcher'] > [data-slot='avatar-fallback']",
+      "kind": "official-internal",
+      "owner": "#262"
+    },
+    {
       "file": "src/index.css",
       "text": "[data-radix-popper-content-wrapper] > [data-slot=\"dropdown-menu-content\"],",
       "context": "[data-radix-popper-content-wrapper] > [data-slot=\"dropdown-menu-content\"], [data-radix-popper-content-wrapper] > [data-slot=\"popover-content\"], [data-radix-popper-content-wrapper] > [data-slot=\"select-content\"], [data-radix-popper-content-wrapper] > [data-slot=\"tooltip-content\"]",
@@ -419,83 +426,6 @@
       "context": ".kubecode-needs-you-decision [data-slot='item-content']",
       "kind": "official-internal",
       "owner": "#259"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-conversation-avatar > [data-slot='avatar-fallback'] { color: var(--text-primary); font: 600 11px/1 var(--font-sans, inherit); }",
-      "context": ".kubecode-conversation-avatar > [data-slot='avatar-fallback']",
-      "kind": "official-internal",
-      "owner": "#257"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-conversation-avatar[data-role='manager'] > [data-slot='avatar-fallback'] { background: var(--accent-blue-light); box-shadow: inset 0 0 0 1px var(--accent-blue); }",
-      "context": ".kubecode-conversation-avatar[data-role='manager'] > [data-slot='avatar-fallback']",
-      "kind": "official-internal",
-      "owner": "#257"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-conversation-avatar[data-role='specialist'] > [data-slot='avatar-fallback'] { background: var(--accent-teal-light); box-shadow: inset 0 0 0 1px var(--accent-teal); }",
-      "context": ".kubecode-conversation-avatar[data-role='specialist'] > [data-slot='avatar-fallback']",
-      "kind": "official-internal",
-      "owner": "#257"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-conversation-avatar[data-role='researcher'] > [data-slot='avatar-fallback'] { background: var(--accent-purple-light); box-shadow: inset 0 0 0 1px var(--accent-purple); }",
-      "context": ".kubecode-conversation-avatar[data-role='researcher'] > [data-slot='avatar-fallback']",
-      "kind": "official-internal",
-      "owner": "#262"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-conversation-avatar[data-role='system'] > [data-slot='avatar-fallback'] { background: var(--surface-button); }",
-      "context": ".kubecode-conversation-avatar[data-role='system'] > [data-slot='avatar-fallback']",
-      "kind": "official-internal",
-      "owner": "#257"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-prompt-input > [data-slot='input-group'] {",
-      "context": ".kubecode-prompt-input > [data-slot='input-group']",
-      "kind": "official-internal",
-      "owner": "#257"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-prompt-input > [data-slot='input-group']:has(:focus-visible) {",
-      "context": ".kubecode-prompt-input > [data-slot='input-group']:has(:focus-visible)",
-      "kind": "official-internal",
-      "owner": "#257"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-mention-menu [cmdk-item] { gap: var(--ws-space-2); }",
-      "context": ".kubecode-mention-menu [cmdk-item]",
-      "kind": "official-internal",
-      "owner": "#257"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-mention-menu [cmdk-item] small { color: var(--text-secondary); margin-left: auto; }",
-      "context": ".kubecode-mention-menu [cmdk-item] small",
-      "kind": "official-internal",
-      "owner": "#257"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-mention-menu [cmdk-item][data-selected='true'] { box-shadow: inset 2px 0 0 var(--primary); }",
-      "context": ".kubecode-mention-menu [cmdk-item][data-selected='true']",
-      "kind": "official-internal",
-      "owner": "#257"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-mention-menu [cmdk-item] { min-height: 44px; }",
-      "context": "@media (pointer: coarse) / .kubecode-mention-menu [cmdk-item]",
-      "kind": "official-internal",
-      "owner": "#257"
     },
     {
       "file": "src/kubecode/kubecode.css",

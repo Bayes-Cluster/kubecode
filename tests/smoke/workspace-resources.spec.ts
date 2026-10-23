@@ -90,7 +90,7 @@ test.describe('on a desktop', () => {
 
       // Back in the same draft: text, caret, and Task filter unchanged; the chip names the file and its version.
       const chipName = `File results/summary.csv ${digest(first)}`
-      await expect(page.locator('.kubecode-composer-about').getByRole('button', { name: chipName })).toBeVisible()
+      await expect(page.locator('[data-composer-about]').getByRole('button', { name: chipName })).toBeVisible()
       await expect(composer(page)).toBeFocused()
       await expect(composer(page)).toHaveValue('compare with the baseline')
       expect(await caretOf(page)).toBe(8)
@@ -148,7 +148,7 @@ test.describe('on a desktop', () => {
       expect(page.url()).toContain(`filter=${task.id}`)
       await expect(composer(page)).toBeFocused()
       await expect(composer(page)).toHaveValue('and the plot')
-      await expect(page.locator('.kubecode-composer-about').getByRole('button', { name: /^File results\/summary\.csv #/ })).toBeVisible()
+      await expect(page.locator('[data-composer-about]').getByRole('button', { name: /^File results\/summary\.csv #/ })).toBeVisible()
 
       // 6. The titlebar search names the Workspace and previews over General.
       await page.getByRole('button', { name: `Search ${projectName}` }).click()

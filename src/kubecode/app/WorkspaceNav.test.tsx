@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
+import { SidebarProvider } from '@/components/ui/sidebar'
 import { createTranslator } from '@/lib/i18n'
 
 import type { Member } from '../api'
@@ -24,7 +25,7 @@ function nav(overrides: Partial<WorkspaceNavProps> = {}) {
     onInspectMember: vi.fn(), onOpen: vi.fn(), onOpenDm: vi.fn(), onOpenTarget: vi.fn(),
   }
   render(
-    <WorkspaceNav
+    <SidebarProvider><WorkspaceNav
       active="general"
       members={[member({}), member({ id: 'm2', name: 'Writer', handle: 'writer', state: 'setup_required' })]}
       needsYou={[]}
@@ -32,7 +33,7 @@ function nav(overrides: Partial<WorkspaceNavProps> = {}) {
       taskCount={0}
       {...handlers}
       {...overrides}
-    />,
+    /></SidebarProvider>,
   )
   return handlers
 }
@@ -71,6 +72,22 @@ describe('WorkspaceNav', () => {
     for (let index = 1; index < order.length; index += 1) {
       expect(order[index - 1].compareDocumentPosition(order[index]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     }
+  })
+
+  it('draws the places, members, and private conversations as official Sidebar menus', () => {
+    nav({ active: 'board', members: [member({ dm_conversation_id: 'c1' })] })
+    const board = screen.getByRole('button', { name: /^kubecode\.nav\.board/ })
+    expect(board).toHaveAttribute('data-slot', 'sidebar-menu-button')
+    expect(board).toHaveAttribute('data-active', 'true')
+    expect(board).toHaveAttribute('aria-current', 'page')
+    expect(board.closest('[data-slot="sidebar-menu"]')).not.toBeNull()
+    expect(screen.getByRole('heading', { name: 'kubecode.nav.roster' })).toHaveAttribute('data-slot', 'sidebar-group-label')
+    const direct = screen.getByRole('list', { name: 'kubecode.nav.directMessages' })
+    expect(direct).toHaveAttribute('data-slot', 'sidebar-menu')
+    expect(within(direct).getByRole('button', { name: 'Analyst' })).toHaveAttribute('data-slot', 'sidebar-menu-button')
+    const roster = screen.getByRole('list', { name: 'kubecode.nav.roster' })
+    expect(within(roster).getByRole('button', { name: 'kubecode.members.messagePrivately:{"name":"Analyst"}' }))
+      .toHaveAttribute('data-sidebar', 'menu-action')
   })
 
   it('marks nothing on execution history or a question', () => {
@@ -136,7 +153,7 @@ describe('WorkspaceNav', () => {
     })
     const direct = screen.getByRole('list', { name: 'kubecode.nav.directMessages' })
     const rows = within(direct).getAllByRole('button')
-    expect(rows.map((row) => row.querySelector('.kubecode-research-nav-title')?.textContent)).toEqual(['Reviewer', 'Writer'])
+    expect(rows.map((row) => row.querySelector(':scope > span:last-child')?.textContent)).toEqual(['Reviewer', 'Writer'])
     expect(rows[0]).toHaveAttribute('aria-current', 'page')
     expect(rows[1]).not.toHaveAttribute('aria-current')
     fireEvent.click(rows[1])

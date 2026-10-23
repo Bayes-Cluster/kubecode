@@ -17,7 +17,7 @@ export type ConversationMessageProps = ComponentProps<'article'> & {
  */
 export function ConversationMessage({ children, className, from, state = 'default', ...props }: ConversationMessageProps) {
   return (
-    <article className={cn('kubecode-message', className)} data-from={from} data-state={state} {...props}>
+    <article className={cn('kubecode-message group/message', className)} data-from={from} data-state={state} {...props}>
       <Message className="kubecode-message-inner" from={from === 'self' ? 'user' : 'assistant'}>
         {children}
       </Message>

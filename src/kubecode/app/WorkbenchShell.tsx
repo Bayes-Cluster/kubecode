@@ -1,13 +1,19 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { RiNotification3Fill } from '@remixicon/react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type SetStateAction } from 'react'
+import { Bell } from 'lucide-react'
 import { createTranslator, resolveEffectiveLocale, type Translator } from '@/lib/i18n'
 import { trackEvent } from '@/lib/telemetry'
 
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { ResizeHandle } from '@/components/ResizeHandle'
+import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
+import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
+import { SidebarProvider } from '@/components/ui/sidebar'
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
+import { usePanelRef, type PanelImperativeHandle, type PanelSize } from 'react-resizable-panels'
 
 import { AgentSessionWorkspace, type SessionPlanEntry } from '../AgentSessionWorkspace'
 import { GlobalCommandPalette } from '../GlobalCommandPalette'
+import { RouteOpening } from './RouteOpening'
 import { createHostActionRegistry, type RegisteredHostAction } from '../hostActions'
 import {
   isGlobalCommandPaletteShortcut,
@@ -38,7 +44,6 @@ import { NewResearchDialog } from '../research/NewResearchDialog'
 import { ResearchNavigator } from '../research/ResearchNavigator'
 import { ResearchWorkspace } from '../research/ResearchWorkspace'
 import { useResearchList } from '../research/useResearch'
-import { Icon } from '../icons'
 import { DisableWorkspacesDialog } from '../DisableWorkspacesDialog'
 import { terminalFontStack } from '../appearancePreferences'
 import {
@@ -161,7 +166,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   const [commandPaletteSession, setCommandPaletteSession] = useState<CommandPaletteSessionSnapshot | null>(null)
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('general')
   const [disableWorkspacesOpen, setDisableWorkspacesOpen] = useState(false)
-  const [sessionSidebarOpen, setSessionSidebarOpen] = useState(true)
+  const [navigatorPreference, setNavigatorPreference] = useState(true)
   // "History and execution": collapsed unless the researcher opened it.
   const [historyOpen, setHistoryOpen] = useState(false)
   const [contextOpen, setContextOpen] = useState(true)
@@ -177,6 +182,22 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   // The Workspace the researcher last switched to, so its place is announced.
   const [announcedProjectId, setAnnouncedProjectId] = useState<string | null>(null)
   const narrowLayout = useNarrowWorkbench()
+  // On a phone the navigation and Files and Git are modal Sheets opened on
+  // demand, closed whenever the layout becomes narrow; the wide-screen
+  // choices are the remembered preferences and are never changed by a Sheet.
+  const [navigationSheetOpen, setNavigationSheetOpen] = useState(false)
+  const [contextSheetOpen, setContextSheetOpen] = useState(false)
+  const [sheetLayout, setSheetLayout] = useState(narrowLayout)
+  if (sheetLayout !== narrowLayout) {
+    setSheetLayout(narrowLayout)
+    setNavigationSheetOpen(false)
+    setContextSheetOpen(false)
+  }
+  const sessionSidebarOpen = narrowLayout ? navigationSheetOpen : navigatorPreference
+  const setSessionSidebarOpen = useCallback((value: SetStateAction<boolean>) => {
+    if (narrowLayout) setNavigationSheetOpen(value)
+    else setNavigatorPreference(value)
+  }, [narrowLayout])
 
   // -- Where the researcher is (ADR 0228): one location per Workspace -----------------------
   const [locationStorage] = useState(browserStorage)
@@ -191,11 +212,14 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   // Files and Git are a column beside Sessions; beside the research views they
   // open when asked for and are gone again when the view is left.
   const onSessionsSurface = !projectId || place.view === 'sessions'
-  const contextVisible = onSessionsSurface ? contextOpen : researchToolsOpen
+  const contextVisible = narrowLayout
+    ? contextSheetOpen
+    : onSessionsSurface ? contextOpen : researchToolsOpen
   const setContextVisible = useCallback((open: boolean | ((current: boolean) => boolean)) => {
-    if (onSessionsSurface) setContextOpen(open)
+    if (narrowLayout) setContextSheetOpen(open)
+    else if (onSessionsSurface) setContextOpen(open)
     else setResearchToolsOpen(open)
-  }, [onSessionsSurface])
+  }, [narrowLayout, onSessionsSurface])
 
   const workspaceRef = useRef<HTMLDivElement>(null)
   const mainStackRef = useRef<HTMLDivElement>(null)
@@ -323,7 +347,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     initialProjectId,
     setProjects,
     setProjectId,
-    setSessionSidebarOpen,
+    setSessionSidebarOpen: setNavigatorPreference,
     setSessionSidebarWidth,
     setHistoryOpen,
     setProjectRuns: reconciliation.setProjectRuns,
@@ -407,9 +431,29 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     window.addEventListener('pagehide', onHide)
     return () => window.removeEventListener('pagehide', onHide)
   }, [flushLocation, foldReading])
+  // What had focus when a phone Sheet opened gets it back when the Sheet
+  // closes (there is no SheetTrigger for Radix to return to), unless a move
+  // from the navigation closed it: then the place being opened takes focus.
+  const sheetOpenerRef = useRef<HTMLElement | null>(null)
+  const sheetClosedByMoveRef = useRef(false)
+  const rememberSheetOpener = useCallback(() => {
+    sheetOpenerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  }, [])
+  const returnFocusFromSheet = useCallback((event: Event) => {
+    event.preventDefault()
+    const opener = sheetOpenerRef.current
+    sheetOpenerRef.current = null
+    if (sheetClosedByMoveRef.current) {
+      sheetClosedByMoveRef.current = false
+      return
+    }
+    if (opener?.isConnected) opener.focus({ preventScroll: true })
+  }, [])
   const closeNavigatorSheet = useCallback(() => {
-    if (narrowLayout) setSessionSidebarOpen(false)
-  }, [narrowLayout])
+    if (!narrowLayout || !navigationSheetOpen) return
+    sheetClosedByMoveRef.current = true
+    setNavigationSheetOpen(false)
+  }, [narrowLayout, navigationSheetOpen])
   const presentation = useInspectorPresentation(contextRowRef, {
     narrowLayout,
     reservedWidth: contextVisible ? contextWidth : 0,
@@ -729,10 +773,10 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     if (!layoutHydrated) return
     writeWorkbenchNavigatorLayout(localStorage, {
       historyOpen,
-      navigatorOpen: sessionSidebarOpen,
+      navigatorOpen: navigatorPreference,
       navigatorWidth: sessionSidebarWidth,
     })
-  }, [historyOpen, layoutHydrated, sessionSidebarOpen, sessionSidebarWidth])
+  }, [historyOpen, layoutHydrated, navigatorPreference, sessionSidebarWidth])
 
   useEffect(() => {
     if (!layoutHydrated || !projectId) return
@@ -798,18 +842,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
         navigatorSearchRef.current?.select()
       })
     }
-  }, [narrowLayout, setContextVisible])
-
-  useEffect(() => {
-    if (!narrowLayout || (!sessionSidebarOpen && !contextVisible)) return
-    const closeOverlayPanels = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || document.querySelector('[role="dialog"]')) return
-      setSessionSidebarOpen(false)
-      setContextVisible(false)
-    }
-    document.addEventListener('keydown', closeOverlayPanels)
-    return () => document.removeEventListener('keydown', closeOverlayPanels)
-  }, [contextVisible, narrowLayout, sessionSidebarOpen, setContextVisible])
+  }, [narrowLayout, setContextVisible, setSessionSidebarOpen])
 
   useEffect(() => {
     // On narrow layouts, the navigator takes precedence if both overlays are open.
@@ -825,18 +858,33 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     if (onSessionsSurface) setResearchToolsOpen(false)
   }, [onSessionsSurface])
 
-  const resizeSessionSidebar = useCallback((delta: number) => {
-    setSessionSidebarWidth((current) => clamp(current + delta, 120, availableWidth(workspaceRef.current) - 420))
-  }, [])
-
-  const resizeContext = useCallback((delta: number) => {
-    setContextWidth((current) => clamp(current - delta, 160, availableWidth(workspaceRef.current) - 320))
-  }, [])
-
-  const resizeTerminal = useCallback((delta: number) => {
-    const height = mainStackRef.current?.clientHeight || window.innerHeight - 40
-    setTerminalHeight((current) => clamp(current - delta, 36, height - 100))
-  }, [])
+  // The panels' sizes are this state: a drag writes it, and a change of
+  // Workspace (its remembered layout) or of the toggles moves the panels to it.
+  const navigatorPanelRef = usePanelRef()
+  const contextPanelRef = usePanelRef()
+  const terminalPanelRef = usePanelRef()
+  // Also when a panel mounts again (the navigation or the context panel reopened).
+  useEffect(() => {
+    if (sessionSidebarOpen) syncPanel(navigatorPanelRef.current, sessionSidebarWidth)
+  }, [navigatorPanelRef, sessionSidebarOpen, sessionSidebarWidth])
+  useEffect(() => {
+    if (contextVisible) syncPanel(contextPanelRef.current, contextWidth)
+  }, [contextPanelRef, contextVisible, contextWidth])
+  useEffect(() => {
+    const panel = terminalPanelRef.current
+    if (!panel) return
+    if (!terminalOpen) {
+      window.requestAnimationFrame(() => {
+        try {
+          if (!panel.isCollapsed()) panel.collapse()
+        } catch {
+          // Not laid out yet: it mounts collapsed.
+        }
+      })
+      return
+    }
+    syncPanel(panel, terminalHeight)
+  }, [terminalHeight, terminalOpen, terminalPanelRef])
 
   /** A new Session (or a Task's discussion) opens in execution history. */
   const handleConversationCreated = useCallback((created: Conversation) => {
@@ -1043,6 +1091,109 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     />
   )
 
+  const contextWorkbench = (
+    <ContextWorkbench
+      api={api}
+      autoSave={editorPreferences.autoSave}
+      connectionState={reconciliation.connectionState}
+      planEntries={activeSessionPlan}
+      planRevealVersion={planRevealVersion}
+      projectName={project?.name ?? undefined}
+      projectId={projectId}
+      t={t}
+      // In the phone Sheet the panel takes the sheet's width.
+      width={narrowLayout ? Math.min(560, Math.round(window.innerWidth * 0.92)) : contextWidth}
+      workspaceEvents={reconciliation.workspaceEvents}
+    />
+  )
+
+  // One navigation: beside the view on a wide screen, an official Sheet on a phone.
+  const navigatorPanel = (
+    <ProjectNavigator
+      activeConversationId={conversationId}
+      activeProjectId={projectId}
+      api={api}
+      conversations={sessionCatalog}
+      historyOpen={historyShown}
+      historyPinned={historyPinned}
+      historySection={projectId ? (
+        <>
+          <ChannelNavigator
+            active={false}
+            onOpen={() => openPlace({ view: 'general' })}
+            onOpenThread={openThread}
+            t={t}
+            threads={channelThreads.threads}
+            threadsOnly
+          />
+          <ResearchNavigator
+            activeResearchId={place.view === 'question' ? place.question : null}
+            items={research.items}
+            onNew={() => setResearchDialog(true)}
+            onReload={research.reload}
+            onSelect={(nextResearchId) => openPlace({ view: 'question', question: nextResearchId })}
+            status={research.status}
+            t={t}
+          />
+        </>
+      ) : null}
+      navigatorWidth={narrowLayout ? undefined : sessionSidebarWidth}
+      onAddProject={() => setProjectDialog(true)}
+      onConversationCreated={handleConversationCreated}
+      onConversationRemoved={handleConversationRemoved}
+      onConversationUpdated={handleConversationUpdated}
+      onError={(cause) => setError(errorMessage(cause, t('kubecode.error')))}
+      onHistoryOpenChange={setHistoryOpen}
+      onNewSession={(nextProjectId) => {
+        if (nextProjectId !== projectId) enterWorkspace(nextProjectId)
+        setSessionDialog(true)
+      }}
+      onOpenSettings={() => {
+        setSettingsSection('general')
+        setSettingsOpen(true)
+      }}
+      onProjectDelete={(nextProjectId) => void selection.deleteProject(
+        projects.find((candidate) => candidate.id === nextProjectId),
+      )}
+      onProjectWorkspacesToggle={(nextProjectId) => {
+        const selectedProject = projects.find((candidate) => candidate.id === nextProjectId)
+        if (!selectedProject) return
+        // Disabling asks in a dialog about the Workspace it concerns, so that Workspace is entered first.
+        if (selectedProject.workspaces_enabled) enterWorkspace(nextProjectId)
+        void selection.setProjectWorkspacesEnabled(!selectedProject.workspaces_enabled, selectedProject)
+      }}
+      onQueryChange={setNavigatorQuery}
+      onSelect={(nextProjectId, nextConversationId) => openSession(nextConversationId, nextProjectId)}
+      onWorkspaceSelect={(nextProjectId) => enterWorkspace(nextProjectId)}
+      projects={projects}
+      projectRuns={reconciliation.projectRuns}
+      query={navigatorQuery}
+      searchRef={navigatorSearchRef}
+      t={t}
+      teams={teams}
+      wechat={wechatBinding}
+      workspaceSection={projectId ? (
+        <WorkspaceNav
+          active={place.view === 'sessions' || place.view === 'question' ? null : viewKeyOf(place)}
+          members={liveMembers ?? NO_MEMBERS}
+          needsYou={needsYou}
+          taskCount={taskBoard.board?.total ?? 0}
+          undeliveredGeneral={attention.snapshot?.undelivered.general ?? 0}
+          t={t}
+          onInspectMember={(memberId) => {
+            inspect({ kind: 'member', id: memberId })
+            closeNavigatorSheet()
+          }}
+          onOpen={(view) => {
+            openPlace({ view })
+            landFromNavigation(projectId)
+          }}
+          onOpenDm={(memberId) => openPlace({ view: 'dm', member: memberId })}
+        />
+      ) : null}
+    />
+  )
+
   return (
     <SystemMessageProvider detailsLabel={t('kubecode.details')} dismissLabel={t('window.close')}>
     <PlaceMemoryProvider memory={placeMemory}>
@@ -1095,113 +1246,92 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
         titlebarTargetRef={setTitlebarTarget}
       />
 
-      <div className="kubecode-workspace" data-narrow={narrowLayout} ref={workspaceRef}>
-        {(sessionSidebarOpen || contextVisible) && (
-          <button
-            aria-label={t('kubecode.closeSidePanels')}
-            className="kubecode-panel-backdrop"
-            type="button"
-            onClick={() => {
-              setSessionSidebarOpen(false)
-              setContextVisible(false)
-            }}
-          />
+      {/* The official Sidebar context: one open state, the navigation's, toggled by the title-bar button.
+          No Cmd/Ctrl+B (it belongs to the terminal, composer and IME) and no host-wide cookie:
+          the open state lives in the per-Workspace layout. */}
+      <SidebarProvider
+        className="kubecode-workspace min-h-0"
+        data-narrow={narrowLayout}
+        keyboardShortcut={false}
+        open={sessionSidebarOpen}
+        persistState={false}
+        ref={workspaceRef}
+        onOpenChange={setSessionSidebarOpen}
+      >
+        {narrowLayout && (
+          <Sheet open={sessionSidebarOpen} onOpenChange={setSessionSidebarOpen}>
+            <SheetContent
+              aria-describedby={undefined}
+              className="w-[min(86vw,420px)] gap-0 p-0 motion-reduce:data-[state=closed]:animate-none motion-reduce:data-[state=open]:animate-none sm:max-w-none"
+              closeLabel={t('kubecode.closeSidePanels')}
+              side="left"
+              onCloseAutoFocus={returnFocusFromSheet}
+              onOpenAutoFocus={(event) => {
+                rememberSheetOpener()
+                // Focus lands where the researcher is (the current place, else the
+                // current Workspace, else the sheet), not on the first header
+                // action, whose tooltip would take the first Escape.
+                event.preventDefault()
+                const content = event.currentTarget as HTMLElement
+                const current = content.querySelector<HTMLElement>('[aria-current="page"]')
+                  ?? content.querySelector<HTMLElement>('[aria-current]')
+                ;(current ?? content).focus()
+              }}
+            >
+              <SheetTitle className="sr-only">{t('kubecode.nav.workspaces')}</SheetTitle>
+              {navigatorPanel}
+            </SheetContent>
+          </Sheet>
         )}
-        {sessionSidebarOpen && (
-          <ProjectNavigator
-            activeConversationId={conversationId}
-            activeProjectId={projectId}
-            api={api}
-            conversations={sessionCatalog}
-            historyOpen={historyShown}
-            historyPinned={historyPinned}
-            historySection={projectId ? (
-              <>
-                <ChannelNavigator
-                  active={false}
-                  onOpen={() => openPlace({ view: 'general' })}
-                  onOpenThread={openThread}
-                  t={t}
-                  threads={channelThreads.threads}
-                  threadsOnly
-                />
-                <ResearchNavigator
-                  activeResearchId={place.view === 'question' ? place.question : null}
-                  items={research.items}
-                  onNew={() => setResearchDialog(true)}
-                  onReload={research.reload}
-                  onSelect={(nextResearchId) => openPlace({ view: 'question', question: nextResearchId })}
-                  status={research.status}
-                  t={t}
-                />
-              </>
-            ) : null}
-            navigatorWidth={sessionSidebarWidth}
-            onAddProject={() => setProjectDialog(true)}
-            onConversationCreated={handleConversationCreated}
-            onConversationRemoved={handleConversationRemoved}
-            onConversationUpdated={handleConversationUpdated}
-            onError={(cause) => setError(errorMessage(cause, t('kubecode.error')))}
-            onHistoryOpenChange={setHistoryOpen}
-            onNewSession={(nextProjectId) => {
-              if (nextProjectId !== projectId) enterWorkspace(nextProjectId)
-              setSessionDialog(true)
-            }}
-            onOpenSettings={() => {
-              setSettingsSection('general')
-              setSettingsOpen(true)
-            }}
-            onProjectDelete={(nextProjectId) => void selection.deleteProject(
-              projects.find((candidate) => candidate.id === nextProjectId),
-            )}
-            onProjectWorkspacesToggle={(nextProjectId) => {
-              const selectedProject = projects.find((candidate) => candidate.id === nextProjectId)
-              if (!selectedProject) return
-              // Disabling asks in a dialog about the Workspace it concerns, so that Workspace is entered first.
-              if (selectedProject.workspaces_enabled) enterWorkspace(nextProjectId)
-              void selection.setProjectWorkspacesEnabled(!selectedProject.workspaces_enabled, selectedProject)
-            }}
-            onQueryChange={setNavigatorQuery}
-            onResize={resizeSessionSidebar}
-            onSelect={(nextProjectId, nextConversationId) => openSession(nextConversationId, nextProjectId)}
-            onWorkspaceSelect={(nextProjectId) => enterWorkspace(nextProjectId)}
-            projects={projects}
-            projectRuns={reconciliation.projectRuns}
-            query={navigatorQuery}
-            searchRef={navigatorSearchRef}
-            t={t}
-            teams={teams}
-            wechat={wechatBinding}
-            workspaceSection={projectId ? (
-              <WorkspaceNav
-                active={place.view === 'sessions' || place.view === 'question' ? null : viewKeyOf(place)}
-                members={liveMembers ?? NO_MEMBERS}
-                needsYou={needsYou}
-                taskCount={taskBoard.board?.total ?? 0}
-                undeliveredGeneral={attention.snapshot?.undelivered.general ?? 0}
-                t={t}
-                onInspectMember={(memberId) => {
-                  inspect({ kind: 'member', id: memberId })
-                  closeNavigatorSheet()
-                }}
-                onOpen={(view) => {
-                  openPlace({ view })
-                  landFromNavigation(projectId)
-                }}
-                onOpenDm={(memberId) => openPlace({ view: 'dm', member: memberId })}
-              />
-            ) : null}
-          />
+        {narrowLayout && (
+          <Sheet open={contextVisible} onOpenChange={setContextVisible}>
+            <SheetContent
+              aria-describedby={undefined}
+              className="w-auto gap-0 p-0 motion-reduce:data-[state=closed]:animate-none motion-reduce:data-[state=open]:animate-none sm:max-w-none"
+              closeLabel={t('kubecode.closeSidePanels')}
+              side="right"
+              onCloseAutoFocus={returnFocusFromSheet}
+              onOpenAutoFocus={rememberSheetOpener}
+            >
+              <SheetTitle className="sr-only">{t('kubecode.contextPanel')}</SheetTitle>
+              {contextWorkbench}
+            </SheetContent>
+          </Sheet>
         )}
 
+        {/* One official Resizable layout: navigation | (place | context) over the terminal. */}
+        <ResizablePanelGroup className="min-h-0 min-w-0 flex-1" id="kubecode-shell" orientation="horizontal">
+        {sessionSidebarOpen && !narrowLayout && (
+          <>
+            <MountSizedPanel
+              className="flex min-h-0 min-w-0"
+              size={sessionSidebarWidth}
+              groupResizeBehavior="preserve-pixel-size"
+              id="navigator"
+              maxSize="50%"
+              minSize={160}
+              panelRef={navigatorPanelRef}
+              style={{ overflow: 'hidden' }}
+              onResize={(size) => rememberSize(size, setSessionSidebarWidth)}
+            >
+              {navigatorPanel}
+            </MountSizedPanel>
+            <ResizableHandle aria-label={t('kubecode.resizeNavigation')} />
+          </>
+        )}
+        <ResizablePanel className="flex min-h-0 min-w-0" id="main" minSize={320} style={{ overflow: 'hidden' }}>
         <div className="kubecode-main-stack" ref={mainStackRef}>
+          <ResizablePanelGroup className="min-h-0 min-w-0 flex-1" id="kubecode-main" orientation="vertical">
+          <ResizablePanel className="flex min-h-0 min-w-0" id="view" minSize={100} style={{ overflow: 'hidden' }}>
           <div
             className="kubecode-session-context-row"
             data-inspector-layout={presentation}
             ref={contextRowRef}
           >
+            <ResizablePanelGroup className="min-h-0 min-w-0 flex-1" id="kubecode-context-row" orientation="horizontal">
+            <ResizablePanel className="flex min-h-0 min-w-0" id="place" minSize={280} style={{ overflow: 'hidden' }}>
             {arriving ? (
-              <div className="kubecode-empty-small" role="status">{t('kubecode.nav.opening')}</div>
+              <RouteOpening label={t('kubecode.nav.opening')} />
             ) : !projectId ? sessionsSurface : place.view === 'board' ? (
               <WithInspector inspector={inspectorPane} presentation={presentation}>
                 <TaskBoardView
@@ -1232,7 +1362,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
                   />
                 </WithInspector>
               ) : (
-                <div className="kubecode-empty-small" role="status">{t('kubecode.nav.opening')}</div>
+                <RouteOpening label={t('kubecode.nav.opening')} />
               )
             ) : place.view === 'resources' ? (
               <WithInspector inspector={inspectorPane} presentation={presentation}>
@@ -1333,31 +1463,50 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
                 teams={teams}
               />
             ) : sessionsSurface}
-            {contextVisible && (
+            </ResizablePanel>
+            {contextVisible && !narrowLayout && (
               <>
-                <ResizeHandle onResize={resizeContext} />
-                <ContextWorkbench
-                  api={api}
-                  autoSave={editorPreferences.autoSave}
-                  connectionState={reconciliation.connectionState}
-                  planEntries={activeSessionPlan}
-                  planRevealVersion={planRevealVersion}
-                  projectName={project?.name ?? undefined}
-                  projectId={projectId}
-                  t={t}
-                  width={contextWidth}
-                  workspaceEvents={reconciliation.workspaceEvents}
-                />
+                <ResizableHandle aria-label={t('kubecode.resizeContextPanel')} />
+                <MountSizedPanel
+                  className="flex min-h-0 min-w-0"
+                  size={contextWidth}
+                  groupResizeBehavior="preserve-pixel-size"
+                  id="context"
+                  maxSize="70%"
+                  minSize={160}
+                  panelRef={contextPanelRef}
+                  style={{ overflow: 'hidden' }}
+                  onResize={(size) => rememberSize(size, setContextWidth)}
+                >
+                  {contextWorkbench}
+                </MountSizedPanel>
               </>
             )}
+            </ResizablePanelGroup>
           </div>
-          {terminalOpen && <ResizeHandle direction="vertical" onResize={resizeTerminal} />}
+          </ResizablePanel>
+          {terminalOpen && <ResizableHandle aria-label={t('kubecode.resizeTerminal')} />}
+          <ResizablePanel
+            className="flex min-h-0 min-w-0 flex-col"
+            collapsedSize={0}
+            collapsible
+            defaultSize={0}
+            groupResizeBehavior="preserve-pixel-size"
+            id="terminal"
+            minSize={36}
+            panelRef={terminalPanelRef}
+            style={{ overflow: 'hidden' }}
+            onResize={(size, _id, previous) => {
+              rememberSize(size, setTerminalHeight)
+              // Dragged shut past its minimum: the terminal is closed, as with its toggle.
+              if (size.inPixels === 0 && (previous?.inPixels ?? 0) > 0) setTerminalOpen(false)
+            }}
+          >
           <div
             aria-hidden={!terminalOpen}
             className="kubecode-terminal-pane"
             data-open={terminalOpen}
             inert={!terminalOpen ? true : undefined}
-            style={{ height: terminalOpen ? terminalHeight : 0 }}
           >
             {projectId ? (
               <TerminalWorkspace
@@ -1375,11 +1524,19 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
                 terminalFont={terminalFontStack(appearance.terminalFont)}
               />
             ) : terminalOpen ? (
-              <div className="kubecode-empty-small">{t('kubecode.selectProject')}</div>
+              <Empty>
+                <EmptyHeader>
+                  <EmptyTitle>{t('kubecode.selectProject')}</EmptyTitle>
+                </EmptyHeader>
+              </Empty>
             ) : null}
           </div>
+          </ResizablePanel>
+          </ResizablePanelGroup>
         </div>
-      </div>
+        </ResizablePanel>
+        </ResizablePanelGroup>
+      </SidebarProvider>
 
       <WorkspaceNotificationBridge
         conversations={sessionCatalog}
@@ -1393,19 +1550,24 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
         projects={projects}
       />
       {notificationOnboardingOpen && (
-        <aside className="kubecode-notification-onboarding" role="status">
-          <Icon role="identity" source={RiNotification3Fill} />
-          <div>
-            <strong>{t('kubecode.notificationOnboardingTitle')}</strong>
-            <span>{t('kubecode.notificationOnboardingDescription')}</span>
-          </div>
-          <Button size="sm" onClick={() => void requestNotificationPermission()}>
-            {t('kubecode.enableNotifications')}
-          </Button>
-          <Button size="sm" variant="ghost" onClick={dismissNotificationOnboarding}>
-            {t('kubecode.notNow')}
-          </Button>
-        </aside>
+        <Alert
+          className="absolute bottom-4 left-1/2 z-50 w-[min(42rem,calc(100vw-2rem))] -translate-x-1/2 shadow-lg"
+          role="status"
+        >
+          <Bell aria-hidden="true" />
+          <AlertTitle>{t('kubecode.notificationOnboardingTitle')}</AlertTitle>
+          <AlertDescription>
+            <p>{t('kubecode.notificationOnboardingDescription')}</p>
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" onClick={() => void requestNotificationPermission()}>
+                {t('kubecode.enableNotifications')}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={dismissNotificationOnboarding}>
+                {t('kubecode.notNow')}
+              </Button>
+            </div>
+          </AlertDescription>
+        </Alert>
       )}
 
       <GlobalCommandPalette
@@ -1565,10 +1727,31 @@ function useNarrowWorkbench(): boolean {
   return narrow
 }
 
-function availableWidth(element: HTMLElement | null): number {
-  return element?.clientWidth || window.innerWidth
+/** Keeps a panel's measured size, once it has one (an unlaid-out panel reports 0). */
+function rememberSize(size: PanelSize, remember: (pixels: number) => void) {
+  if (size.inPixels > 0) remember(Math.round(size.inPixels))
 }
 
-function clamp(value: number, minimum: number, maximum: number): number {
-  return Math.min(Math.max(minimum, maximum), Math.max(minimum, value))
+/**
+ * A Resizable panel whose default size is the size held when it mounts: the
+ * library reads `defaultSize` once, and later sizes go through its ref.
+ */
+function MountSizedPanel({ size, ...props }: Omit<ComponentProps<typeof ResizablePanel>, 'defaultSize'> & { size: number }) {
+  const [initial] = useState(size)
+  return <ResizablePanel defaultSize={initial} {...props} />
+}
+
+/** Moves a laid-out panel to the size the state holds, when they differ. */
+function syncPanel(panel: PanelImperativeHandle | null, pixels: number) {
+  if (!panel) return
+  // A panel that has just mounted is not in its group's layout until the next frame.
+  window.requestAnimationFrame(() => {
+    try {
+      const current = panel.getSize().inPixels
+      if (current > 0 && Math.abs(current - pixels) > 1) panel.resize(pixels)
+      else if (current === 0 && panel.isCollapsed()) panel.resize(pixels)
+    } catch {
+      // Not laid out (yet, or any more): its default size stands.
+    }
+  })
 }

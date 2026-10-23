@@ -3,9 +3,11 @@ import { useContext, useRef, useState } from 'react'
 import { Conversation, ConversationContent, ConversationScrollButton } from '@/components/ai-elements/conversation'
 import { MessageContent } from '@/components/ai-elements/message'
 import { Shimmer } from '@/components/ai-elements/shimmer'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
+import { Spinner } from '@/components/ui/spinner'
 import { ViewHeader } from '@/components/workspace/ViewHeader'
 import { Icon } from '@/kubecode/icons'
 import { WORKSPACE_COMMAND_ICONS, WORKSPACE_DESTINATION_ICONS } from '@/kubecode/icons/workspaceIcons'
@@ -140,8 +142,9 @@ export function DmPane({
           title={t('kubecode.dm.title', { name: member.name })}
         />
         {shared && (
-          <p className="kubecode-research-muted" role="status">
-            {t('kubecode.dm.shared')}{' '}
+          <Alert className="kubecode-conversation-alert" role="status">
+            <AlertDescription className="flex flex-wrap items-center gap-2">
+            {t('kubecode.dm.shared')}
             {navigation && (
               <Button
                 size="xs"
@@ -151,27 +154,33 @@ export function DmPane({
                 {t('kubecode.dm.showInGeneral')}
               </Button>
             )}
-          </p>
+            </AlertDescription>
+          </Alert>
         )}
         <div className="kubecode-message-list">
           <Conversation aria-label={t('kubecode.channel.messages')} className="kubecode-conversation" initial="instant" resize="smooth">
             <ConversationContent className="kubecode-conversation-thread" scrollClassName="kubecode-channel-messages">
               {status === 'loading' && (
-                <p className="kubecode-research-muted" role="status">{t('kubecode.channel.loading')}</p>
-              )}
+            <div className="flex items-center gap-2 self-center text-sm text-muted-foreground" role="status">
+              <Spinner aria-hidden="true" />
+              {t('kubecode.channel.loading')}
+            </div>
+          )}
               {status === 'error' && (
-                <p className="kubecode-research-error" role="alert">
-                  {t('kubecode.dm.loadFailed')}{' '}
-                  <Button size="xs" variant="ghost" onClick={reload}>{t('kubecode.retry')}</Button>
-                </p>
-              )}
+            <Alert className="kubecode-conversation-alert" role="alert" variant="destructive">
+              <AlertDescription className="flex flex-wrap items-center gap-2">
+                {t('kubecode.dm.loadFailed')}
+                <Button size="xs" variant="outline" onClick={reload}>{t('kubecode.retry')}</Button>
+              </AlertDescription>
+            </Alert>
+          )}
               {status === 'ready' && turns.length === 0 && (
                 <Empty className="kubecode-conversation-empty">
                   <EmptyHeader><EmptyTitle>{t('kubecode.dm.empty')}</EmptyTitle></EmptyHeader>
                 </Empty>
               )}
               {turns.map((turn) => (
-                <div className="kubecode-dm-turn" data-testid={`dm-turn-${turn.run_id}`} key={turn.run_id}>
+                <div className="flex w-full flex-col" data-testid={`dm-turn-${turn.run_id}`} key={turn.run_id}>
                   <ConversationMessage aria-label={you.name} from="self">
                     <span className="sr-only">{you.name}</span>
                     <MessageContent className="kubecode-message-content">
@@ -192,8 +201,8 @@ export function DmPane({
                 <ConversationMessage aria-label={them.name} from="member" state="pending">
                   <div className="kubecode-message-header"><ConversationIdentity size="sm" view={them} /></div>
                   <MessageContent className="kubecode-message-content">
-                    <p className="kubecode-dm-waiting" role="status">
-                      <Shimmer as="span" className="kubecode-shimmer">{t('kubecode.dm.waitingReply', { name: member.name })}</Shimmer>
+                    <p className="text-sm" role="status">
+                      <Shimmer as="span">{t('kubecode.dm.waitingReply', { name: member.name })}</Shimmer>
                     </p>
                   </MessageContent>
                 </ConversationMessage>
@@ -203,7 +212,7 @@ export function DmPane({
                   <span className="sr-only">{you.name}</span>
                   <MessageContent className="kubecode-message-content">
                     <ConversationResponse className="kubecode-message-body" t={t}>{item.text}</ConversationResponse>
-                    <p className="kubecode-message-delivery" data-delivery="queued">{t('kubecode.dm.queued', { name: member.name })}</p>
+                    <Badge className="kubecode-message-delivery" data-delivery="queued" variant="secondary">{t('kubecode.dm.queued', { name: member.name })}</Badge>
                   </MessageContent>
                 </ConversationMessage>
               ))}
@@ -233,8 +242,9 @@ export function DmPane({
             focusKey={`composer:dm:${member.id}`}
             label={t('kubecode.dm.placeholder', { name: member.name })}
             notices={!ready ? (
-              <p className="kubecode-composer-warning" role="status">
-                {t('kubecode.dm.needsSetup', { name: member.name })}{' '}
+              <Alert role="status">
+                <AlertDescription className="flex flex-wrap items-center gap-2">
+                {t('kubecode.dm.needsSetup', { name: member.name })}
                 {navigation && (
                   <Button
                     size="xs"
@@ -244,7 +254,8 @@ export function DmPane({
                     {t('kubecode.dm.fixInMembers')}
                   </Button>
                 )}
-              </p>
+                </AlertDescription>
+              </Alert>
             ) : undefined}
             placeholder={t('kubecode.dm.placeholder', { name: member.name })}
             sendLabel={t('kubecode.channel.send')}
