@@ -142,20 +142,6 @@
     },
     {
       "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-context-tabbar [data-slot='tabs-trigger'] {",
-      "context": ".kubecode-context-tabbar [data-slot='tabs-trigger']",
-      "kind": "official-internal",
-      "owner": "#262"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-context-tabbar [data-slot='tabs-trigger'][data-state='active'] {",
-      "context": ".kubecode-context-tabbar [data-slot='tabs-trigger'][data-state='active']",
-      "kind": "official-internal",
-      "owner": "#262"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
       "text": ".kubecode-terminal-view .xterm-viewport { background-color: var(--surface-editor) !important; }",
       "context": ".kubecode-terminal-view .xterm-viewport",
       "kind": "important",
@@ -195,20 +181,6 @@
       "context": ".kubecode-session-timeline > div",
       "kind": "important",
       "owner": "#261"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-context-tabbar [data-slot='tabs-trigger'] {",
-      "context": ".kubecode-context-tabbar [data-slot='tabs-trigger']",
-      "kind": "official-internal",
-      "owner": "#262"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-context-tabbar [data-slot='tabs-trigger'][data-state='active'] {",
-      "context": ".kubecode-context-tabbar [data-slot='tabs-trigger'][data-state='active']",
-      "kind": "official-internal",
-      "owner": "#262"
     },
     {
       "file": "src/kubecode/kubecode.css",

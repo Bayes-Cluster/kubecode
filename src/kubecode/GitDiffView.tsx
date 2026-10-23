@@ -1,6 +1,10 @@
-import { X } from 'lucide-react'
+import { CircleAlert, X } from 'lucide-react'
 
+import { IconButton } from '@/components/workspace/IconButton'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
+import { Spinner } from '@/components/ui/spinner'
 import type { Translator } from '@/lib/i18n'
 
 import type { GitDiffUnavailableReason } from './api'
@@ -15,40 +19,56 @@ type GitDiffViewProps = {
   t: Translator
 }
 
+/**
+ * One Git diff: its loading, unavailable and failed states are official
+ * Empty/Spinner/Alert. The diff text itself stays a plain `pre`, because the
+ * server already bounds its size and a highlighter would re-tokenize it whole.
+ */
 export function GitDiffView({ state, onClose, onRetry, t }: GitDiffViewProps) {
   if (state.kind === 'idle') return null
   const target = state.target
 
   return (
     <>
-      <div className="kubecode-editor-toolbar">
-        <span title={target.path}>
+      <div className="flex h-10 shrink-0 items-center justify-between gap-2 border-b px-3">
+        <span className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground" title={target.path}>
           <MaterialFileIcon id={resolveFileIcon(target.path)} />
-          {target.path}
+          <span className="truncate">{target.path}</span>
         </span>
-        <Button aria-label={t('kubecode.closeDiff')} size="icon-xs" variant="ghost" onClick={onClose}><X  size={16}/></Button>
+        <IconButton icon={<X />} label={t('kubecode.closeDiff')} onClick={onClose} />
       </div>
       {state.kind === 'loading' && (
-        <div className="kubecode-diff-message" role="status">{t('kubecode.gitDiffLoading')}</div>
+        <Empty className="p-6" role="status">
+          <EmptyHeader>
+            <EmptyMedia><Spinner /></EmptyMedia>
+            <EmptyTitle className="text-sm font-normal text-muted-foreground">{t('kubecode.gitDiffLoading')}</EmptyTitle>
+          </EmptyHeader>
+        </Empty>
       )}
       {state.kind === 'ready' && state.content && (
-        <pre>{state.content}</pre>
+        <pre className="kubecode-diff-text">{state.content}</pre>
       )}
       {state.kind === 'ready' && !state.content && (
-        <div className="kubecode-diff-message" role="status">
-          {gitDiffUnavailableMessage(state.unavailableReason, t)}
-        </div>
+        <Empty className="p-6" role="status">
+          <EmptyHeader>
+            <EmptyTitle className="text-sm font-normal text-muted-foreground">
+              {gitDiffUnavailableMessage(state.unavailableReason, t)}
+            </EmptyTitle>
+          </EmptyHeader>
+        </Empty>
       )}
       {state.kind === 'failed' && (
-        <div className="kubecode-diff-message" role="alert">
-          <strong>{t('kubecode.gitDiffFailed')}</strong>
-          {(() => {
-            const detail = errorText(state.error)
-            return detail ? <small>{detail}</small> : null
-          })()}
-          <Button size="sm" variant="outline" onClick={() => onRetry(target)}>
-            {t('kubecode.retry')}
-          </Button>
+        <div className="p-3">
+          <Alert variant="destructive">
+            <CircleAlert />
+            <AlertTitle>{t('kubecode.gitDiffFailed')}</AlertTitle>
+            <AlertDescription className="[overflow-wrap:anywhere]">
+              {errorText(state.error)}
+              <Button className="mt-1" size="sm" variant="outline" onClick={() => onRetry(target)}>
+                {t('kubecode.retry')}
+              </Button>
+            </AlertDescription>
+          </Alert>
         </div>
       )}
     </>
