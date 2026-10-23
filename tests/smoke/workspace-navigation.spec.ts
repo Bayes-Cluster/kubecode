@@ -258,8 +258,8 @@ test('@smoke workspace navigation returns to each place, through the inspector s
       await expect.poll(() => scrollOf(page, scroller)).toBe(left)
     }
     await page.setViewportSize({ width: 1440, height: 900 })
-    // The sheet was put away on the narrow window; on a wide one the navigation is a column again.
-    await toggleNavigation(page)
+    // The Sheet was put away on the narrow window; it never changed the wide-screen
+    // layout, so on a wide one the navigation is a column again.
     await expect(workspaceNav(page)).toBeVisible()
     await openGeneral(page)
     await expect(composer).toHaveValue(draft)
