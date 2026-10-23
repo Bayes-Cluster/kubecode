@@ -1,5 +1,6 @@
 import { MessageAction, MessageActions, MessageContent } from '@/components/ai-elements/message'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { MoreActions, type MoreActionItem } from '@/components/workspace/MoreActions'
 import { ReferenceChip } from '@/components/workspace/ReferenceChip'
 import { Icon } from '@/kubecode/icons'
@@ -126,6 +127,7 @@ export function MessageItem({
     <ReferenceChip kind="task" kindLabel={t('kubecode.vocab.object.task')} title={task.title} onOpen={on.openTask} />
   )
   const focusKey = `message:${message.id}`
+  const ThreadIcon = WORKSPACE_OBJECT_ICONS.thread.Icon
   const own = message.author_kind === 'researcher'
   const time = date && (
     <time dateTime={date.toISOString()} title={date.toLocaleString(dateLocale)}>{shortTime(date, dateLocale)}</time>
@@ -214,14 +216,14 @@ export function MessageItem({
           </button>
         )}
         {proposal && (
-          <p className="kubecode-channel-proposal">
+          <div className="flex flex-wrap gap-1.5">
             <Badge variant="secondary">{t('kubecode.task.proposalBadge', { revision: Number(proposal[1]) })}</Badge>
             {message.task_id && onBoard && (
               <Badge data-on-board={onBoard(message.task_id)} variant={onBoard(message.task_id) ? 'secondary' : 'outline'}>
                 {onBoard(message.task_id) ? t('kubecode.task.onBoard') : t('kubecode.task.notOnBoardYet')}
               </Badge>
             )}
-          </p>
+          </div>
         )}
         <ConversationResponse className="kubecode-message-body" t={t}>{message.body}</ConversationResponse>
         {references.length > 0 ? (
@@ -238,10 +240,10 @@ export function MessageItem({
           </ul>
         )}
         {replies > 0 && on.openThread && (
-          <button className="kubecode-legacy-thread-link" type="button" onClick={on.openThread}>
-            <Icon role="identity" size="secondary" source={WORKSPACE_OBJECT_ICONS.thread.Icon} />
+          <Button className="self-start px-0 text-muted-foreground" size="sm" variant="link" onClick={on.openThread}>
+            <ThreadIcon aria-hidden="true" data-icon="inline-start" />
             {t('kubecode.channel.legacyThread.open', { count: replies, plural: replies === 1 ? 'y' : 'ies' })}
-          </button>
+          </Button>
         )}
         {delivery?.state === 'facts' && (
           <DeliveryStatus
@@ -254,13 +256,13 @@ export function MessageItem({
           />
         )}
         {delivery?.state === 'failed' && (
-          <p className="kubecode-message-delivery" data-delivery="failed">
+          <div className="kubecode-message-delivery flex flex-wrap items-center gap-2 text-xs text-muted-foreground" data-delivery="failed">
             <Badge variant="destructive">{t('kubecode.channel.notDelivered')}</Badge>
             <span>{delivery.text}</span>
-          </p>
+          </div>
         )}
         {(delivery?.state === 'queued' || delivery?.state === 'delivered') && (
-          <p className="kubecode-message-delivery" data-delivery={delivery.state}>
+          <p className="kubecode-message-delivery text-xs text-muted-foreground" data-delivery={delivery.state}>
             {deliveryText(delivery.state, delivery.recipients, dateLocale, t)}
           </p>
         )}

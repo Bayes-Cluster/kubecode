@@ -386,8 +386,7 @@ describe('ChannelWorkspace replies (ADR 0229 §4)', () => {
     view(s)
     await screen.findByText('about the start')
     // Routine notes are one quiet, expandable line; a decision about a Task is shown.
-    const activity = screen.getByText('Activity (2)').closest('details')
-    expect(activity).not.toHaveAttribute('open')
+    expect(screen.getByRole('button', { name: 'Activity (2)' })).toHaveAttribute('aria-expanded', 'false')
     expect(screen.getByTestId('message-64').tagName).toBe('ARTICLE')
     fireEvent.click(within(row(61)).getByRole('button', { name: /In reply to You: message 60/ }))
     expect(scroll).toHaveBeenCalled()

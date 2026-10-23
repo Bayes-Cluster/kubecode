@@ -21,6 +21,7 @@ import type { MemberDirectory } from '../members/memberDirectory'
 import { authorView, messageRecipients, type IdentityView } from '../members/memberIdentity'
 import type { ReferenceLabelSource } from '../references/referenceLabels'
 import { ActivityGroup } from './ActivityGroup'
+import { revealActivity } from './activityReveal'
 import { notesDelivery, type MessageDeliverySource } from './delivery'
 import { excerptOf } from './generalDraft'
 import { MessageItem } from './MessageItem'
@@ -186,8 +187,7 @@ export function MessageList({
       onJumpMissing?.(messageId)
       return
     }
-    const group = target.closest('details')
-    if (group) group.open = true
+    revealActivity(target)
     stuck.current = false
     // Reading a linked message is leaving the latest: the conversation stops following it.
     conversation.current?.stopScroll()
@@ -346,10 +346,10 @@ export function MessageList({
           {items.map((item) => {
             if (item.kind === 'date') {
               return (
-                <div className="kubecode-date-separator" key={item.key} role="separator" aria-label={item.label}>
-                  <Separator className="kubecode-date-separator-rule" decorative />
+                <div aria-label={item.label} className="my-2 flex items-center gap-2 text-xs text-muted-foreground" key={item.key} role="separator">
+                  <Separator className="flex-1" decorative />
                   <span aria-hidden="true">{item.label}</span>
-                  <Separator className="kubecode-date-separator-rule" decorative />
+                  <Separator className="flex-1" decorative />
                 </div>
               )
             }

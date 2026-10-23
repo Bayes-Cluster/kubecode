@@ -3690,31 +3690,6 @@
   padding: 0;
 }
 
-.kubecode-message-delivery {
-  align-items: center;
-  color: var(--text-secondary);
-  display: flex;
-  flex-wrap: wrap;
-  font: var(--ws-font-meta);
-  gap: var(--ws-space-2);
-  margin: 0;
-}
-
-.kubecode-legacy-thread-link {
-  align-items: center;
-  align-self: flex-start;
-  background: transparent;
-  border: 0;
-  color: var(--text-secondary);
-  cursor: pointer;
-  display: inline-flex;
-  font: var(--ws-font-meta);
-  gap: var(--ws-space-1);
-  min-height: var(--ws-touch-target);
-  padding: 0;
-}
-
-.kubecode-legacy-thread-link:hover { color: var(--text-primary); }
 .kubecode-legacy-thread-note {
   background: var(--surface-subtle);
   border-radius: var(--radius-md);
@@ -3726,32 +3701,6 @@
 
 .kubecode-legacy-thread-topic { color: var(--text-secondary); overflow-wrap: anywhere; }
 .kubecode-legacy-thread-actions { display: flex; justify-content: flex-end; }
-
-.kubecode-activity-group {
-  color: var(--text-secondary);
-  font: var(--ws-font-meta);
-  padding: 0 var(--ws-space-2);
-}
-
-.kubecode-activity-group summary { cursor: pointer; min-height: var(--ws-touch-target); }
-.kubecode-activity-group ul { display: flex; flex-direction: column; gap: var(--ws-space-1); list-style: none; margin: 0; padding: 0 0 0 var(--ws-space-3); }
-.kubecode-activity-group li { display: flex; flex-wrap: wrap; gap: var(--ws-space-2); overflow-wrap: anywhere; }
-
-.kubecode-date-separator {
-  align-items: center;
-  color: var(--text-secondary);
-  display: flex;
-  font: var(--ws-font-meta);
-  gap: var(--ws-space-2);
-  margin: var(--ws-space-2) 0;
-}
-
-.kubecode-date-separator::before,
-.kubecode-date-separator::after {
-  border-top: 1px solid var(--border-subtle);
-  content: '';
-  flex: 1 1 auto;
-}
 
 .kubecode-inert-image {
   border: 1px dashed var(--border-subtle);
@@ -4148,7 +4097,6 @@
 }
 
 .kubecode-task-field { display: flex; flex-direction: column; gap: 2px; }
-.kubecode-channel-proposal { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; }
 
 @media (max-width: 900px) {
   .kubecode-channel-workspace { flex-direction: column; overflow-y: auto; }
@@ -5638,10 +5586,6 @@
   width: 2rem;
   z-index: 2;
 }
-.kubecode-date-separator { align-items: center; color: var(--text-secondary); display: flex; font: var(--ws-font-meta); gap: var(--ws-space-2); margin: var(--ws-space-2) 0; }
-.kubecode-date-separator::before,
-.kubecode-date-separator::after { content: none; }
-.kubecode-date-separator > .kubecode-date-separator-rule { flex: 1 1 auto; width: auto; }
 
 /* One message: an article around the official Message. Members on the left
    with their avatar, the researcher's own as a tinted bubble on the right. */

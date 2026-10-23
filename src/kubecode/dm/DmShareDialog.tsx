@@ -60,6 +60,7 @@ function DmSharePreviewCard({ preview, research, t }: { preview: DmSharePreview;
   const shown = managerView && !reachable && !managerView.attention
     ? { ...managerView, attention: { label: t('kubecode.identity.cannotReceive'), tone: 'warn' as const } }
     : managerView
+  const [exact, setExact] = useState(false)
   const task = preview.task_id ? research.find((item) => item.id === preview.task_id) : undefined
   return (
     <Card aria-label={t('kubecode.dm.sharePreview')} className="kubecode-dm-preview gap-3 py-3" role="region">
@@ -88,11 +89,11 @@ function DmSharePreviewCard({ preview, research, t }: { preview: DmSharePreview;
               <AlertDescription>{t('kubecode.channel.noRecipient')}</AlertDescription>
             </Alert>
           )}
-        <Collapsible>
+        <Collapsible open={exact} onOpenChange={setExact}>
           <CollapsibleTrigger asChild>
             <Button size="xs" variant="ghost">{t('kubecode.dm.shareExactText')}</Button>
           </CollapsibleTrigger>
-          <CollapsibleContent forceMount className="data-[state=closed]:hidden">
+          <CollapsibleContent forceMount hidden={!exact}>
             <pre className="whitespace-pre-wrap break-words text-xs">{preview.text}</pre>
           </CollapsibleContent>
         </Collapsible>
