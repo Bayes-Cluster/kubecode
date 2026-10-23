@@ -51,7 +51,7 @@ export function ExecutionRow({ alone = false, entryKey, onStop, runs, stopping, 
             </span>
             {queued > 0 && <Badge className="kubecode-execution-queued shrink-0" variant="secondary">{t('kubecode.execution.queuedCount', { count: queued })}</Badge>}
           </ItemTitle>
-          <ItemDescription className="kubecode-execution-state truncate">
+          <ItemDescription className="kubecode-execution-state line-clamp-1">
             {stopping
               ? t('kubecode.execution.stopping')
               : waiting

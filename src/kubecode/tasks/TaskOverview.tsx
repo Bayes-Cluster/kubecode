@@ -147,8 +147,8 @@ function BriefSummary({ brief, t }: { brief: ResearchBrief; t: Translator }) {
   ]
   // The brief is the Task's plan (ADR 0243): always open, its labels kept as one description list.
   return (
-    <Plan open>
-      <PlanContent className="pt-4">
+    <Plan className="py-4" open>
+      <PlanContent className="px-4">
         <dl className="flex flex-col gap-3 text-sm">
           {/* Every section is one group, so labels and lists line up (#229). */}
           <div className="flex flex-col gap-1">

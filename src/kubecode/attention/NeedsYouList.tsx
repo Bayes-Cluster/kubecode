@@ -42,7 +42,7 @@ function Rows({ entries, label, onOpenTarget, t }: {
           return (
             <div key={entry.key} role="listitem">
               {/* The official Item is the row's one button (#259): it opens the context holding the request. */}
-              <Item asChild className="text-left" size="sm">
+              <Item asChild className="w-full text-left" size="sm">
                 <button
                   aria-busy={resolving || undefined}
                   data-attention-key={entry.key}

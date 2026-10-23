@@ -274,7 +274,7 @@ function BoardRow({ children, current, id, onOpen, title }: {
   children: ReactNode
 }) {
   return (
-    <Item asChild size="sm" variant={current ? 'muted' : 'default'}>
+    <Item asChild className="w-full text-left" size="sm" variant={current ? 'muted' : 'default'}>
       <button
         aria-current={current ? 'true' : undefined}
         data-focus-key={`card:${id}`}

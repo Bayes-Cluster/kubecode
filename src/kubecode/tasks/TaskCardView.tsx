@@ -44,7 +44,7 @@ export function TaskCardView({ card, locale, onOpen, selected, t }: {
     <Card className="gap-0 overflow-hidden py-0">
       <button
         aria-current={selected ? 'true' : undefined}
-        className="flex w-full min-w-0 flex-col items-start gap-2 rounded-[inherit] p-3 text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 aria-[current=true]:ring-2 aria-[current=true]:ring-primary aria-[current=true]:ring-inset"
+        className="flex w-full min-w-0 flex-col items-start gap-2 rounded-[inherit] p-3 text-left outline-none ring-inset focus-visible:ring-[3px] focus-visible:ring-ring aria-[current=true]:ring-2 aria-[current=true]:ring-primary"
         data-focus-key={`card:${card.id}`}
         data-needs-you={requiredActionOf(card) !== null || undefined}
         data-scroll-anchor={`card:${card.id}`}

@@ -152,7 +152,7 @@ function RecentInGeneral({ onShow, projectId, taskId }: {
             {list.map((message) => (
               <div key={message.id} role="listitem">
                 {/* One message, one official Item that is itself the button showing it in General. */}
-                <Item asChild size="sm">
+                <Item asChild className="w-full text-left" size="sm">
                   <button type="button" onClick={() => onShow(message.id)}>
                     <ItemContent className="min-w-0">
                       <ItemTitle className="block w-full truncate font-normal">{excerptOf(message.body)}</ItemTitle>
