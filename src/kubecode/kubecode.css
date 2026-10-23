@@ -1393,12 +1393,14 @@
 .kubecode-view-header-row {
   align-items: center;
   display: flex;
+  /* Actions wrap under a title that would otherwise be squeezed below a readable width. */
+  flex-wrap: wrap;
   gap: var(--ws-space-2);
   min-width: 0;
 }
 .kubecode-view-header-icon { color: var(--text-tertiary); display: inline-flex; }
 .kubecode-view-header-title {
-  flex: 1 1 auto;
+  flex: 1 1 14ch;
   font: var(--ws-font-title);
   margin: 0;
   min-width: 0;
@@ -1408,6 +1410,8 @@
   align-items: center;
   display: flex;
   flex-wrap: wrap;
+  max-width: 100%;
+  min-width: 0;
   gap: var(--ws-space-1);
   justify-content: flex-end;
 }
