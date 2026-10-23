@@ -43,14 +43,14 @@ export function RoundPauseControl({ api, execution, onChanged, projectId, t, tas
     }
   }
   return (
-    <div className="kubecode-round-pause" data-paused={execution.paused}>
+    <div className="flex flex-wrap items-center gap-2" data-paused={execution.paused}>
       <PauseButton
         busy={busy}
         label={t('kubecode.execution.pauseTaskWork', { task: task.title })}
         paused={execution.paused}
         onToggle={() => void toggle()}
       />
-      {notice && <p className="kubecode-research-muted" role="status">{notice}</p>}
+      {notice && <p className="min-w-56 flex-1 text-sm text-muted-foreground" role="status">{notice}</p>}
     </div>
   )
 }

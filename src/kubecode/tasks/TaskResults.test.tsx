@@ -140,7 +140,8 @@ describe('TaskResults', () => {
     await waitFor(() => expect(api.reviewTask).toHaveBeenCalledWith('p1', 'r1', {
       requestId: 'rq1', accept: false, reason: 'Rerun at the new baseline.',
     }))
-    const status = await screen.findByText(/Sent back. The General Agent was told in General/)
+    const status = (await screen.findByText(/Sent back. The General Agent was told in General/)).closest('[role="status"]')
+    expect(status).toHaveAttribute('data-slot', 'alert')
     await waitFor(() => expect(status).toHaveFocus())
     fireEvent.click(screen.getByRole('button', { name: 'Show in General' }))
     expect(navigation.openPlace).toHaveBeenCalledWith(
@@ -165,7 +166,7 @@ describe('TaskResults', () => {
     })
     fireEvent.change(await screen.findByLabelText('Feedback for the team'), { target: { value: 'Rerun it.' } })
     fireEvent.click(screen.getByRole('button', { name: 'Send back' }))
-    const status = await screen.findByText('Recorded. It could not be posted to General; tell the General Agent there.')
+    const status = (await screen.findByText('Recorded. It could not be posted to General; tell the General Agent there.')).closest('[role="status"]')
     await waitFor(() => expect(status).toHaveFocus())
     expect(screen.queryByText(/The General Agent was told in General/)).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Show in General' })).not.toBeInTheDocument()
@@ -238,8 +239,25 @@ describe('TaskResults', () => {
     fireEvent.click(screen.getByRole('radio', { name: 'Inconclusive' }))
     const accept = screen.getByRole('button', { name: 'Accept results' })
     expect(accept).toHaveAccessibleDescription(/Confirm that you accept the results without the missing evidence/)
-    fireEvent.click(screen.getByRole('checkbox'))
+    const acknowledge = screen.getByRole('checkbox', { name: /no longer exists, and I accept the results anyway/ })
+    expect(acknowledge).toHaveAttribute('data-slot', 'checkbox')
+    fireEvent.click(acknowledge)
     expect(accept).toBeEnabled()
+  })
+
+  it('asks for the outcome with the official RadioGroup, each choice described by its hint, and the feedback as a Field', async () => {
+    mount(taskDetail({ evidence: [] }))
+    const group = await screen.findByRole('radiogroup', { name: 'What the result showed' })
+    expect(group).toHaveAttribute('data-slot', 'radio-group')
+    const negative = within(group).getByRole('radio', { name: 'Valid negative result' })
+    expect(negative).toHaveAccessibleDescription(/.+/)
+    fireEvent.click(negative)
+    expect(negative).toBeChecked()
+    // Arrow keys choose the next outcome, as native radios did.
+    negative.focus()
+    fireEvent.keyDown(negative, { key: 'ArrowDown' })
+    await waitFor(() => expect(within(group).getByRole('radio', { name: 'Inconclusive' })).toBeChecked())
+    expect(screen.getByLabelText('Feedback for the team').closest('[data-slot="field"]')).not.toBeNull()
   })
 
   it('keeps the outcome and feedback across a look at the evidence', async () => {

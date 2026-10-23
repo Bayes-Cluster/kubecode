@@ -103,6 +103,7 @@ describe('PermissionPrompt', () => {
     expect(onResolve).toHaveBeenCalledTimes(1)
     await act(async () => fail(new Error('network')))
     expect(screen.getByRole('alert')).toHaveTextContent('Your answer was not recorded. Try again.')
+    expect(screen.getByRole('alert')).toHaveAttribute('data-slot', 'alert')
     expect(screen.getByTestId('permission-queue-card')).toBeInTheDocument()
   })
 

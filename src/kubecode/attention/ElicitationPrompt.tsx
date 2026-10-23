@@ -22,7 +22,7 @@ import type { Translator } from '@/lib/i18n'
 import type { ElicitationAnswer, PendingElicitation } from '../session/conversationReducer'
 import { elicitationComplete } from '../session/sessionModel'
 import { isGone } from './attentionContext'
-import { PromptDecision } from './PromptDecision'
+import { PromptDecision, PromptOutcome } from './PromptDecision'
 
 export type ElicitationPromptProps = {
   elicitation: PendingElicitation
@@ -66,22 +66,22 @@ export function ElicitationPrompt({ answers, elicitation, heading, onAnswerChang
     <Confirmation
       approval={{ id: elicitation.requestId }}
       aria-label={elicitation.message ? `${title}: ${elicitation.message}` : title}
-      className="kubecode-elicitation-dock"
+      className="outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
       data-focus-key={`input:${elicitation.requestId}`}
       role="group"
       state="approval-requested"
       tabIndex={-1}
     >
-      <ConfirmationTitle className="kubecode-elicitation-heading">
-        <strong>{title}</strong>
-        <span>{elicitation.message}</span>
+      <ConfirmationTitle className="flex flex-col gap-1">
+        <strong className="text-foreground [overflow-wrap:anywhere]">{title}</strong>
+        {elicitation.message && <span className="[overflow-wrap:anywhere]">{elicitation.message}</span>}
       </ConfirmationTitle>
       <ConfirmationRequest>
-        <FieldGroup className="kubecode-elicitation-fields">
+        <FieldGroup className="gap-4">
           {elicitation.properties.map((property) => {
             const id = `elicitation-${elicitation.requestId}-${property.id}`
             return (
-              <Field className="kubecode-elicitation-field" key={property.id} orientation={property.type === 'boolean' ? 'horizontal' : 'vertical'}>
+              <Field key={property.id} orientation={property.type === 'boolean' ? 'horizontal' : 'vertical'}>
                 <FieldLabel htmlFor={id}>{property.label}{property.required ? ' *' : ''}</FieldLabel>
                 {property.description && <FieldDescription>{property.description}</FieldDescription>}
                 {property.type === 'boolean' ? (
@@ -119,7 +119,7 @@ export function ElicitationPrompt({ answers, elicitation, heading, onAnswerChang
           })}
         </FieldGroup>
       </ConfirmationRequest>
-      <ConfirmationActions className="kubecode-elicitation-actions">
+      <ConfirmationActions className="flex-wrap justify-start self-stretch">
         <PromptDecision busy={busy === 'decline' || resolving} variant="secondary" onDecide={() => void resolve(false)}>
           {t('kubecode.decline')}
         </PromptDecision>
@@ -132,9 +132,7 @@ export function ElicitationPrompt({ answers, elicitation, heading, onAnswerChang
           {t('kubecode.submitAnswers')}
         </PromptDecision>
       </ConfirmationActions>
-      {resolving && <p className="kubecode-research-muted" role="status">{t('kubecode.attention.resolving')}</p>}
-      {outcome === 'failed' && <p className="kubecode-research-error" role="alert">{t('kubecode.attention.resolveFailed')}</p>}
-      {outcome === 'gone' && <p className="kubecode-research-muted" role="status">{t('kubecode.attention.answeredElsewhere')}</p>}
+      <PromptOutcome outcome={outcome} resolving={resolving} t={t} />
     </Confirmation>
   )
 }

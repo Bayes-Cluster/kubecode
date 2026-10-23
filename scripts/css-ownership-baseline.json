@@ -194,14 +194,14 @@
       "text": ".kubecode-path-picker-heading [data-slot='dialog-title'] { font-size: 15px; }",
       "context": ".kubecode-path-picker-heading [data-slot='dialog-title']",
       "kind": "official-internal",
-      "owner": "#262"
+      "owner": "#260"
     },
     {
       "file": "src/kubecode/kubecode.css",
       "text": ".kubecode-path-picker-heading [data-slot='dialog-description'] { font-size: 12px; }",
       "context": ".kubecode-path-picker-heading [data-slot='dialog-description']",
       "kind": "official-internal",
-      "owner": "#262"
+      "owner": "#260"
     },
     {
       "file": "src/kubecode/kubecode.css",
@@ -324,80 +324,10 @@
     },
     {
       "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-task-board .kubecode-task-empty [data-slot='empty-content'] { align-items: flex-start; }",
-      "context": ".kubecode-task-board .kubecode-task-empty [data-slot='empty-content']",
-      "kind": "official-internal",
-      "owner": "#259"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-task-plan [data-slot='plan-content'] { padding: 0 var(--ws-space-3); }",
-      "context": ".kubecode-task-plan [data-slot='plan-content']",
-      "kind": "official-internal",
-      "owner": "#259"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-task-evidence[data-slot='item-group'] { gap: var(--ws-space-1); }",
-      "context": ".kubecode-task-evidence[data-slot='item-group']",
-      "kind": "official-internal",
-      "owner": "#259"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-task-evidence-row[data-slot='item'] { align-items: flex-start; flex-direction: column; gap: var(--ws-space-1); padding: 0; }",
-      "context": ".kubecode-task-evidence-row[data-slot='item']",
-      "kind": "official-internal",
-      "owner": "#259"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-task-version[data-slot='item-actions'] { align-items: flex-start; flex-wrap: wrap; }",
-      "context": ".kubecode-task-version[data-slot='item-actions']",
-      "kind": "official-internal",
-      "owner": "#259"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-task-decisions[data-slot='alert'] { border-radius: 0; border-width: 1px 0 0; color: var(--text-primary); }",
-      "context": ".kubecode-task-decisions[data-slot='alert']",
-      "kind": "official-internal",
-      "owner": "#259"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-needs-you-item[data-slot='item'] { padding: 0; }",
-      "context": ".kubecode-needs-you-item[data-slot='item']",
-      "kind": "official-internal",
-      "owner": "#259"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-needs-you-decision[data-slot='item'] { flex-wrap: nowrap; }",
-      "context": ".kubecode-needs-you-decision[data-slot='item']",
-      "kind": "official-internal",
-      "owner": "#259"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-needs-you-decision [data-slot='item-content'] { gap: 2px; }",
-      "context": ".kubecode-needs-you-decision [data-slot='item-content']",
-      "kind": "official-internal",
-      "owner": "#259"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
       "text": ".kubecode-conversation-avatar[data-role='researcher'] > [data-slot='avatar-fallback'] { background: var(--accent-purple-light); box-shadow: inset 0 0 0 1px var(--accent-purple); }",
       "context": ".kubecode-conversation-avatar[data-role='researcher'] > [data-slot='avatar-fallback']",
       "kind": "official-internal",
       "owner": "#262"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-elicitation-fields [data-slot='field'] { gap: var(--ws-space-1); }",
-      "context": ".kubecode-elicitation-fields [data-slot='field']",
-      "kind": "official-internal",
-      "owner": "#259"
     },
     {
       "file": "src/kubecode/kubecode.css",

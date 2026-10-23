@@ -22,11 +22,11 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 
 | Status | Rows |
 | --- | ---: |
-| migrated | 138 |
-| partial | 56 |
-| handcrafted | 36 |
+| migrated | 172 |
+| partial | 33 |
+| handcrafted | 26 |
 | specialist-engine | 4 |
-| exception | 4 |
+| exception | 5 |
 | not-applicable | 8 |
 
 | Owner | Rows |
@@ -39,7 +39,7 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 | #257 | 28 |
 | #258 | 19 |
 | #258/#262 | 1 |
-| #259 | 46 |
+| #259 | 48 |
 | #260 | 28 |
 | #261 | 34 |
 | #262 | 35 |
@@ -254,68 +254,70 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Task inspector loading / error with Retry | `src/kubecode/tasks/TaskPanel.tsx:121-128` | InspectorPanel loading; handcrafted p role=alert + Button | Skeleton/Spinner; Alert (destructive) + Button | task inspector | #259 | partial | — |
+| Task inspector loading / error with Retry | `src/kubecode/tasks/TaskPanel.tsx:121-128` | InspectorPanel loading; ReaderNotice (Alert destructive) + Button | Skeleton/Spinner; Alert (destructive) + Button | task inspector | #259 | migrated | — |
 | Task header MoreActions menu, status meta | `src/kubecode/tasks/TaskPanel.tsx:175-177` | MoreActions over DropdownMenu | shadcn DropdownMenu | TaskPanel | #259 | migrated | — |
-| Next-step banner + Discuss in General | `src/kubecode/tasks/TaskPanel.tsx:182-187` | handcrafted div role=group + p + Button | shadcn Alert or Item | TaskPanel | #259 | partial | — |
-| Inline error paragraph | `src/kubecode/tasks/TaskPanel.tsx:189` | handcrafted p role=alert | shadcn Alert destructive | TaskPanel | #259 | handcrafted | — |
+| Next-step banner + Discuss in General | `src/kubecode/tasks/TaskPanel.tsx:182-187` | official Alert (role group) + Button | shadcn Alert or Item | TaskPanel | #259 | migrated | — |
+| Inline error paragraph | `src/kubecode/tasks/TaskPanel.tsx:189` | ReaderNotice → Alert destructive | shadcn Alert destructive | TaskPanel | #259 | migrated | — |
 | Restore archived (DecisionButton) | `src/kubecode/tasks/TaskPanel.tsx:192` | DecisionButton (official Button + Spinner) | shadcn Button + Spinner | TaskPanel | #259 | migrated | — |
 | Overview/Results/Activity tabs with review count badge | `src/kubecode/tasks/TaskPanel.tsx:197-212` | official Tabs + StatusBadge (Badge variants; ToneBadge removed in #255) | shadcn Tabs, Badge | TaskPanel | #259 | migrated | — |
-| Archive blocked / archive confirm dialogs | `src/kubecode/tasks/TaskPanel.tsx:218-243` | official Dialog + Button | shadcn AlertDialog (not installed) | TaskPanel | #259 | partial | Dialog is official; AlertDialog to be added by the slice |
-| TaskStatusBadges + condition reason text | `src/kubecode/tasks/TaskStatusBadges.tsx:34-50` | StatusBadge (official Badge); reason is handcrafted span | shadcn Badge | TaskPanel, TaskCardView | #259 | partial | — |
+| Archive blocked / archive confirm dialogs | `src/kubecode/tasks/TaskPanel.tsx:218-243` | official AlertDialog (added via CLI, ADR 0251) | shadcn AlertDialog (not installed) | TaskPanel | #259 | migrated | — |
+| TaskStatusBadges + condition reason text | `src/kubecode/tasks/TaskStatusBadges.tsx:34-50` | StatusBadge (official Badge); reason a layout span | shadcn Badge | TaskPanel, TaskCardView | #259 | migrated | — |
 | Waiting-on items list | `src/kubecode/tasks/TaskWork.tsx:87-94` | AI Elements Task/TaskContent/TaskItem | AI Elements Task | TaskWork | #259 | migrated | — |
-| Delivery issue rows with Retry and refusal | `src/kubecode/tasks/TaskWork.tsx:39-57,125-127` | handcrafted ul/li + Button | shadcn Item/ItemGroup + Alert | TaskWork | #259 | partial | — |
-| Embedded ExecutionStrip scoped to task | `src/kubecode/tasks/TaskWork.tsx:123` | see ExecutionStrip | AI Elements Queue | TaskWork | #259 | partial | — |
-| Waiting-on-you section, brief Discuss | `src/kubecode/tasks/TaskOverview.tsx:62-80` | handcrafted section/p + Button | shadcn Alert or Item with ItemActions | TaskOverview | #259 | partial | — |
-| Goal / brief summary dl in Plan; Edit brief; notice | `src/kubecode/tasks/TaskOverview.tsx:86-150` | Plan/PlanContent wrapping handcrafted dl; notice p | AI Elements Plan; Alert for notice | TaskOverview | #259 | partial | — |
-| Provenance quote | `src/kubecode/tasks/TaskOverview.tsx:163-169` | handcrafted p/q | Item or InlineCitation | TaskOverview | #259 | handcrafted | — |
-| People list and empty text | `src/kubecode/tasks/TaskOverview.tsx:190-197` | handcrafted ul + MemberIdentity (official Avatar) | shadcn Item/ItemGroup + Avatar; Empty | TaskOverview | #259 | partial | — |
+| Delivery issue rows with Retry and refusal | `src/kubecode/tasks/TaskWork.tsx:39-57,125-127` | Item/ItemGroup; failed delivery an Alert destructive with Retry | shadcn Item/ItemGroup + Alert | TaskWork | #259 | migrated | — |
+| Embedded ExecutionStrip scoped to task | `src/kubecode/tasks/TaskWork.tsx:123` | ExecutionStrip (Queue/Item/Alert), prompts off, scoped to the Task | AI Elements Queue | TaskWork | #259 | migrated | — |
+| Waiting-on-you section, brief Discuss | `src/kubecode/tasks/TaskOverview.tsx:62-80` | Item outline + ItemActions per waiting thing | shadcn Alert or Item with ItemActions | TaskOverview | #259 | migrated | — |
+| Goal / brief summary dl in Plan; Edit brief; notice | `src/kubecode/tasks/TaskOverview.tsx:86-150` | AI Elements Plan holding a semantic dl (Tailwind layout); ReaderNotice Alert | AI Elements Plan; Alert for notice | TaskOverview | #259 | migrated | — |
+| Provenance quote | `src/kubecode/tasks/TaskOverview.tsx:163-169` | Item muted with ItemActions | Item or InlineCitation | TaskOverview | #259 | migrated | — |
+| People list and empty text | `src/kubecode/tasks/TaskOverview.tsx:190-197` | MemberIdentity list; ReaderEmpty (Empty) | shadcn Item/ItemGroup + Avatar; Empty | TaskOverview | #259 | migrated | — |
 | Progress work items with stage badges | `src/kubecode/tasks/TaskOverview.tsx:217-233` | AI Elements Task/TaskItem + StatusBadge | AI Elements Task | TaskOverview | #259 | migrated | — |
-| Questions list with options and free answer | `src/kubecode/tasks/TaskQuestions.tsx:26-91` | handcrafted ul/li/label + Button, Textarea; error p | Field + Textarea + Button; Item; Alert; Suggestion | TaskOverview | #259 | partial | — |
-| In-General empty activity note | `src/kubecode/tasks/TaskActivity.tsx:139` | handcrafted p | shadcn Empty | TaskActivity | #259 | handcrafted | — |
-| Decided status note with Show in General | `src/kubecode/tasks/TaskResults.tsx:74-83` | handcrafted p role=status + Button | shadcn Alert | TaskResults | #259 | partial | — |
+| Questions list with options and free answer | `src/kubecode/tasks/TaskQuestions.tsx:26-91` | Item per question; Field + FieldLabel + Textarea; ReaderNotice | Field + Textarea + Button; Item; Alert; Suggestion | TaskOverview | #259 | migrated | — |
+| In-General empty activity note | `src/kubecode/tasks/TaskActivity.tsx:139` | ReaderEmpty (Empty) | shadcn Empty | TaskActivity | #259 | migrated | — |
+| Decided status note with Show in General | `src/kubecode/tasks/TaskResults.tsx:74-83` | official Alert (role status, focused) + Button | shadcn Alert | TaskResults | #259 | migrated | — |
 | Accepted outcome + evidence sources | `src/kubecode/tasks/TaskResults.tsx:103-122,185-186` | AI Elements Sources + Item + ReferenceChip | AI Elements Sources/Source | TaskResults | #259 | migrated | — |
-| No results yet empty state | `src/kubecode/tasks/TaskResults.tsx:122` | handcrafted muted p | shadcn Empty | TaskResults | #259 | handcrafted | — |
-| Review history list / ReviewSummary | `src/kubecode/tasks/TaskResults.tsx:144-173` | handcrafted ul/li/div + StatusBadge + Button | shadcn Item/ItemGroup + Badge | TaskResults | #259 | partial | — |
-| Review form removed-ack checkbox | `src/kubecode/tasks/TaskResults.tsx:359-361` | native checkbox in label | shadcn Checkbox + Field (not installed) | TaskResults | #259 | handcrafted | — |
-| Outcome radio fieldset | `src/kubecode/tasks/TaskResults.tsx:366-367,441-446` | native fieldset/legend/radio | shadcn RadioGroup + FieldSet (not installed) | TaskResults | #259 | handcrafted | — |
-| Feedback textarea + hint + error | `src/kubecode/tasks/TaskResults.tsx:379-389` | handcrafted label/small + Textarea; error p | Field/FieldLabel/FieldDescription/FieldError + Textarea | TaskResults | #259 | partial | — |
+| No results yet empty state | `src/kubecode/tasks/TaskResults.tsx:122` | ReaderEmpty (Empty) | shadcn Empty | TaskResults | #259 | migrated | — |
+| Review history list / ReviewSummary | `src/kubecode/tasks/TaskResults.tsx:144-173` | Item outline in ItemGroup + StatusBadge | shadcn Item/ItemGroup + Badge | TaskResults | #259 | migrated | — |
+| Review form removed-ack checkbox | `src/kubecode/tasks/TaskResults.tsx:359-361` | official Checkbox + Field horizontal (added via CLI) | shadcn Checkbox + Field (not installed) | TaskResults | #259 | migrated | — |
+| Outcome radio fieldset | `src/kubecode/tasks/TaskResults.tsx:366-367,441-446` | FieldSet + FieldLegend + official RadioGroup, hint as FieldDescription | shadcn RadioGroup + FieldSet (not installed) | TaskResults | #259 | migrated | — |
+| Feedback textarea + hint + error | `src/kubecode/tasks/TaskResults.tsx:379-389` | Field/FieldLabel/FieldDescription + Textarea; ReaderNotice | Field/FieldLabel/FieldDescription/FieldError + Textarea | TaskResults | #259 | migrated | — |
 | Accept / request changes decision bar | `src/kubecode/tasks/TaskResults.tsx:398-399` | AI Elements Confirmation + DecisionButton | AI Elements Confirmation | TaskResults | #259 | migrated | — |
 | Evidence row version check with Open | `src/kubecode/tasks/TaskResults.tsx:467-477` | official Item/ItemActions + Button | shadcn Item | TaskResults | #259 | migrated | — |
-| Activity timeline (empty, steps, Show in General) | `src/kubecode/tasks/TaskActivity.tsx:40-52` | handcrafted ol/li/q + Button; empty p | ChainOfThought steps or Item list; Empty | TaskActivity | #259 | handcrafted | — |
-| Recent in General: loading/error/empty/list | `src/kubecode/tasks/TaskActivity.tsx:129-147` | handcrafted p states + Button list | Skeleton/Spinner, Alert, Empty, Item | TaskActivity | #259 | partial | — |
-| Execution records / linked records disclosures | `src/kubecode/tasks/TaskActivity.tsx:175-183,228-242` | native details/summary | shadcn Collapsible or Accordion | TaskActivity | #259 | handcrafted | — |
+| Activity timeline (empty, steps, Show in General) | `src/kubecode/tasks/TaskActivity.tsx:40-52` | ordered list of Item outline; ReaderEmpty | ChainOfThought steps or Item list; Empty | TaskActivity | #259 | migrated | — |
+| Recent in General: loading/error/empty/list | `src/kubecode/tasks/TaskActivity.tsx:129-147` | ReaderLoading, ReaderNotice, ReaderEmpty; Item asChild buttons | Skeleton/Spinner, Alert, Empty, Item | TaskActivity | #259 | migrated | — |
+| Execution records / linked records disclosures | `src/kubecode/tasks/TaskActivity.tsx:175-183,228-242` | official Collapsible + ghost Button trigger, lazily filled | shadcn Collapsible or Accordion | TaskActivity | #259 | migrated | — |
 | Imports and ResearchExportPanel inside records | `src/kubecode/tasks/TaskActivity.tsx:242,270` | delegated to research components | n/a here | TaskActivity | #258/#262 | not-applicable | — |
 
 ## Kanban
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Needs-you-only switch | `src/kubecode/tasks/TaskBoardView.tsx:118-120` | official Switch + handcrafted span label | shadcn Switch + Field horizontal | TaskBoardView | #259 | partial | — |
-| Error/loading states | `src/kubecode/tasks/TaskBoardView.tsx:127-133` | handcrafted p role=alert/status + Button | Alert; Skeleton/Spinner | TaskBoardView | #259 | handcrafted | — |
+| Needs-you-only switch | `src/kubecode/tasks/TaskBoardView.tsx:118-120` | Field horizontal + Switch + FieldLabel | shadcn Switch + Field horizontal | TaskBoardView | #259 | migrated | — |
+| Error/loading states | `src/kubecode/tasks/TaskBoardView.tsx:127-133` | Alert destructive + Retry; ReaderLoading (Spinner) | Alert; Skeleton/Spinner | TaskBoardView | #259 | migrated | — |
 | Board empty state with Open General | `src/kubecode/tasks/TaskBoardView.tsx:136-140` | official Empty + Button | shadcn Empty | TaskBoardView | #259 | migrated | — |
-| Drafts collapsible with draft rows | `src/kubecode/tasks/TaskBoardView.tsx:152-167` | official Collapsible; native button rows + StatusBadge | Collapsible + Item asChild / Button | TaskBoardView | #259 | partial | — |
-| Nothing needs you note | `src/kubecode/tasks/TaskBoardView.tsx:175` | handcrafted muted p | shadcn Empty | TaskBoardView | #259 | handcrafted | — |
-| Stage tabs (phone) / columns with count + column empty | `src/kubecode/tasks/TaskBoardView.tsx:179-213` | official Tabs; handcrafted column ul + StatusBadge; empty p | Tabs; no Kanban in core registry | TaskBoardView | #259 | partial | No shadcn/ui or AI Elements kanban component exists; column layout is CSS |
-| Task card | `src/kubecode/tasks/TaskCardView.tsx:42-66` | official Card wrapping native button + TaskStatusBadges + MemberAvatar | shadcn Card composition + Avatar/AvatarGroup | TaskBoardView | #259 | partial | — |
-| Archived collapsible rows | `src/kubecode/tasks/TaskBoardView.tsx:233-254` | official Collapsible; native button rows | Collapsible + Item | TaskBoardView | #259 | partial | — |
+| Drafts collapsible with draft rows | `src/kubecode/tasks/TaskBoardView.tsx:152-167` | Collapsible + Item asChild button rows | Collapsible + Item asChild / Button | TaskBoardView | #259 | migrated | — |
+| Nothing needs you note | `src/kubecode/tasks/TaskBoardView.tsx:175` | Empty | shadcn Empty | TaskBoardView | #259 | migrated | — |
+| Stage tabs (phone) / columns with count + column empty | `src/kubecode/tasks/TaskBoardView.tsx:179-213` | Tabs line; column section + StatusBadge; Empty per empty column | Tabs; no Kanban in core registry | TaskBoardView | #259 | exception | No shadcn/ui or AI Elements kanban; the four-column grid and the phone stage picker are a layout-only container query (ADR 0251) |
+| Task card | `src/kubecode/tasks/TaskCardView.tsx:42-66` | official Card holding the card's single button | shadcn Card composition + Avatar/AvatarGroup | TaskBoardView | #259 | migrated | — |
+| Archived collapsible rows | `src/kubecode/tasks/TaskBoardView.tsx:233-254` | Collapsible + Item asChild button rows | Collapsible + Item | TaskBoardView | #259 | migrated | — |
 
 ## Needs you
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Destination header + manager decisions list | `src/kubecode/attention/NeedsYouView.tsx:44-96` | official ItemGroup/Item + StatusBadge; DestinationHeader | shadcn Item | Needs you route | #259 | migrated | — |
-| Decision/setup rows | `src/kubecode/attention/NeedsYouList.tsx:36-61` | official Item wrapping native button with spans | Item asChild with ItemContent/ItemTitle/ItemDescription | Needs you, bell | #259 | partial | — |
-| Loading / empty / load-error / Show all | `src/kubecode/attention/NeedsYouList.tsx:91-107` | loading & warn handcrafted p; Empty official | Skeleton, Empty, Alert | Needs you | #259 | partial | — |
+| Decision/setup rows | `src/kubecode/attention/NeedsYouList.tsx:36-61` | Item asChild on the row button (ItemContent/ItemTitle/ItemDescription/ItemActions) | Item asChild with ItemContent/ItemTitle/ItemDescription | Needs you, bell | #259 | migrated | — |
+| Loading / empty / load-error / Show all | `src/kubecode/attention/NeedsYouList.tsx:91-107` | Spinner line (no live region, ADR 0234), Empty, ReaderNotice Alert | Skeleton, Empty, Alert | Needs you | #259 | migrated | — |
 
 ## Execution feedback
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Permission prompt | `src/kubecode/attention/PermissionPrompt.tsx:65-104; PromptDecision.tsx` | AI Elements Confirmation; status notes handcrafted p | AI Elements Confirmation (+ Alert) | General, SessionComposer | #259 | migrated | — |
-| Elicitation prompt form fields | `src/kubecode/attention/ElicitationPrompt.tsx:66-137` | Confirmation + Field/Input/Switch/Select | AI Elements Confirmation + shadcn Field | General, SessionComposer | #259 | migrated | — |
-| Execution strip: summary trigger, popover, Queue, failed row + Dismiss | `src/kubecode/attention/ExecutionStrip.tsx:122-134,243-307` | official Popover, Queue/QueueSection/Shimmer; failed row handcrafted li; lucide chevron since #255 | AI Elements Queue, Shimmer; Popover; Alert | General, TaskWork | #259 | partial | — |
+| Permission prompt | `src/kubecode/attention/PermissionPrompt.tsx:65-104; PromptDecision.tsx` | AI Elements Confirmation; PromptOutcome (status / Alert destructive) | AI Elements Confirmation (+ Alert) | General, SessionComposer | #259 | migrated | — |
+| Elicitation prompt form fields | `src/kubecode/attention/ElicitationPrompt.tsx:66-137` | Confirmation + Field/Input/Switch/Select; PromptOutcome | AI Elements Confirmation + shadcn Field | General, SessionComposer | #259 | migrated | — |
+| Execution strip: summary trigger, popover, Queue, failed row + Dismiss | `src/kubecode/attention/ExecutionStrip.tsx:122-134,243-307` | Popover + Queue + Shimmer; failed turn an Alert destructive | AI Elements Queue, Shimmer; Popover; Alert | General, TaskWork | #259 | migrated | — |
 | ExecutionRow (who, queued, state, stop) | `src/kubecode/attention/ExecutionRow.tsx:40-59` | QueueItem + Item + Shimmer + MemberIdentity + StopButton | AI Elements Queue + Item | ExecutionStrip | #259 | migrated | — |
-| Round pause control + notice | `src/kubecode/attention/RoundPauseControl.tsx:46-53` | PauseButton (official Button outline/secondary); notice handcrafted p | shadcn Button/Toggle; Alert | TaskWork | #259 | partial | — |
+| Round pause control + notice | `src/kubecode/attention/RoundPauseControl.tsx:46-53` | PauseButton (pressed Button); status line | shadcn Button/Toggle; Alert | TaskWork | #259 | migrated | — |
+| Prompt outcome lines (recorded, not recorded, gone) | `src/kubecode/attention/PromptDecision.tsx` | PromptOutcome: status line or Alert destructive | Alert | PermissionPrompt, ElicitationPrompt | #259 | migrated | — |
+| Team work board / inspector load, refresh, notice and empty states | `src/kubecode/work/WorkBoard.tsx`, `src/kubecode/work/WorkInspector.tsx` | ReaderLoading/ReaderNotice/ReaderEmpty (Spinner, Alert, Empty) | Alert, Empty, Spinner | TeamTasksView | #259 | migrated | Filters, columns and forms stay with #261 (TeamTasksView row) |
 
 ## Research questions
 
