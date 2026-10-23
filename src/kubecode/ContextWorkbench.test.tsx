@@ -79,6 +79,39 @@ describe('ContextWorkbench', () => {
     expect(screen.getByText('Staged changes')).toBeInTheDocument()
   })
 
+  it('commits once when Enter repeats while the commit is in flight', async () => {
+    let finish: (value: unknown) => void = () => {}
+    const commitGit = vi.fn().mockImplementation(() => new Promise((resolve) => { finish = resolve }))
+    const api = {
+      listEntries: vi.fn().mockResolvedValue([]),
+      gitStatus: vi.fn().mockResolvedValue({
+        is_repository: true,
+        branch: 'main',
+        files: [{ path: 'README.md', index_status: 'M', worktree_status: null }],
+      }),
+      commitGit,
+    } as unknown as KubecodeApi
+    render(
+      <ContextWorkbench
+        api={api}
+        projectId="project-1"
+        t={createTranslator('en')}
+        width={440}
+        workspaceEvents={[]}
+      />,
+    )
+
+    const input = await screen.findByRole('textbox', { name: 'Commit message' })
+    fireEvent.change(input, { target: { value: 'docs: note' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    fireEvent.keyDown(input, { key: 'Enter', repeat: true })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(commitGit).toHaveBeenCalledTimes(1)
+
+    await act(async () => finish({ is_repository: true, branch: 'main', files: [] }))
+    expect(commitGit).toHaveBeenCalledTimes(1)
+  })
+
   it('loads untracked diffs from GitService and renders explicit unavailable reasons', async () => {
     const gitDiff = vi.fn()
       .mockResolvedValueOnce({ diff: '+server patch', unavailable_reason: null })
@@ -731,6 +764,8 @@ describe('ContextWorkbench', () => {
 
     fireEvent.keyDown(document, { key: 'p', metaKey: true })
     const picker = await screen.findByRole('dialog', { name: 'Search files' })
+    expect(picker.querySelector('[data-slot="command"]')).not.toBeNull()
+    expect(within(picker).getByRole('combobox', { name: 'Search files' })).toHaveAttribute('data-slot', 'command-input')
     const excluded = within(picker).getByRole('button', { name: 'Show hidden, ignored, and generated files' })
     expect(excluded).toHaveAttribute('data-slot', 'toggle')
     fireEvent.click(excluded)

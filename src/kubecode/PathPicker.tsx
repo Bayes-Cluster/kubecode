@@ -1,19 +1,19 @@
 import { ArrowRight, Plus } from 'lucide-react'
-import {
-  useId,
-  useMemo,
-  useState,
-  type KeyboardEvent,
-  type ReactNode,
-} from 'react'
+import type { KeyboardEvent, ReactNode } from 'react'
 
-import { Input } from '@/components/ui/input'
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command'
 import { cn } from '@/lib/utils'
 
 import { MaterialDirectoryIcon } from './icons/material/materialIcons'
 import { MaterialFileIcon } from './icons/material/materialIcons'
 import { resolveFileIcon } from './icons/resolveFileIcon'
-
 export type PathPickerRow = {
   description?: string
   disabled?: boolean
@@ -39,6 +39,11 @@ type PathPickerProps = {
   rows: PathPickerRow[]
 }
 
+/**
+ * A typed path with matching rows below it, on the official Command: cmdk
+ * owns the combobox, the active row, arrow keys and Enter. The rows come
+ * from the server, so Command's own filtering is off.
+ */
 export function PathPicker({
   ariaLabel,
   className,
@@ -53,103 +58,61 @@ export function PathPicker({
   query,
   rows,
 }: PathPickerProps) {
-  const listboxId = useId()
-  const enabledRows = useMemo(() => rows.filter((row) => !row.disabled), [rows])
-  const [activeId, setActiveId] = useState(enabledRows[0]?.id ?? null)
-  const activeRow = enabledRows.find((row) => row.id === activeId) ?? enabledRows[0]
-
-  const moveActive = (direction: 1 | -1) => {
-    if (enabledRows.length === 0) return
-    const currentIndex = Math.max(0, enabledRows.findIndex((row) => row.id === activeRow?.id))
-    const nextIndex = (currentIndex + direction + enabledRows.length) % enabledRows.length
-    setActiveId(enabledRows[nextIndex]?.id ?? null)
-  }
-
-  const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Escape' && onEscape) {
       event.preventDefault()
-      moveActive(event.key === 'ArrowDown' ? 1 : -1)
-      return
-    }
-    if (event.key === 'Enter' && activeRow) {
-      event.preventDefault()
-      onSelect(activeRow)
-      return
-    }
-    if (event.key === 'Escape') {
-      event.preventDefault()
-      onEscape?.()
+      onEscape()
     }
   }
 
   return (
-    <div className={cn('kubecode-path-picker', className)}>
-      <Input
-        aria-activedescendant={activeRow ? optionId(listboxId, activeRow.id) : undefined}
-        aria-autocomplete="list"
-        aria-controls={listboxId}
-        aria-expanded="true"
-        aria-label={ariaLabel}
+    <Command
+      className={cn('min-h-0 bg-transparent', className)}
+      label={ariaLabel}
+      loop
+      shouldFilter={false}
+      onKeyDown={onKeyDown}
+    >
+      <CommandInput
         autoComplete="off"
         autoFocus
-        className="kubecode-path-picker-input"
         placeholder={placeholder}
-        role="combobox"
         value={query}
-        onChange={(event) => onQueryChange(event.target.value)}
-        onKeyDown={onKeyDown}
+        onValueChange={onQueryChange}
       />
-      <div
-        aria-label={ariaLabel}
-        className="kubecode-path-picker-results"
-        id={listboxId}
-        role="listbox"
-      >
-        {rows.map((row) => {
-          const active = activeRow?.id === row.id
-          return (
-            <button
-              aria-disabled={row.disabled || undefined}
-              aria-selected={active}
-              className="kubecode-path-picker-row"
-              data-active={active || undefined}
-              disabled={row.disabled}
-              id={optionId(listboxId, row.id)}
-              key={row.id}
-              role="option"
-              type="button"
-              onClick={() => onSelect(row)}
-              onMouseMove={() => {
-                if (!row.disabled) setActiveId(row.id)
-              }}
-            >
-              {row.icon ?? (
-                row.kind === 'action'
-                  ? <Plus  size={16}/>
-                  : row.kind === 'directory'
-                    ? <MaterialDirectoryIcon name={row.label} />
-                    : <MaterialFileIcon id={resolveFileIcon(row.label)} />
-              )}
-              <span className="kubecode-path-picker-row-copy">
-                <strong>{row.label}</strong>
-                {row.description && <small>{row.description}</small>}
-              </span>
-              {row.kind === 'directory' && <ArrowRight className="kubecode-path-picker-row-action"  size={16}/>}
-            </button>
-          )
-        })}
-        {!loading && rows.length === 0 && (
-          <div className="kubecode-path-picker-empty">{emptyMessage}</div>
+      <CommandList aria-label={ariaLabel} className="max-h-[min(360px,50dvh)]">
+        {loading
+          ? <p className="py-6 text-center text-sm text-muted-foreground" role="status">{loadingMessage ?? emptyMessage}</p>
+          : <CommandEmpty>{emptyMessage}</CommandEmpty>}
+        {rows.length > 0 && (
+          <CommandGroup>
+            {rows.map((row) => (
+              <CommandItem
+                disabled={row.disabled}
+                key={row.id}
+                value={row.id}
+                onSelect={() => onSelect(row)}
+              >
+                {row.icon ?? (
+                  row.kind === 'action'
+                    ? <Plus />
+                    : row.kind === 'directory'
+                      ? <MaterialDirectoryIcon name={row.label} />
+                      : <MaterialFileIcon id={resolveFileIcon(row.label)} />
+                )}
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate">{row.label}</span>
+                  {row.description && (
+                    <span className="truncate text-xs text-muted-foreground">{row.description}</span>
+                  )}
+                </span>
+                {row.kind === 'directory' && <ArrowRight />}
+              </CommandItem>
+            ))}
+          </CommandGroup>
         )}
-        {loading && (
-          <div className="kubecode-path-picker-empty">{loadingMessage ?? emptyMessage}</div>
-        )}
-      </div>
+      </CommandList>
       {footer}
-    </div>
+    </Command>
   )
-}
-
-function optionId(listboxId: string, rowId: string): string {
-  return `${listboxId}-option-${rowId.replace(/[^a-zA-Z0-9_-]/g, '-')}`
 }
