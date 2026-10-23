@@ -133,7 +133,7 @@ test('@smoke a Task is reviewed at the version that was shown, sent back through
     // 5. Archiving is apart from accepting, and refused with a reason while a review is open.
     await task.getByRole('button', { name: 'More actions for this Task' }).click()
     await page.getByRole('menuitem', { name: 'Archive Task' }).click()
-    const blocked = page.getByRole('dialog', { name: 'This Task can\'t be archived now' })
+    const blocked = page.getByRole('alertdialog', { name: 'This Task can\'t be archived now' })
     await expect(blocked.getByText('Decide its review first: accept the results or send them back.')).toBeVisible()
     await blocked.getByRole('button', { name: 'Cancel' }).click()
 
@@ -179,7 +179,7 @@ test('@smoke a Task is reviewed at the version that was shown, sent back through
     await card.click()
     await task.getByRole('button', { name: 'More actions for this Task' }).click()
     await page.getByRole('menuitem', { name: 'Archive Task' }).click()
-    const confirm = page.getByRole('dialog', { name: `Archive “${seed.taskTitle}”?` })
+    const confirm = page.getByRole('alertdialog', { name: `Archive “${seed.taskTitle}”?` })
     await confirm.getByRole('button', { name: 'Archive', exact: true }).click()
     await expect(card).toHaveCount(0)
     await expect(task.getByText('Archived. It is off the board; restore it to continue.')).toBeVisible()

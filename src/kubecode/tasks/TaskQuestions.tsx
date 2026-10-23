@@ -78,7 +78,7 @@ function QuestionItem({ busy, memoryKey, onAnswered, onBusy, onError, projectId,
     <Item data-focus-key={`question:${question.id}`} role="listitem" size="sm" tabIndex={-1} variant="outline">
       <ItemContent className="gap-2">
         <ItemTitle className="[overflow-wrap:anywhere]">{question.question}</ItemTitle>
-        <ItemDescription>{question.work_title}</ItemDescription>
+        <ItemDescription>({question.work_title})</ItemDescription>
         {question.impact && <ItemDescription className="line-clamp-none">{question.impact}</ItemDescription>}
         {/* A question with options is answered with one of them (the server refuses anything else). */}
         {question.options.length > 0 ? (
