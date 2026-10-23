@@ -150,11 +150,11 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Search combobox input | `src/kubecode/resources/WorkspaceSearch.tsx:164-176` | official Command (CommandInput) | shadcn/ui Command (CommandInput, installed) | ResourcesView, launcher, AddContextDialog | #258 | migrated | #258, ADR 0248: cmdk owns combobox/IME/active row; shouldFilter=false keeps server ranking |
+| Search combobox input | `src/kubecode/resources/WorkspaceSearch.tsx:164-176` | official Command (CommandInput) | shadcn/ui Command (CommandInput, installed) | ResourcesView, launcher, AddContextDialog | #258 | migrated | #258, ADR 0250: cmdk owns combobox/IME/active row; shouldFilter=false keeps server ranking |
 | Section filter group | `src/kubecode/resources/WorkspaceSearch.tsx:222-240` | official ToggleGroup type=multiple + Badge counts | shadcn/ui ToggleGroup (not installed) or Tabs | same as search | #258 | migrated | #258: toggle-group added with shadcn CLI 4.22.1 |
 | Scope note / notice text | `src/kubecode/resources/WorkspaceSearch.tsx:252,266` | Field-style muted note + shared ReaderNotice (Alert) | shadcn/ui Alert or Field description | same as search | #258 | migrated | #258: ReaderStates.tsx |
 | Empty/loading/error/no-sections states | `src/kubecode/resources/WorkspaceSearch.tsx:271-284,334` | shared ReaderEmpty/ReaderLoading/ReaderNotice (Empty, Spinner, Alert) | shadcn/ui Empty, Spinner/Skeleton, Alert | same as search | #258 | migrated | #258: ReaderStates.tsx |
-| Results listbox + options | `src/kubecode/resources/WorkspaceSearch.tsx:295-319` | official Command (CommandList/CommandGroup/CommandItem) with Item parts | shadcn/ui Command (CommandList/CommandGroup/CommandItem) with Item | ResourcesView, launcher, AddContextDialog | #258 | migrated | #258, ADR 0248 §2: pointermove adapter for focus-returned rows (cmdk gap, tested) |
+| Results listbox + options | `src/kubecode/resources/WorkspaceSearch.tsx:295-319` | official Command (CommandList/CommandGroup/CommandItem) with Item parts | shadcn/ui Command (CommandList/CommandGroup/CommandItem) with Item | ResourcesView, launcher, AddContextDialog | #258 | migrated | #258, ADR 0250 §2: pointermove adapter for focus-returned rows (cmdk gap, tested) |
 
 ## Resources route
 
@@ -181,8 +181,8 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| ResourceReferenceChip wrapper | `src/kubecode/resources/ResourceReferenceChip.tsx:31` | ReferenceChip on official Attachment | AI Elements InlineCitation / ReferenceChip | composer, messages, results | #258 | migrated | #258, ADR 0248 §5: props unchanged; InlineCitation not used (no citation spans from the backend) |
-| ReferenceSources collapsible list | `src/kubecode/resources/ReferenceSources.tsx:3,39-45` | AI Elements Sources + ReferenceChip list | AI Elements Sources + Source | MessageItem, TaskResults | #258 | migrated | #258, ADR 0248 §6: Source is an external link, so each source is a ReferenceChip |
+| ResourceReferenceChip wrapper | `src/kubecode/resources/ResourceReferenceChip.tsx:31` | ReferenceChip on official Attachment | AI Elements InlineCitation / ReferenceChip | composer, messages, results | #258 | migrated | #258, ADR 0250 §5: props unchanged; InlineCitation not used (no citation spans from the backend) |
+| ReferenceSources collapsible list | `src/kubecode/resources/ReferenceSources.tsx:3,39-45` | AI Elements Sources + ReferenceChip list | AI Elements Sources + Source | MessageItem, TaskResults | #258 | migrated | #258, ADR 0250 §6: Source is an external link, so each source is a ReferenceChip |
 | Message references list | `src/kubecode/channel/MessageItem.tsx:236` | handcrafted ul of ReferenceChip | AI Elements InlineCitation / Sources or Badge | MessageItem | #258 | partial | #258: ReferenceSources and ReferenceChip migrated; the task-only list in MessageItem is in a #257 file, requested of #257 |
 
 ## Attach flows
@@ -506,7 +506,7 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 | ReferenceChip | `src/components/workspace/ReferenceChip.tsx` | official Badge (outline) + Button (ghost) open/remove | Badge / InlineCitation; Attachment | 8 consumers | #255 | migrated | — |
 | MemberIdentity / MemberAvatar | `src/components/workspace/MemberIdentity.tsx` | official Avatar/AvatarFallback, link Button, Badge | shadcn Avatar + Badge | 6 consumers | #255 | migrated | — |
 | ViewHeader | `src/components/workspace/ViewHeader.tsx:49-72` | header composition over tokens + IconButton | no registry page header; compose Item/Separator | DestinationHeader, InspectorPanel | #255 | exception | No shadcn page-header component exists; kept as a thin composition over tokens |
-| Attachment | `src/components/ui/attachment.tsx:1-204` | local component in ui/ | AI Elements PromptInput attachments | 1 consumer | #255 | partial | #258 decision (ADR 0248 §5): ReferenceChip composes this Attachment; Prompt Input attachments are for uploaded files, which Kubecode has no service for |
+| Attachment | `src/components/ui/attachment.tsx:1-204` | local component in ui/ | AI Elements PromptInput attachments | 1 consumer | #255 | partial | #258 decision (ADR 0250 §5): ReferenceChip composes this Attachment; Prompt Input attachments are for uploaded files, which Kubecode has no service for |
 
 ## Config
 

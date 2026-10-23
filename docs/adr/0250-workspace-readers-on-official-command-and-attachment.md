@@ -1,6 +1,6 @@
 ---
 type: ADR
-id: "0248"
+id: "0250"
 title: "Workspace search, references and evidence readers on official Command, Attachment and Alert"
 status: accepted
 date: 2026-10-23

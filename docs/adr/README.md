@@ -93,4 +93,4 @@ ADRs are immutable after acceptance; a later decision supersedes an earlier one.
 | [0247](0247-official-components-own-base-appearance.md) | Official components own base appearance; shared contract for UI A–I |
 | [0248](0248-workspace-shell-on-official-sidebar-sheet-and-resizable.md) | The Workspace shell on the official Sidebar, Sheet and Resizable |
 | [0249](0249-general-and-dm-conversation-on-official-components.md) | General and DMs on the official conversation and composer components (UI C) |
-| [0248](0248-workspace-readers-on-official-command-and-attachment.md) | Workspace search, references and evidence readers on official Command, Attachment and Alert |
+| [0250](0250-workspace-readers-on-official-command-and-attachment.md) | Workspace search, references and evidence readers on official Command, Attachment and Alert |
