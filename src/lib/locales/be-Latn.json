@@ -341,6 +341,7 @@
   "kubecode.commit": "Commit",
   "kubecode.commitMessage": "Commit message",
   "kubecode.closeDiff": "Close diff",
+  "kubecode.diffTab": "{file} (adroznienni)",
   "kubecode.emptyDiff": "No textual diff is available for this file.",
   "kubecode.permissionRequired": "Patrabujecca dazvol",
   "kubecode.waitingForLeaderPermission": "Čakanne rašennia kiraŭnika kamandy",

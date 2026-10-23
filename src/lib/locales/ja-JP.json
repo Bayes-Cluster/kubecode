@@ -341,6 +341,7 @@
   "kubecode.commit": "Commit",
   "kubecode.commitMessage": "Commit message",
   "kubecode.closeDiff": "Close diff",
+  "kubecode.diffTab": "{file}（差分）",
   "kubecode.emptyDiff": "No textual diff is available for this file.",
   "kubecode.permissionRequired": "許可が必要です",
   "kubecode.waitingForLeaderPermission": "チームリーダーの確認を待っています",

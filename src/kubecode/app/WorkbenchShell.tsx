@@ -1097,6 +1097,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
       api={api}
       autoSave={editorPreferences.autoSave}
       connectionState={reconciliation.connectionState}
+      inSheet={narrowLayout}
       planEntries={activeSessionPlan}
       planRevealVersion={planRevealVersion}
       projectName={project?.name ?? undefined}

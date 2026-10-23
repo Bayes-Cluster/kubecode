@@ -341,6 +341,7 @@
   "kubecode.commit": "Commit",
   "kubecode.commitMessage": "Commit message",
   "kubecode.closeDiff": "Close diff",
+  "kubecode.diffTab": "{file} (відмінності)",
   "kubecode.emptyDiff": "No textual diff is available for this file.",
   "kubecode.permissionRequired": "Потрібен дозвіл",
   "kubecode.waitingForLeaderPermission": "Очікування рішення керівника команди",

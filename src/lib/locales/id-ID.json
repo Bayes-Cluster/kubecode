@@ -341,6 +341,7 @@
   "kubecode.commit": "Commit",
   "kubecode.commitMessage": "Commit message",
   "kubecode.closeDiff": "Close diff",
+  "kubecode.diffTab": "{file} (diff)",
   "kubecode.emptyDiff": "No textual diff is available for this file.",
   "kubecode.permissionRequired": "Izin diperlukan",
   "kubecode.waitingForLeaderPermission": "Menunggu tinjauan pemimpin tim",

@@ -341,6 +341,7 @@
   "kubecode.commit": "Commit",
   "kubecode.commitMessage": "Commit message",
   "kubecode.closeDiff": "Close diff",
+  "kubecode.diffTab": "{file} (diff)",
   "kubecode.emptyDiff": "No textual diff is available for this file.",
   "kubecode.permissionRequired": "Autorizzazione richiesta",
   "kubecode.waitingForLeaderPermission": "In attesa della revisione del leader del team",

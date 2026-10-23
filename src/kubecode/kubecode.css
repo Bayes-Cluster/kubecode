@@ -294,9 +294,11 @@
   height: 36px;
   min-height: 36px;
 }
-.kubecode-git-path { flex: 1; height: 36px; justify-content: space-between; min-width: 0; overflow: hidden; }
+.kubecode-git-path { flex: 1; height: 36px; min-width: 0; overflow: hidden; }
+/* The name takes the row so it reads from the left edge, the state at the end. */
 .kubecode-git-path-name {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   min-width: 0;
   overflow: hidden;
@@ -481,7 +483,10 @@
 }
 .kubecode-terminal-navigator-close svg { height: 12px; width: 12px; }
 .kubecode-terminal-navigator-row-shell:hover .kubecode-terminal-navigator-close,
+.kubecode-terminal-navigator-row-shell:focus-within .kubecode-terminal-navigator-close,
 .kubecode-terminal-navigator-close:focus-visible { opacity: 1; }
+/* Without hover (touch) the close button is always shown. */
+@media (hover: none) { .kubecode-terminal-navigator-close { opacity: 1; } }
 .kubecode-terminal-navigator-editor {
   align-items: center;
   display: flex;

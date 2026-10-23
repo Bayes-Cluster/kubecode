@@ -341,6 +341,7 @@
   "kubecode.commit": "提交",
   "kubecode.commitMessage": "提交信息",
   "kubecode.closeDiff": "关闭差异",
+  "kubecode.diffTab": "{file}（差异）",
   "kubecode.emptyDiff": "此文件没有可显示的文本差异。",
   "kubecode.permissionRequired": "需要授权",
   "kubecode.waitingForLeaderPermission": "正在等待 Team Leader 审核",

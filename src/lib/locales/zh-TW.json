@@ -341,6 +341,7 @@
   "kubecode.commit": "提交",
   "kubecode.commitMessage": "提交訊息",
   "kubecode.closeDiff": "關閉差異",
+  "kubecode.diffTab": "{file}（差異）",
   "kubecode.emptyDiff": "此檔案沒有可顯示的文字差異。",
   "kubecode.permissionRequired": "需要授權",
   "kubecode.waitingForLeaderPermission": "正在等待 Team Leader 審核",

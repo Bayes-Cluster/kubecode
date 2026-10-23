@@ -48,6 +48,7 @@ import {
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '@/components/ui/input-group'
 import { Item, ItemContent, ItemGroup, ItemMedia, ItemTitle } from '@/components/ui/item'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { cn } from '@/lib/utils'
 import type { Translator } from '@/lib/i18n'
 import { trackEvent } from '@/lib/telemetry'
 
@@ -94,6 +95,8 @@ type ContextWorkbenchProps = {
   api: KubecodeApi
   autoSave?: boolean
   connectionState?: WorkspaceConnectionState
+  /** In the phone Sheet: the tab bar leaves room for the Sheet's own close button. */
+  inSheet?: boolean
   planEntries?: SessionPlanEntry[]
   planRevealVersion?: number
   projectName?: string
@@ -107,6 +110,7 @@ export function ContextWorkbench({
   api,
   autoSave = false,
   connectionState = 'live',
+  inSheet = false,
   planEntries = [],
   planRevealVersion = 0,
   projectName,
@@ -385,7 +389,7 @@ export function ContextWorkbench({
           setTab(value)
         }}
       >
-        <div className="flex h-9 shrink-0 items-center justify-between gap-1 border-b px-1">
+        <div className={cn('flex h-9 shrink-0 items-center justify-between gap-1 border-b px-1', inSheet && 'pr-12')}>
           <TabsList className="min-w-0 justify-start overflow-x-auto" variant="line">
             <TabsTrigger value="explorer" onClick={() => setTab('explorer')}>
               {t('kubecode.explorer')}
@@ -410,7 +414,7 @@ export function ContextWorkbench({
             })}
             {diffState.kind !== 'idle' && (
               <TabsTrigger value="diff" onClick={() => setTab('diff')}>
-                <MaterialFileIcon id={resolveFileIcon(diffState.target.path)} /> {diffState.target.path.split('/').at(-1)}
+                <MaterialFileIcon id={resolveFileIcon(diffState.target.path)} /> {t('kubecode.diffTab', { file: diffState.target.path.split('/').at(-1) ?? '' })}
               </TabsTrigger>
             )}
           </TabsList>
@@ -493,7 +497,8 @@ export function ContextWorkbench({
                   <GitChangeGroup
                     changes={worktreeChanges}
                     group="worktree"
-                    label={t('kubecode.changes')}
+                    // Alone, the worktree group is what the section already names.
+                    label={stagedChanges.length > 0 || conflictChanges.length > 0 ? t('kubecode.changes') : undefined}
                     onDiff={(change) => void openDiff(change, false)}
                     onDiscard={(change) => setDiscardPath(change.path)}
                     onPrimary={(change) => void mutateGit('stage', change.path)}
@@ -551,7 +556,11 @@ export function ContextWorkbench({
                       <Icon role="status" size="secondary" source={PLAN_STATUS_ICONS[entry.status].Icon} />
                     </ItemMedia>
                     <ItemContent>
-                      <ItemTitle className="font-normal">{entry.content}</ItemTitle>
+                      {/* The glyph is drawn for the eye; the status is said in words. */}
+                      <ItemTitle className="font-normal">
+                        <span className="sr-only">{t(PLAN_STATUS_ICONS[entry.status].labelKey)}: </span>
+                        {entry.content}
+                      </ItemTitle>
                     </ItemContent>
                   </Item>
                 ))}
@@ -780,7 +789,7 @@ function GitChangeGroup({
 }: {
   changes: GitFileChange[]
   group: 'conflict' | 'staged' | 'worktree'
-  label: string
+  label?: string
   onDiff: (change: GitFileChange) => void
   onDiscard?: (change: GitFileChange) => void
   onPrimary?: (change: GitFileChange) => void
@@ -794,10 +803,12 @@ function GitChangeGroup({
 
   return (
     <section className="kubecode-git-group" data-group={group} data-virtualized={isVirtualized || undefined}>
-      <header className="flex h-7 items-center justify-between px-1.5 text-xs font-semibold uppercase text-muted-foreground">
-        <span>{label}</span>
-        <Badge variant="secondary">{changes.length}</Badge>
-      </header>
+      {label && (
+        <header className="flex h-7 items-center justify-between px-1.5 text-xs font-semibold uppercase text-muted-foreground">
+          <span>{label}</span>
+          <Badge variant="secondary">{changes.length}</Badge>
+        </header>
+      )}
       {isVirtualized ? (
         <Virtuoso
           className="kubecode-git-virtual-list"
@@ -864,7 +875,7 @@ function GitChangeRow({
   const stateEntry = GIT_STATE_ICONS[state]
   return (
     <div className="kubecode-git-row">
-      <Button className="kubecode-git-path" variant="ghost" onClick={() => onDiff(change)}>
+      <Button className="kubecode-git-path justify-start" variant="ghost" onClick={() => onDiff(change)}>
         <MaterialFileIcon id={resolveFileIcon(change.path)} />
         <span className="kubecode-git-path-name">
           {change.original_path && (

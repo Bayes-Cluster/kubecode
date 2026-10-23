@@ -717,6 +717,7 @@
   "kubecode.conflictHint": "Resolve these conflicts in a Terminal, then refresh.",
   "kubecode.gitStatusTruncated": "Showing the first {count} changes. Reduce the changes and refresh to see the rest.",
   "kubecode.closeDiff": "Close diff",
+  "kubecode.diffTab": "{file} (diff)",
   "kubecode.emptyDiff": "No textual diff is available for this file.",
   "kubecode.permissionRequired": "Permission required",
   "kubecode.waitingForLeaderPermission": "Waiting for Team Leader review",
