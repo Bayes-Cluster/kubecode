@@ -330,8 +330,8 @@ describe('Workspace navigation and routes', () => {
   it('keeps Files and Git out of the research views until asked for', async () => {
     render(<KubecodeApp api={api()} />)
     const nav = await screen.findByRole('region', { name: 'Workspace' })
-    // The address is applied once the Workspace has loaded.
-    await screen.findByTestId('agent-session-workspace')
+    // The address is applied once the Workspace has loaded (slow under a parallel run).
+    await screen.findByTestId('agent-session-workspace', {}, { timeout: 5_000 })
     await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/sessions'))
     const toggle = screen.getByRole('button', { name: 'Toggle context panel' })
     expect(toggle).toHaveAttribute('aria-pressed', 'true')

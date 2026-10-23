@@ -34,7 +34,6 @@ function navigator(overrides: Partial<ProjectNavigatorProps> = {}) {
     onProjectDelete: vi.fn(),
     onProjectWorkspacesToggle: vi.fn(),
     onQueryChange: vi.fn(),
-    onResize: vi.fn(),
     onSelect: vi.fn(),
     onWorkspaceSelect: vi.fn(),
   }

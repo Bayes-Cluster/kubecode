@@ -1602,13 +1602,11 @@
 }
 
 .kubecode-terminal-pane {
-  border-top: 1px solid var(--border-subtle);
   display: grid;
-  flex: 0 0 auto;
+  flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
 }
-.kubecode-terminal-pane[data-open='false'] { border-top-color: transparent; }
 
 .kubecode-terminal-workspace {
   display: grid;
@@ -2135,7 +2133,6 @@
 }
 
 @media (max-width: 980px) {
-  .kubecode-session-context-row > .cursor-col-resize { display: none; }
   .kubecode-topbar { grid-template-columns: auto minmax(180px, 1fr) auto; }
   .kubecode-settings-dialog { grid-template-columns: 164px minmax(0, 1fr); }
   .kubecode-settings-content { padding: 24px; }
@@ -2720,10 +2717,6 @@
 }
 
 @media (max-width: 980px) {
-  .kubecode-workspace[data-narrow='true'] > .cursor-col-resize,
-  .kubecode-workspace[data-narrow='true'] .kubecode-session-context-row > .cursor-col-resize {
-    display: none;
-  }
   .kubecode-topbar { grid-template-columns: minmax(180px, 1fr) minmax(200px, 360px) auto; }
   .kubecode-session-status-label { display: none; }
 }

@@ -50,6 +50,17 @@ if (typeof window.matchMedia !== 'function') {
   })) as typeof window.matchMedia
 }
 
+// jsdom lays nothing out, so every rect is empty at (0, 0) and react-resizable-panels
+// would take every pointerdown there for a drag of its separators (and prevent it,
+// so menus and popovers never open). Its elements are reported off-screen instead.
+const layoutRect = Element.prototype.getBoundingClientRect
+Element.prototype.getBoundingClientRect = function getBoundingClientRect(this: Element) {
+  if (this.hasAttribute('data-separator') || this.hasAttribute('data-panel') || this.hasAttribute('data-group')) {
+    return { x: -10_000, y: -10_000, top: -10_000, left: -10_000, bottom: -10_000, right: -10_000, width: 0, height: 0, toJSON: () => ({}) } as DOMRect
+  }
+  return layoutRect.call(this)
+}
+
 // Mock ResizeObserver for jsdom (not implemented)
 globalThis.ResizeObserver = class {
   observe() {}

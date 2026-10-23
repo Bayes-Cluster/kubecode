@@ -1,7 +1,6 @@
 import type { CSSProperties, ReactNode, RefObject } from 'react'
 import { ChevronRight, Plus, Search, Settings } from 'lucide-react'
 
-import { ResizeHandle } from '@/components/ResizeHandle'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group'
 import { Kbd } from '@/components/ui/kbd'
@@ -49,7 +48,6 @@ export type ProjectNavigatorProps = {
   onProjectDelete: (projectId: string) => void
   onProjectWorkspacesToggle: (projectId: string) => void
   onQueryChange: (query: string) => void
-  onResize: (delta: number) => void
   onSelect: (projectId: string, conversationId: string) => void
   onWorkspaceSelect: (projectId: string) => void
   projects: Project[]
@@ -90,7 +88,6 @@ export function ProjectNavigator({
   onProjectDelete,
   onProjectWorkspacesToggle,
   onQueryChange,
-  onResize,
   onSelect,
   onWorkspaceSelect,
   projects,
@@ -108,8 +105,7 @@ export function ProjectNavigator({
   ]))
 
   return (
-    <>
-      <Sidebar
+    <Sidebar
         className="kubecode-session-sidebar"
         collapsible="none"
         style={navigatorWidth === undefined
@@ -202,9 +198,7 @@ export function ProjectNavigator({
             </Collapsible>
           </SidebarContent>
         </nav>
-      </Sidebar>
-      {navigatorWidth !== undefined && <ResizeHandle onResize={onResize} />}
-    </>
+    </Sidebar>
   )
 }
 

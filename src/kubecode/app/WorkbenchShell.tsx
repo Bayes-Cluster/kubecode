@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react'
 import { Bell } from 'lucide-react'
 import { createTranslator, resolveEffectiveLocale, type Translator } from '@/lib/i18n'
 import { trackEvent } from '@/lib/telemetry'
@@ -8,7 +8,8 @@ import { Button } from '@/components/ui/button'
 import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
 import { SidebarProvider } from '@/components/ui/sidebar'
-import { ResizeHandle } from '@/components/ResizeHandle'
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
+import { usePanelRef, type PanelImperativeHandle, type PanelSize } from 'react-resizable-panels'
 
 import { AgentSessionWorkspace, type SessionPlanEntry } from '../AgentSessionWorkspace'
 import { GlobalCommandPalette } from '../GlobalCommandPalette'
@@ -818,18 +819,33 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     if (onSessionsSurface) setResearchToolsOpen(false)
   }, [onSessionsSurface])
 
-  const resizeSessionSidebar = useCallback((delta: number) => {
-    setSessionSidebarWidth((current) => clamp(current + delta, 120, availableWidth(workspaceRef.current) - 420))
-  }, [])
-
-  const resizeContext = useCallback((delta: number) => {
-    setContextWidth((current) => clamp(current - delta, 160, availableWidth(workspaceRef.current) - 320))
-  }, [])
-
-  const resizeTerminal = useCallback((delta: number) => {
-    const height = mainStackRef.current?.clientHeight || window.innerHeight - 40
-    setTerminalHeight((current) => clamp(current - delta, 36, height - 100))
-  }, [])
+  // The panels' sizes are this state: a drag writes it, and a change of
+  // Workspace (its remembered layout) or of the toggles moves the panels to it.
+  const navigatorPanelRef = usePanelRef()
+  const contextPanelRef = usePanelRef()
+  const terminalPanelRef = usePanelRef()
+  // Also when a panel mounts again (the navigation or the context panel reopened).
+  useEffect(() => {
+    if (sessionSidebarOpen) syncPanel(navigatorPanelRef.current, sessionSidebarWidth)
+  }, [navigatorPanelRef, sessionSidebarOpen, sessionSidebarWidth])
+  useEffect(() => {
+    if (contextVisible) syncPanel(contextPanelRef.current, contextWidth)
+  }, [contextPanelRef, contextVisible, contextWidth])
+  useEffect(() => {
+    const panel = terminalPanelRef.current
+    if (!panel) return
+    if (!terminalOpen) {
+      window.requestAnimationFrame(() => {
+        try {
+          if (!panel.isCollapsed()) panel.collapse()
+        } catch {
+          // Not laid out yet: it mounts collapsed.
+        }
+      })
+      return
+    }
+    syncPanel(panel, terminalHeight)
+  }, [terminalHeight, terminalOpen, terminalPanelRef])
 
   /** A new Session (or a Task's discussion) opens in execution history. */
   const handleConversationCreated = useCallback((created: Conversation) => {
@@ -1108,7 +1124,6 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
         void selection.setProjectWorkspacesEnabled(!selectedProject.workspaces_enabled, selectedProject)
       }}
       onQueryChange={setNavigatorQuery}
-      onResize={resizeSessionSidebar}
       onSelect={(nextProjectId, nextConversationId) => openSession(nextConversationId, nextProjectId)}
       onWorkspaceSelect={(nextProjectId) => enterWorkspace(nextProjectId)}
       projects={projects}
@@ -1200,7 +1215,6 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
         ref={workspaceRef}
         onOpenChange={setSessionSidebarOpen}
       >
-        {sessionSidebarOpen && !narrowLayout && navigatorPanel}
         {narrowLayout && (
           <Sheet open={sessionSidebarOpen} onOpenChange={setSessionSidebarOpen}>
             <SheetContent
@@ -1238,12 +1252,37 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
           </Sheet>
         )}
 
+        {/* One official Resizable layout: navigation | (place | context) over the terminal. */}
+        <ResizablePanelGroup className="min-h-0 min-w-0 flex-1" id="kubecode-shell" orientation="horizontal">
+        {sessionSidebarOpen && !narrowLayout && (
+          <>
+            <MountSizedPanel
+              className="flex min-h-0 min-w-0"
+              size={sessionSidebarWidth}
+              groupResizeBehavior="preserve-pixel-size"
+              id="navigator"
+              maxSize="50%"
+              minSize={160}
+              panelRef={navigatorPanelRef}
+              style={{ overflow: 'hidden' }}
+              onResize={(size) => rememberSize(size, setSessionSidebarWidth)}
+            >
+              {navigatorPanel}
+            </MountSizedPanel>
+            <ResizableHandle aria-label={t('kubecode.resizeNavigation')} />
+          </>
+        )}
+        <ResizablePanel className="flex min-h-0 min-w-0" id="main" minSize={320} style={{ overflow: 'hidden' }}>
         <div className="kubecode-main-stack" ref={mainStackRef}>
+          <ResizablePanelGroup className="min-h-0 min-w-0 flex-1" id="kubecode-main" orientation="vertical">
+          <ResizablePanel className="flex min-h-0 min-w-0" id="view" minSize={100} style={{ overflow: 'hidden' }}>
           <div
             className="kubecode-session-context-row"
             data-inspector-layout={presentation}
             ref={contextRowRef}
           >
+            <ResizablePanelGroup className="min-h-0 min-w-0 flex-1" id="kubecode-context-row" orientation="horizontal">
+            <ResizablePanel className="flex min-h-0 min-w-0" id="place" minSize={280} style={{ overflow: 'hidden' }}>
             {arriving ? (
               <RouteOpening label={t('kubecode.nav.opening')} />
             ) : !projectId ? sessionsSurface : place.view === 'board' ? (
@@ -1377,20 +1416,50 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
                 teams={teams}
               />
             ) : sessionsSurface}
+            </ResizablePanel>
             {contextVisible && !narrowLayout && (
               <>
-                <ResizeHandle onResize={resizeContext} />
-                {contextWorkbench}
+                <ResizableHandle aria-label={t('kubecode.resizeContextPanel')} />
+                <MountSizedPanel
+                  className="flex min-h-0 min-w-0"
+                  size={contextWidth}
+                  groupResizeBehavior="preserve-pixel-size"
+                  id="context"
+                  maxSize="70%"
+                  minSize={160}
+                  panelRef={contextPanelRef}
+                  style={{ overflow: 'hidden' }}
+                  onResize={(size) => rememberSize(size, setContextWidth)}
+                >
+                  {contextWorkbench}
+                </MountSizedPanel>
               </>
             )}
+            </ResizablePanelGroup>
           </div>
-          {terminalOpen && <ResizeHandle direction="vertical" onResize={resizeTerminal} />}
+          </ResizablePanel>
+          {terminalOpen && <ResizableHandle aria-label={t('kubecode.resizeTerminal')} />}
+          <ResizablePanel
+            className="flex min-h-0 min-w-0 flex-col"
+            collapsedSize={0}
+            collapsible
+            defaultSize={0}
+            groupResizeBehavior="preserve-pixel-size"
+            id="terminal"
+            minSize={36}
+            panelRef={terminalPanelRef}
+            style={{ overflow: 'hidden' }}
+            onResize={(size, _id, previous) => {
+              rememberSize(size, setTerminalHeight)
+              // Dragged shut past its minimum: the terminal is closed, as with its toggle.
+              if (size.inPixels === 0 && (previous?.inPixels ?? 0) > 0) setTerminalOpen(false)
+            }}
+          >
           <div
             aria-hidden={!terminalOpen}
             className="kubecode-terminal-pane"
             data-open={terminalOpen}
             inert={!terminalOpen ? true : undefined}
-            style={{ height: terminalOpen ? terminalHeight : 0 }}
           >
             {projectId ? (
               <TerminalWorkspace
@@ -1415,7 +1484,11 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
               </Empty>
             ) : null}
           </div>
+          </ResizablePanel>
+          </ResizablePanelGroup>
         </div>
+        </ResizablePanel>
+        </ResizablePanelGroup>
       </SidebarProvider>
 
       <WorkspaceNotificationBridge
@@ -1607,10 +1680,31 @@ function useNarrowWorkbench(): boolean {
   return narrow
 }
 
-function availableWidth(element: HTMLElement | null): number {
-  return element?.clientWidth || window.innerWidth
+/** Keeps a panel's measured size, once it has one (an unlaid-out panel reports 0). */
+function rememberSize(size: PanelSize, remember: (pixels: number) => void) {
+  if (size.inPixels > 0) remember(Math.round(size.inPixels))
 }
 
-function clamp(value: number, minimum: number, maximum: number): number {
-  return Math.min(Math.max(minimum, maximum), Math.max(minimum, value))
+/**
+ * A Resizable panel whose default size is the size held when it mounts: the
+ * library reads `defaultSize` once, and later sizes go through its ref.
+ */
+function MountSizedPanel({ size, ...props }: Omit<ComponentProps<typeof ResizablePanel>, 'defaultSize'> & { size: number }) {
+  const [initial] = useState(size)
+  return <ResizablePanel defaultSize={initial} {...props} />
+}
+
+/** Moves a laid-out panel to the size the state holds, when they differ. */
+function syncPanel(panel: PanelImperativeHandle | null, pixels: number) {
+  if (!panel) return
+  // A panel that has just mounted is not in its group's layout until the next frame.
+  window.requestAnimationFrame(() => {
+    try {
+      const current = panel.getSize().inPixels
+      if (current > 0 && Math.abs(current - pixels) > 1) panel.resize(pixels)
+      else if (current === 0 && panel.isCollapsed()) panel.resize(pixels)
+    } catch {
+      // Not laid out (yet, or any more): its default size stands.
+    }
+  })
 }

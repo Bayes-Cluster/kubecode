@@ -1275,7 +1275,7 @@ describe('Kubecode workspace', () => {
     }
   })
 
-  it('creates sessions only from available agents and resizes session, context, and terminal panes', async () => {
+  it('creates sessions only from available agents and lays out session, context, and terminal panes as official Resizable panels', async () => {
     // These tests are about the Sessions surface; an address names it.
     window.history.replaceState(null, '', '/#/p/project-1/sessions')
     const api = {
@@ -1315,34 +1315,24 @@ describe('Kubecode workspace', () => {
     fireEvent.keyDown(document, { key: 'Escape' })
     fireEvent.keyDown(document, { key: 'Escape' })
     fireEvent.keyDown(document, { key: 'Escape' })
-    expect((container.querySelector('.kubecode-terminal-pane') as HTMLElement).style.height).toBe('0px')
+    const terminalPane = container.querySelector('.kubecode-terminal-pane') as HTMLElement
+    expect(terminalPane).toHaveAttribute('data-open', 'false')
     fireEvent.click(screen.getByRole('button', { name: 'Toggle terminal' }))
     expect(screen.getByRole('button', { name: 'Toggle terminal' })).toHaveAttribute('aria-pressed', 'true')
-    const handles = container.querySelectorAll('.cursor-col-resize')
-    expect(handles).toHaveLength(2)
-    const terminalHandle = container.querySelector('.cursor-row-resize') as HTMLElement
-    expect(terminalHandle).toBeInTheDocument()
+    expect(terminalPane).toHaveAttribute('data-open', 'true')
+    // The panes are official Resizable panels: named, keyboard-operable separators,
+    // and no handcrafted drag handle is left in the shell.
+    const separators = screen.getAllByRole('separator', { name: /^Resize / })
+    expect(separators.map((separator) => separator.getAttribute('aria-label'))).toEqual([
+      'Resize navigation', 'Resize context panel', 'Resize terminal',
+    ])
+    for (const separator of separators) expect(separator).toHaveAttribute('data-slot', 'resizable-handle')
+    expect(container.querySelector('.kubecode-workspace .cursor-col-resize, .kubecode-workspace > .cursor-row-resize')).toBeNull()
+    expect(terminalPane.closest('[data-panel]')).not.toBeNull()
 
     const sidebar = container.querySelector('.kubecode-session-sidebar') as HTMLElement
     expect(sidebar.style.width).toBe('280px')
-    fireEvent.mouseDown(handles[0], { clientX: 328 })
-    fireEvent.mouseMove(document, { clientX: 368 })
-    fireEvent.mouseUp(document)
-    expect(sidebar.style.width).toBe('320px')
-
-    const contextPane = screen.getByTestId('context-workbench')
-    expect(contextPane.style.width).toBe('440px')
-    fireEvent.mouseDown(handles[1], { clientX: 1100 })
-    fireEvent.mouseMove(document, { clientX: 1060 })
-    fireEvent.mouseUp(document)
-    expect(contextPane.style.width).toBe('480px')
-
-    const terminalPane = container.querySelector('.kubecode-terminal-pane') as HTMLElement
-    expect(terminalPane.style.height).toBe('260px')
-    fireEvent.mouseDown(terminalHandle, { clientY: 600 })
-    fireEvent.mouseMove(document, { clientY: 560 })
-    fireEvent.mouseUp(document)
-    expect(terminalPane.style.height).toBe('300px')
+    expect(screen.getByTestId('context-workbench').style.width).toBe('440px')
 
     expect(await screen.findByTestId('agent-session-workspace')).toBeVisible()
   })
@@ -1455,7 +1445,13 @@ describe('Kubecode workspace', () => {
     expect(await screen.findByRole('button', { name: 'Demo' })).toBeInTheDocument()
     expect((container.querySelector('.kubecode-session-sidebar') as HTMLElement).style.width).toBe('357px')
     expect(screen.getByTestId('context-workbench').style.width).toBe('612px')
-    expect((container.querySelector('.kubecode-terminal-pane') as HTMLElement).style.height).toBe('389px')
+    // The terminal panel opens at its remembered height (jsdom lays nothing out,
+    // so the height itself is checked in the browser smoke run).
+    expect(container.querySelector('.kubecode-terminal-pane')).toHaveAttribute('data-open', 'true')
+    expect(JSON.parse(localStorage.getItem('kubecode:project-layout:v2:project-1') ?? '{}')).toMatchObject({
+      contextWidth: 612,
+      terminalHeight: 389,
+    })
   })
 
   it('opens execution history and focuses the Session search with the platform shortcut', async () => {
