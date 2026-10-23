@@ -1496,6 +1496,8 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
             defaultSize={0}
             groupResizeBehavior="preserve-pixel-size"
             id="terminal"
+            // The place above keeps at least 40% of the height (200% zoom, short windows).
+            maxSize="60%"
             minSize={36}
             panelRef={terminalPanelRef}
             style={{ overflow: 'hidden' }}
