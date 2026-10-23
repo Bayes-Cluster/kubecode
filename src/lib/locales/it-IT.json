@@ -1197,6 +1197,7 @@
   "kubecode.inspector.unavailable": "Questo elemento non è più disponibile.",
   "kubecode.toggleTerminal": "Toggle terminal",
   "kubecode.toggleContext": "Toggle context panel",
+  "kubecode.contextPanel": "Pannello del contesto",
   "kubecode.collapse": "Collapse",
   "kubecode.settings": "Settings",
   "kubecode.help": "Help",

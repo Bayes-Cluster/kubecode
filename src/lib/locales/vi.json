@@ -1197,6 +1197,7 @@
   "kubecode.inspector.unavailable": "Mục này không còn khả dụng.",
   "kubecode.toggleTerminal": "Toggle terminal",
   "kubecode.toggleContext": "Toggle context panel",
+  "kubecode.contextPanel": "Bảng ngữ cảnh",
   "kubecode.collapse": "Collapse",
   "kubecode.settings": "Settings",
   "kubecode.help": "Help",

@@ -1197,6 +1197,7 @@
   "kubecode.inspector.unavailable": "Hety element bolš niedastupny.",
   "kubecode.toggleTerminal": "Toggle terminal",
   "kubecode.toggleContext": "Toggle context panel",
+  "kubecode.contextPanel": "Paniel kantekstu",
   "kubecode.collapse": "Collapse",
   "kubecode.settings": "Settings",
   "kubecode.help": "Help",

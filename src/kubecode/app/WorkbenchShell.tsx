@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { RiNotification3Fill } from '@remixicon/react'
+import { Bell } from 'lucide-react'
 import { createTranslator, resolveEffectiveLocale, type Translator } from '@/lib/i18n'
 import { trackEvent } from '@/lib/telemetry'
 
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
+import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
 import { ResizeHandle } from '@/components/ResizeHandle'
 
 import { AgentSessionWorkspace, type SessionPlanEntry } from '../AgentSessionWorkspace'
 import { GlobalCommandPalette } from '../GlobalCommandPalette'
+import { RouteOpening } from './RouteOpening'
 import { createHostActionRegistry, type RegisteredHostAction } from '../hostActions'
 import {
   isGlobalCommandPaletteShortcut,
@@ -38,7 +42,6 @@ import { NewResearchDialog } from '../research/NewResearchDialog'
 import { ResearchNavigator } from '../research/ResearchNavigator'
 import { ResearchWorkspace } from '../research/ResearchWorkspace'
 import { useResearchList } from '../research/useResearch'
-import { Icon } from '../icons'
 import { DisableWorkspacesDialog } from '../DisableWorkspacesDialog'
 import { terminalFontStack } from '../appearancePreferences'
 import {
@@ -801,17 +804,6 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   }, [narrowLayout, setContextVisible])
 
   useEffect(() => {
-    if (!narrowLayout || (!sessionSidebarOpen && !contextVisible)) return
-    const closeOverlayPanels = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || document.querySelector('[role="dialog"]')) return
-      setSessionSidebarOpen(false)
-      setContextVisible(false)
-    }
-    document.addEventListener('keydown', closeOverlayPanels)
-    return () => document.removeEventListener('keydown', closeOverlayPanels)
-  }, [contextVisible, narrowLayout, sessionSidebarOpen, setContextVisible])
-
-  useEffect(() => {
     // On narrow layouts, the navigator takes precedence if both overlays are open.
     if (!narrowLayout || !sessionSidebarOpen || !contextVisible) return
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -1043,6 +1035,110 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     />
   )
 
+  const contextWorkbench = (
+    <ContextWorkbench
+      api={api}
+      autoSave={editorPreferences.autoSave}
+      connectionState={reconciliation.connectionState}
+      planEntries={activeSessionPlan}
+      planRevealVersion={planRevealVersion}
+      projectName={project?.name ?? undefined}
+      projectId={projectId}
+      t={t}
+      // In the phone Sheet the panel takes the sheet's width.
+      width={narrowLayout ? Math.min(560, Math.round(window.innerWidth * 0.92)) : contextWidth}
+      workspaceEvents={reconciliation.workspaceEvents}
+    />
+  )
+
+  // One navigation: beside the view on a wide screen, an official Sheet on a phone.
+  const navigatorPanel = (
+    <ProjectNavigator
+      activeConversationId={conversationId}
+      activeProjectId={projectId}
+      api={api}
+      conversations={sessionCatalog}
+      historyOpen={historyShown}
+      historyPinned={historyPinned}
+      historySection={projectId ? (
+        <>
+          <ChannelNavigator
+            active={false}
+            onOpen={() => openPlace({ view: 'general' })}
+            onOpenThread={openThread}
+            t={t}
+            threads={channelThreads.threads}
+            threadsOnly
+          />
+          <ResearchNavigator
+            activeResearchId={place.view === 'question' ? place.question : null}
+            items={research.items}
+            onNew={() => setResearchDialog(true)}
+            onReload={research.reload}
+            onSelect={(nextResearchId) => openPlace({ view: 'question', question: nextResearchId })}
+            status={research.status}
+            t={t}
+          />
+        </>
+      ) : null}
+      navigatorWidth={narrowLayout ? undefined : sessionSidebarWidth}
+      onAddProject={() => setProjectDialog(true)}
+      onConversationCreated={handleConversationCreated}
+      onConversationRemoved={handleConversationRemoved}
+      onConversationUpdated={handleConversationUpdated}
+      onError={(cause) => setError(errorMessage(cause, t('kubecode.error')))}
+      onHistoryOpenChange={setHistoryOpen}
+      onNewSession={(nextProjectId) => {
+        if (nextProjectId !== projectId) enterWorkspace(nextProjectId)
+        setSessionDialog(true)
+      }}
+      onOpenSettings={() => {
+        setSettingsSection('general')
+        setSettingsOpen(true)
+      }}
+      onProjectDelete={(nextProjectId) => void selection.deleteProject(
+        projects.find((candidate) => candidate.id === nextProjectId),
+      )}
+      onProjectWorkspacesToggle={(nextProjectId) => {
+        const selectedProject = projects.find((candidate) => candidate.id === nextProjectId)
+        if (!selectedProject) return
+        // Disabling asks in a dialog about the Workspace it concerns, so that Workspace is entered first.
+        if (selectedProject.workspaces_enabled) enterWorkspace(nextProjectId)
+        void selection.setProjectWorkspacesEnabled(!selectedProject.workspaces_enabled, selectedProject)
+      }}
+      onQueryChange={setNavigatorQuery}
+      onResize={resizeSessionSidebar}
+      onSelect={(nextProjectId, nextConversationId) => openSession(nextConversationId, nextProjectId)}
+      onWorkspaceSelect={(nextProjectId) => enterWorkspace(nextProjectId)}
+      projects={projects}
+      projectRuns={reconciliation.projectRuns}
+      query={navigatorQuery}
+      searchRef={navigatorSearchRef}
+      t={t}
+      teams={teams}
+      wechat={wechatBinding}
+      workspaceSection={projectId ? (
+        <WorkspaceNav
+          active={place.view === 'sessions' || place.view === 'question' ? null : viewKeyOf(place)}
+          members={liveMembers ?? NO_MEMBERS}
+          needsYou={needsYou}
+          taskCount={taskBoard.board?.total ?? 0}
+          undeliveredGeneral={attention.snapshot?.undelivered.general ?? 0}
+          t={t}
+          onInspectMember={(memberId) => {
+            inspect({ kind: 'member', id: memberId })
+            closeNavigatorSheet()
+          }}
+          onOpen={(view) => {
+            openPlace({ view })
+            landFromNavigation(projectId)
+          }}
+          onOpenDm={(memberId) => openPlace({ view: 'dm', member: memberId })}
+        />
+      ) : null}
+    />
+  )
+
   return (
     <SystemMessageProvider detailsLabel={t('kubecode.details')} dismissLabel={t('window.close')}>
     <PlaceMemoryProvider memory={placeMemory}>
@@ -1096,102 +1192,32 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
       />
 
       <div className="kubecode-workspace" data-narrow={narrowLayout} ref={workspaceRef}>
-        {(sessionSidebarOpen || contextVisible) && (
-          <button
-            aria-label={t('kubecode.closeSidePanels')}
-            className="kubecode-panel-backdrop"
-            type="button"
-            onClick={() => {
-              setSessionSidebarOpen(false)
-              setContextVisible(false)
-            }}
-          />
+        {sessionSidebarOpen && !narrowLayout && navigatorPanel}
+        {narrowLayout && (
+          <Sheet open={sessionSidebarOpen} onOpenChange={setSessionSidebarOpen}>
+            <SheetContent
+              aria-describedby={undefined}
+              className="w-[min(86vw,420px)] gap-0 p-0 sm:max-w-none"
+              closeLabel={t('kubecode.closeSidePanels')}
+              side="left"
+            >
+              <SheetTitle className="sr-only">{t('kubecode.nav.workspaces')}</SheetTitle>
+              {navigatorPanel}
+            </SheetContent>
+          </Sheet>
         )}
-        {sessionSidebarOpen && (
-          <ProjectNavigator
-            activeConversationId={conversationId}
-            activeProjectId={projectId}
-            api={api}
-            conversations={sessionCatalog}
-            historyOpen={historyShown}
-            historyPinned={historyPinned}
-            historySection={projectId ? (
-              <>
-                <ChannelNavigator
-                  active={false}
-                  onOpen={() => openPlace({ view: 'general' })}
-                  onOpenThread={openThread}
-                  t={t}
-                  threads={channelThreads.threads}
-                  threadsOnly
-                />
-                <ResearchNavigator
-                  activeResearchId={place.view === 'question' ? place.question : null}
-                  items={research.items}
-                  onNew={() => setResearchDialog(true)}
-                  onReload={research.reload}
-                  onSelect={(nextResearchId) => openPlace({ view: 'question', question: nextResearchId })}
-                  status={research.status}
-                  t={t}
-                />
-              </>
-            ) : null}
-            navigatorWidth={sessionSidebarWidth}
-            onAddProject={() => setProjectDialog(true)}
-            onConversationCreated={handleConversationCreated}
-            onConversationRemoved={handleConversationRemoved}
-            onConversationUpdated={handleConversationUpdated}
-            onError={(cause) => setError(errorMessage(cause, t('kubecode.error')))}
-            onHistoryOpenChange={setHistoryOpen}
-            onNewSession={(nextProjectId) => {
-              if (nextProjectId !== projectId) enterWorkspace(nextProjectId)
-              setSessionDialog(true)
-            }}
-            onOpenSettings={() => {
-              setSettingsSection('general')
-              setSettingsOpen(true)
-            }}
-            onProjectDelete={(nextProjectId) => void selection.deleteProject(
-              projects.find((candidate) => candidate.id === nextProjectId),
-            )}
-            onProjectWorkspacesToggle={(nextProjectId) => {
-              const selectedProject = projects.find((candidate) => candidate.id === nextProjectId)
-              if (!selectedProject) return
-              // Disabling asks in a dialog about the Workspace it concerns, so that Workspace is entered first.
-              if (selectedProject.workspaces_enabled) enterWorkspace(nextProjectId)
-              void selection.setProjectWorkspacesEnabled(!selectedProject.workspaces_enabled, selectedProject)
-            }}
-            onQueryChange={setNavigatorQuery}
-            onResize={resizeSessionSidebar}
-            onSelect={(nextProjectId, nextConversationId) => openSession(nextConversationId, nextProjectId)}
-            onWorkspaceSelect={(nextProjectId) => enterWorkspace(nextProjectId)}
-            projects={projects}
-            projectRuns={reconciliation.projectRuns}
-            query={navigatorQuery}
-            searchRef={navigatorSearchRef}
-            t={t}
-            teams={teams}
-            wechat={wechatBinding}
-            workspaceSection={projectId ? (
-              <WorkspaceNav
-                active={place.view === 'sessions' || place.view === 'question' ? null : viewKeyOf(place)}
-                members={liveMembers ?? NO_MEMBERS}
-                needsYou={needsYou}
-                taskCount={taskBoard.board?.total ?? 0}
-                undeliveredGeneral={attention.snapshot?.undelivered.general ?? 0}
-                t={t}
-                onInspectMember={(memberId) => {
-                  inspect({ kind: 'member', id: memberId })
-                  closeNavigatorSheet()
-                }}
-                onOpen={(view) => {
-                  openPlace({ view })
-                  landFromNavigation(projectId)
-                }}
-                onOpenDm={(memberId) => openPlace({ view: 'dm', member: memberId })}
-              />
-            ) : null}
-          />
+        {narrowLayout && (
+          <Sheet open={contextVisible} onOpenChange={setContextVisible}>
+            <SheetContent
+              aria-describedby={undefined}
+              className="w-auto gap-0 p-0 sm:max-w-none"
+              closeLabel={t('kubecode.closeSidePanels')}
+              side="right"
+            >
+              <SheetTitle className="sr-only">{t('kubecode.contextPanel')}</SheetTitle>
+              {contextWorkbench}
+            </SheetContent>
+          </Sheet>
         )}
 
         <div className="kubecode-main-stack" ref={mainStackRef}>
@@ -1201,7 +1227,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
             ref={contextRowRef}
           >
             {arriving ? (
-              <div className="kubecode-empty-small" role="status">{t('kubecode.nav.opening')}</div>
+              <RouteOpening label={t('kubecode.nav.opening')} />
             ) : !projectId ? sessionsSurface : place.view === 'board' ? (
               <WithInspector inspector={inspectorPane} presentation={presentation}>
                 <TaskBoardView
@@ -1232,7 +1258,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
                   />
                 </WithInspector>
               ) : (
-                <div className="kubecode-empty-small" role="status">{t('kubecode.nav.opening')}</div>
+                <RouteOpening label={t('kubecode.nav.opening')} />
               )
             ) : place.view === 'resources' ? (
               <WithInspector inspector={inspectorPane} presentation={presentation}>
@@ -1333,21 +1359,10 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
                 teams={teams}
               />
             ) : sessionsSurface}
-            {contextVisible && (
+            {contextVisible && !narrowLayout && (
               <>
                 <ResizeHandle onResize={resizeContext} />
-                <ContextWorkbench
-                  api={api}
-                  autoSave={editorPreferences.autoSave}
-                  connectionState={reconciliation.connectionState}
-                  planEntries={activeSessionPlan}
-                  planRevealVersion={planRevealVersion}
-                  projectName={project?.name ?? undefined}
-                  projectId={projectId}
-                  t={t}
-                  width={contextWidth}
-                  workspaceEvents={reconciliation.workspaceEvents}
-                />
+                {contextWorkbench}
               </>
             )}
           </div>
@@ -1375,7 +1390,11 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
                 terminalFont={terminalFontStack(appearance.terminalFont)}
               />
             ) : terminalOpen ? (
-              <div className="kubecode-empty-small">{t('kubecode.selectProject')}</div>
+              <Empty>
+                <EmptyHeader>
+                  <EmptyTitle>{t('kubecode.selectProject')}</EmptyTitle>
+                </EmptyHeader>
+              </Empty>
             ) : null}
           </div>
         </div>
@@ -1393,19 +1412,24 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
         projects={projects}
       />
       {notificationOnboardingOpen && (
-        <aside className="kubecode-notification-onboarding" role="status">
-          <Icon role="identity" source={RiNotification3Fill} />
-          <div>
-            <strong>{t('kubecode.notificationOnboardingTitle')}</strong>
-            <span>{t('kubecode.notificationOnboardingDescription')}</span>
-          </div>
-          <Button size="sm" onClick={() => void requestNotificationPermission()}>
-            {t('kubecode.enableNotifications')}
-          </Button>
-          <Button size="sm" variant="ghost" onClick={dismissNotificationOnboarding}>
-            {t('kubecode.notNow')}
-          </Button>
-        </aside>
+        <Alert
+          className="absolute bottom-4 left-1/2 z-50 w-[min(42rem,calc(100vw-2rem))] -translate-x-1/2 shadow-lg"
+          role="status"
+        >
+          <Bell aria-hidden="true" />
+          <AlertTitle>{t('kubecode.notificationOnboardingTitle')}</AlertTitle>
+          <AlertDescription>
+            <p>{t('kubecode.notificationOnboardingDescription')}</p>
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" onClick={() => void requestNotificationPermission()}>
+                {t('kubecode.enableNotifications')}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={dismissNotificationOnboarding}>
+                {t('kubecode.notNow')}
+              </Button>
+            </div>
+          </AlertDescription>
+        </Alert>
       )}
 
       <GlobalCommandPalette

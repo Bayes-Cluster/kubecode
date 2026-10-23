@@ -1197,6 +1197,7 @@
   "kubecode.inspector.unavailable": "此项目已不可用。",
   "kubecode.toggleTerminal": "显示或隐藏终端",
   "kubecode.toggleContext": "显示或隐藏上下文面板",
+  "kubecode.contextPanel": "上下文面板",
   "kubecode.collapse": "收起",
   "kubecode.settings": "设置",
   "kubecode.help": "帮助",

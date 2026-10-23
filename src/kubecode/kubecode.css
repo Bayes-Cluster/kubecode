@@ -117,26 +117,6 @@
   justify-self: end;
 }
 
-.kubecode-notification-onboarding {
-  align-items: center;
-  background: var(--surface-popover);
-  border: 1px solid var(--border-default);
-  border-radius: 10px;
-  bottom: 18px;
-  box-shadow: 0 12px 36px color-mix(in srgb, #000 22%, transparent);
-  display: flex;
-  gap: 10px;
-  left: 50%;
-  max-width: min(680px, calc(100vw - 32px));
-  padding: 10px 12px;
-  position: absolute;
-  transform: translateX(-50%);
-  z-index: 50;
-}
-.kubecode-notification-onboarding > svg { color: var(--accent-blue); flex: 0 0 auto; height: 20px; width: 20px; }
-.kubecode-notification-onboarding > div { display: flex; flex: 1; flex-direction: column; min-width: 0; }
-.kubecode-notification-onboarding > div > span { color: var(--text-secondary); font-size: 12px; }
-
 .kubecode-workspace {
   display: flex;
   min-height: 0;
@@ -144,7 +124,6 @@
   position: relative;
 }
 
-.kubecode-panel-backdrop { display: none; }
 
 @keyframes kubecode-project-running {
   0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-blue) 34%, transparent); }
@@ -2168,8 +2147,6 @@
 }
 
 @media (max-width: 980px) {
-  .kubecode-session-sidebar { position: absolute; bottom: 0; left: 50px; top: 42px; z-index: 40; }
-  .kubecode-context-workbench { display: none; }
   .kubecode-session-context-row > .cursor-col-resize { display: none; }
   .kubecode-topbar { grid-template-columns: auto minmax(180px, 1fr) auto; }
   .kubecode-settings-dialog { grid-template-columns: 164px minmax(0, 1fr); }
@@ -2825,37 +2802,6 @@
 }
 
 @media (max-width: 980px) {
-  .kubecode-workspace[data-narrow='true'] .kubecode-panel-backdrop {
-    background: color-mix(in srgb, #000 24%, transparent);
-    border: 0;
-    display: block;
-    inset: 0;
-    padding: 0;
-    position: absolute;
-    z-index: 39;
-  }
-  .kubecode-workspace[data-narrow='true'] .kubecode-session-composer-dock {
-    z-index: 41;
-  }
-  .kubecode-workspace[data-narrow='true'] > .kubecode-session-sidebar {
-    bottom: 0;
-    box-shadow: 12px 0 30px color-mix(in srgb, #000 22%, transparent);
-    left: 0;
-    max-width: min(86vw, 420px);
-    position: absolute;
-    top: 0;
-    z-index: 42;
-  }
-  .kubecode-workspace[data-narrow='true'] .kubecode-context-workbench {
-    bottom: 0;
-    box-shadow: -12px 0 30px color-mix(in srgb, #000 22%, transparent);
-    display: flex;
-    max-width: min(92vw, 560px);
-    position: absolute;
-    right: 0;
-    top: 0;
-    z-index: 42;
-  }
   .kubecode-workspace[data-narrow='true'] > .cursor-col-resize,
   .kubecode-workspace[data-narrow='true'] .kubecode-session-context-row > .cursor-col-resize {
     display: none;
@@ -5038,13 +4984,6 @@
   flex: 1 1 auto;
 }
 
-@media (max-width: 980px) {
-  /* On a phone the navigation is a sheet over the view: lifted, not boxed. */
-  .kubecode-workspace[data-narrow='true'] > .kubecode-session-sidebar {
-    border-inline-end: 0;
-    box-shadow: var(--ws-elevation-soft);
-  }
-}
 @media (max-width: 760px) {
   .kubecode-view-header.kubecode-destination-header { padding: var(--ws-space-3); }
   .kubecode-resources > .kubecode-destination-header,

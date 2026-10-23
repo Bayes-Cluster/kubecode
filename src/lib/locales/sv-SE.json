@@ -1197,6 +1197,7 @@
   "kubecode.inspector.unavailable": "Det här objektet är inte längre tillgängligt.",
   "kubecode.toggleTerminal": "Toggle terminal",
   "kubecode.toggleContext": "Toggle context panel",
+  "kubecode.contextPanel": "Kontextpanel",
   "kubecode.collapse": "Collapse",
   "kubecode.settings": "Settings",
   "kubecode.help": "Help",

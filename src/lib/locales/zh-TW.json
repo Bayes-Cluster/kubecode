@@ -1197,6 +1197,7 @@
   "kubecode.inspector.unavailable": "此項目已無法使用。",
   "kubecode.toggleTerminal": "顯示或隱藏終端機",
   "kubecode.toggleContext": "顯示或隱藏內容面板",
+  "kubecode.contextPanel": "脈絡面板",
   "kubecode.collapse": "收合",
   "kubecode.settings": "設定",
   "kubecode.help": "說明",

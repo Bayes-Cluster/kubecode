@@ -182,6 +182,13 @@ function composer() {
   return screen.findByLabelText('Message the Workspace', { selector: 'textarea' })
 }
 
+/** On a phone the navigation opens as a Sheet; the researcher dismisses it to reach the view. */
+async function dismissNavigationSheet() {
+  const sheet = await screen.findByRole('dialog', { name: 'Workspaces' })
+  fireEvent.keyDown(sheet, { key: 'Escape' })
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Workspaces' })).toBeNull())
+}
+
 function narrowScreen() {
   vi.stubGlobal('matchMedia', (query: string) => ({
     matches: query.includes('max-width'),
@@ -520,6 +527,7 @@ describe('Workspace navigation and routes', () => {
     await start('#/p/project-1/general', api({
       listChannelMessages: vi.fn().mockResolvedValue({ messages: [message()], has_more: false }),
     }))
+    await dismissNavigationSheet()
     const box = await composer()
     fireEvent.change(box, { target: { value: 'Half a thought' } })
     fireEvent.click(await screen.findByRole('button', { name: 'Task Task (no title)' }))
@@ -543,6 +551,7 @@ describe('Workspace navigation and routes', () => {
   it('parks the board under a full-screen Task on a phone', async () => {
     narrowScreen()
     await start('#/p/project-1/board?task=r1')
+    await dismissNavigationSheet()
     expect(await inspector('Task details')).toBeInTheDocument()
     expect(document.querySelector('.kubecode-inspector-main')).toHaveAttribute('inert')
     expect(screen.getByTestId('task-card-r1')).toBeInTheDocument()
@@ -1181,13 +1190,15 @@ describe('Returning to a place (ADR 0228 §4)', () => {
 
   it('on a phone, lands on the message being read once the navigation closes', async () => {
     narrowScreen()
-    const { nav } = await start('#/p/project-1/general', six())
+    await start('#/p/project-1/general', six())
     await screen.findByText('note 6')
+    await dismissNavigationSheet()
     const scrollTo = readableLog()
     scrollTo(40)
     await act(() => new Promise((resolve) => requestAnimationFrame(() => resolve(undefined))))
     Element.prototype.scrollIntoView = vi.fn()
-    fireEvent.click(within(nav).getByRole('button', { name: 'Resources' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Toggle navigation' }))
+    fireEvent.click(within(await screen.findByRole('region', { name: 'Workspace' })).getByRole('button', { name: 'Resources' }))
     await waitFor(() => expect(window.location.hash).toBe('#/p/project-1/resources'))
     fireEvent.click(screen.getByRole('button', { name: 'Toggle navigation' }))
     fireEvent.click(within(await screen.findByRole('region', { name: 'Workspace' })).getAllByRole('button', { name: 'General' })[0])

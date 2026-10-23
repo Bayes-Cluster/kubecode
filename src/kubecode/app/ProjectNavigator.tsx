@@ -25,7 +25,8 @@ export type ProjectNavigatorProps = {
   historyPinned?: boolean
   /** The active Workspace's legacy Threads and research questions, inside execution history. */
   historySection?: ReactNode
-  navigatorWidth: number
+  /** The width beside the view; absent inside the phone sheet, which sizes it. */
+  navigatorWidth?: number
   onAddProject: () => void
   onConversationCreated: (conversation: Conversation) => void
   onConversationRemoved: (conversationId: string) => void
@@ -100,7 +101,7 @@ export function ProjectNavigator({
       <nav
         aria-label={t('kubecode.nav.workspaces')}
         className="kubecode-session-sidebar"
-        style={{ width: navigatorWidth }}
+        style={navigatorWidth === undefined ? undefined : { width: navigatorWidth }}
       >
         <div className="kubecode-navigator-heading">
           <strong>{t('kubecode.nav.workspaces')}</strong>
@@ -170,7 +171,7 @@ export function ProjectNavigator({
           </details>
         </div>
       </nav>
-      <ResizeHandle onResize={onResize} />
+      {navigatorWidth !== undefined && <ResizeHandle onResize={onResize} />}
     </>
   )
 }

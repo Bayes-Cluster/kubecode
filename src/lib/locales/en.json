@@ -1511,6 +1511,7 @@
   "kubecode.toggleNavigation": "Toggle navigation",
   "kubecode.toggleTerminal": "Toggle terminal",
   "kubecode.toggleContext": "Toggle context panel",
+  "kubecode.contextPanel": "Context panel",
   "kubecode.closeSidePanels": "Close side panels",
   "kubecode.collapse": "Collapse",
   "kubecode.settings": "Settings",
