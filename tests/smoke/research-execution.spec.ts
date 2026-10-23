@@ -80,7 +80,7 @@ test('@smoke research execution shows processes, controls launches, and never ca
     await openHistory(page)
     await page.getByLabel('Research', { exact: true }).getByRole('button', { name: title }).click()
     await page.getByRole('tab', { name: 'Work' }).click()
-    const section = page.locator('.kubecode-research-execution').first()
+    const section = page.getByTestId('research-execution').first()
     await expect(section.getByRole('heading', { name: 'Execution' })).toBeVisible()
     await expect(section.getByText('Active', { exact: true })).toBeVisible()
 
@@ -108,8 +108,11 @@ test('@smoke research execution shows processes, controls launches, and never ca
     await long.getByRole('button', { name: /^Stop/ }).click()
     await expect(long).toContainText('Cancelled', { timeout: 15_000 })
     await section.getByRole('button', { name: 'Cancel execution' }).click()
-    await expect(section.getByRole('alertdialog')).toBeVisible()
-    await section.getByRole('button', { name: 'Stop and close' }).click()
+    // The confirmation is the official AlertDialog, rendered in a portal.
+    const confirm = page.getByRole('alertdialog', { name: 'Cancel execution' })
+    await expect(confirm).toBeVisible()
+    await confirm.getByRole('button', { name: 'Stop and close' }).click()
+    await expect(confirm).toHaveCount(0)
     await expect(section.getByText('Closed', { exact: true })).toBeVisible()
     const closed = await launch('after-close', 'true')
     expect((await closed.json() as { reason: string }).reason).toBe('envelope_closed')
@@ -119,7 +122,7 @@ test('@smoke research execution shows processes, controls launches, and never ca
     await openHistory(page)
     await page.getByLabel('Research', { exact: true }).getByRole('button', { name: title }).click()
     await page.getByRole('tab', { name: 'Work' }).click()
-    await expect(page.locator('.kubecode-research-execution').first().getByText('Closed', { exact: true })).toBeVisible()
+    await expect(page.getByTestId('research-execution').first().getByText('Closed', { exact: true })).toBeVisible()
     await page.setViewportSize({ width: 390, height: 844 })
     await expectContained(page)
   } finally {

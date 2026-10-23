@@ -133,7 +133,7 @@ export function ResearchExecutionSection({
 
   if (!execution) {
     return (
-      <div className={EXECUTION} aria-busy={status === 'loading'}>
+      <div className={EXECUTION} aria-busy={status === 'loading'} data-testid="research-execution">
         {status === 'loading' && <ReaderLoading>{t('kubecode.research.exec.loading')}</ReaderLoading>}
         {status === 'error' && (
           <ReaderNotice action={<Button size="xs" variant="outline" onClick={reload}>{t('kubecode.retry')}</Button>} failed>
@@ -158,7 +158,7 @@ export function ResearchExecutionSection({
   }
 
   return (
-    <div className={EXECUTION}>
+    <div className={EXECUTION} data-testid="research-execution">
       <header className="flex flex-wrap items-center gap-2">
         <h4 className="m-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t('kubecode.research.exec.title')}</h4>
         {envelope && (
