@@ -356,7 +356,9 @@ describe('ProjectFileTree', () => {
       t={createTranslator('en')}
     />)
 
-    expect(await screen.findByRole('status')).toHaveTextContent('directory unavailable')
+    const unavailable = (await screen.findByText('directory unavailable')).closest('[role="status"]')
+    expect(unavailable).toHaveTextContent('directory unavailable')
+    expect(unavailable).toHaveAttribute('data-slot', 'alert')
     expect(screen.getByRole('tree')).toHaveAttribute('data-stale', 'true')
     expect(screen.getByRole('treeitem', { name: /old\.ts/ })).toBeInTheDocument()
     await new Promise((resolve) => window.setTimeout(resolve, 20))
