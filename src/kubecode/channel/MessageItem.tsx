@@ -256,13 +256,13 @@ export function MessageItem({
           />
         )}
         {delivery?.state === 'failed' && (
-          <div className="kubecode-message-delivery flex flex-wrap items-center gap-2 text-xs text-muted-foreground" data-delivery="failed">
+          <div className="kubecode-message-delivery" data-delivery="failed">
             <Badge variant="destructive">{t('kubecode.channel.notDelivered')}</Badge>
             <span>{delivery.text}</span>
           </div>
         )}
         {(delivery?.state === 'queued' || delivery?.state === 'delivered') && (
-          <p className="kubecode-message-delivery text-xs text-muted-foreground" data-delivery={delivery.state}>
+          <p className="kubecode-message-delivery" data-delivery={delivery.state}>
             {deliveryText(delivery.state, delivery.recipients, dateLocale, t)}
           </p>
         )}

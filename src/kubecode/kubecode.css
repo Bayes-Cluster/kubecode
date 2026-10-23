@@ -3658,6 +3658,16 @@
   padding: 0;
 }
 
+.kubecode-message-delivery {
+  align-items: center;
+  color: var(--text-secondary);
+  display: flex;
+  flex-wrap: wrap;
+  font: var(--ws-font-meta);
+  gap: var(--ws-space-2);
+  margin: 0;
+}
+
 .kubecode-legacy-thread-note {
   background: var(--surface-subtle);
   border-radius: var(--radius-md);
@@ -5618,6 +5628,7 @@
 .kubecode-composer-textarea {
   field-sizing: content;
   max-height: min(40dvh, 18rem);
+  min-height: calc(1lh + 2 * var(--ws-space-2));
   overflow-y: auto;
 }
 .kubecode-composer-controls { gap: var(--ws-space-1); }
