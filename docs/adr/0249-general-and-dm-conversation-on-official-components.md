@@ -51,8 +51,9 @@ the avatar fallbacks through `[data-slot=…]` and `[cmdk-item]` selectors.
 6. **Removed overrides.** The Prompt Input card background, radius, shadow and
    focus ring, the mention list and `[cmdk-item]` rules, the avatar fallback
    tones (except the researcher tone owned by #262), the activity group, date
-   separator, legacy thread link, delivery line and proposal rules, and their
-   baseline entries.
+   separator, legacy thread link and proposal rules, and their
+   baseline entries. `.kubecode-message-delivery` stays: `DeliveryStatus`
+   (#259) shares it.
 
 ## Consequences
 
