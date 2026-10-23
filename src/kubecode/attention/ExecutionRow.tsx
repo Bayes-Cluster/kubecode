@@ -46,7 +46,7 @@ export function ExecutionRow({ alone = false, entryKey, onStop, runs, stopping, 
           <ItemTitle className="flex w-full min-w-0 items-center gap-2">
             <span className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
               {runs.map((run) => (run.member
-                ? <MemberIdentity handle={run.member.handle} key={run.run_id} name={run.member.name} role={run.member.role === 'general' ? 'manager' : 'specialist'} size="sm" />
+                ? <MemberIdentity className="min-w-0 truncate whitespace-nowrap" handle={run.member.handle} key={run.run_id} name={run.member.name} role={run.member.role === 'general' ? 'manager' : 'specialist'} size="sm" />
                 : <strong key={run.run_id}>{askerName(run, t)}</strong>))}
             </span>
             {queued > 0 && <Badge className="kubecode-execution-queued shrink-0" variant="secondary">{t('kubecode.execution.queuedCount', { count: queued })}</Badge>}

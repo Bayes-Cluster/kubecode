@@ -28,6 +28,12 @@ describe('ExecutionRow', () => {
     expect(item).not.toHaveTextContent(/Analyst is/)
   })
 
+  it('keeps a member name on one line in a narrow strip instead of breaking it letter by letter (#263)', () => {
+    const item = row()
+    const identity = item.querySelector('.kubecode-member-identity') as HTMLElement
+    expect(identity).toHaveClass('whitespace-nowrap', 'min-w-0', 'truncate')
+  })
+
   it('shows queued messages as a small count', () => {
     const item = row({ runs: [execution({ queued: 3 })] })
     expect(within(item).getByText('3 queued')).toHaveClass('kubecode-execution-queued')

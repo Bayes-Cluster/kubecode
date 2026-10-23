@@ -788,9 +788,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .kubecode-app *,
-  .kubecode-app *::before,
-  .kubecode-app *::after {
+  /* Global: menus, sheets and dialogs portal outside .kubecode-app (#263). */
+  *,
+  *::before,
+  *::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
