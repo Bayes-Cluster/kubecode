@@ -11,6 +11,9 @@ Project, OpenCode smoke Agent) built from `main` (before) and from this branch
 moved from Tabs to a single ToggleGroup after capture (a view switch has no tab
 panels); its look matches the New Session dialog's mode switch.
 
+The image files are not kept in the repository. The tables name each
+before/after capture, and the files are attached to the #261 pull request.
+
 | Surface | Before | After |
 | --- | --- | --- |
 | Session, de-DE, light, 1440 | `before-session-de-light-1440.png` | `after-session-de-light-1440.png` |
