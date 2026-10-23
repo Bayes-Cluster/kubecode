@@ -9,9 +9,9 @@ import {
   QueueSectionTrigger,
 } from '@/components/ai-elements/queue'
 import { Shimmer } from '@/components/ai-elements/shimmer'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { ICON_SIZES } from '@/kubecode/icons'
 import type { Translator } from '@/lib/i18n'
 
 import { ApiError, type AgentEvent, type AttentionItem, type AttentionTaskRef, type ExecutionFailure, type ExecutionView, type KubecodeApi } from '../api'
@@ -118,20 +118,26 @@ function entriesOf(runs: ExecutionView[]): Entry[] {
 function FailureRow({ failure, onDismiss, t }: { failure: ExecutionFailure; onDismiss: () => void; t: Translator }) {
   const navigation = useContext(WorkspaceNavigationContext)
   const key = failure.status === 'interrupted' ? 'kubecode.execution.turnInterrupted' : 'kubecode.execution.turnFailed'
+  // A failed turn is an official destructive Alert, not announced again: it is shown until dismissed.
   return (
-    <li className="kubecode-execution-row" data-state="failed">
-      <span className="kubecode-execution-state kubecode-research-error">{t(key, { name: failure.member.name })}</span>
-      {/* The member's profile holds what fixes a failing turn: its Session, its setup. */}
-      {navigation && (
-        <Button
-          size="xs"
-          variant="outline"
-          onClick={() => navigation.openPlace({ view: 'members' }, { inspect: { kind: 'member', id: failure.member.id } })}
-        >
-          {t('kubecode.execution.openMember', { name: failure.member.name })}
-        </Button>
-      )}
-      <Button size="xs" variant="ghost" onClick={onDismiss}>{t('kubecode.execution.dismiss')}</Button>
+    <li data-state="failed">
+      <Alert role={undefined} variant="destructive">
+        <AlertDescription className="flex flex-wrap items-center gap-2">
+          <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{t(key, { name: failure.member.name })}</span>
+          {/* The member's profile holds what fixes a failing turn: its Session, its setup. */}
+          {navigation && (
+            <Button
+              className="pointer-coarse:min-h-11"
+              size="xs"
+              variant="outline"
+              onClick={() => navigation.openPlace({ view: 'members' }, { inspect: { kind: 'member', id: failure.member.id } })}
+            >
+              {t('kubecode.execution.openMember', { name: failure.member.name })}
+            </Button>
+          )}
+          <Button className="pointer-coarse:min-h-11" size="xs" variant="ghost" onClick={onDismiss}>{t('kubecode.execution.dismiss')}</Button>
+        </AlertDescription>
+      </Alert>
     </li>
   )
 }
@@ -227,8 +233,9 @@ export function ExecutionStrip({ api, prompts = true, scope, t }: ExecutionStrip
   }
 
   if (entries.length === 0 && items.length === 0 && failures.length === 0 && !announcement) return null
-  const row = (entry: Entry) => (
+  const row = (entry: Entry, alone = false) => (
     <ExecutionRow
+      alone={alone}
       entryKey={entry.key}
       key={entry.key}
       runs={entry.runs}
@@ -240,22 +247,22 @@ export function ExecutionStrip({ api, prompts = true, scope, t }: ExecutionStrip
   )
   const busy = stopping.size > 0
   return (
-    <section aria-label={t('kubecode.execution.workingNow')} className="kubecode-execution-strip" ref={section}>
+    <section aria-label={t('kubecode.execution.workingNow')} className="kubecode-execution-strip flex flex-col gap-2" ref={section}>
       {/* Decisions are never folded away; on a phone their body is capped and scrolls. */}
       {items.length > 0 && (
-        <div aria-label={t('kubecode.execution.waitingForYou')} className="kubecode-execution-body" role="group">
+        <div aria-label={t('kubecode.execution.waitingForYou')} className="kubecode-execution-body flex min-h-0 flex-col gap-2" role="group">
           {items.map((item) => (item.kind === 'permission'
             ? <PermissionRow api={api} item={item} key={item.key} t={t} />
             : item.kind === 'input' ? <InputRow api={api} item={item} key={item.key} t={t} /> : null))}
         </div>
       )}
-      {entries.length === 1 && <ul className="kubecode-execution-rows">{entries.map(row)}</ul>}
+      {entries.length === 1 && <ul className="kubecode-execution-rows flex flex-col gap-1">{entries.map((entry) => row(entry, true))}</ul>}
       {entries.length > 1 && (
         <Popover onOpenChange={measure}>
           <PopoverTrigger asChild>
             <Button
               aria-busy={busy || undefined}
-              className="kubecode-execution-pill"
+              className="self-start"
               size="sm"
               type="button"
               variant="outline"
@@ -263,10 +270,14 @@ export function ExecutionStrip({ api, prompts = true, scope, t }: ExecutionStrip
               onPointerDown={() => setOpenedBy('pointer')}
             >
               <Shimmer as="span" className="kubecode-shimmer">{t('kubecode.execution.runningCount', { count: entries.length })}</Shimmer>
-              <ChevronDown aria-hidden size={ICON_SIZES.status} />
+              <ChevronDown aria-hidden data-icon="inline-end" />
             </Button>
           </PopoverTrigger>
-          <PopoverContent align="start" aria-label={t('kubecode.execution.workingNow')} className="kubecode-execution-popover"
+          <PopoverContent
+            align="start"
+            aria-label={t('kubecode.execution.workingNow')}
+            // As wide as the dock it opens from; a ring only when opened from the keyboard.
+            className="max-h-[40vh] w-[var(--kubecode-execution-popover-width,min(28rem,calc(100vw-32px)))] overflow-y-auto p-1 outline-none data-[opened-by=keyboard]:focus-visible:ring-[3px] data-[opened-by=keyboard]:focus-visible:ring-ring/50"
             data-opened-by={openedBy}
             side="top"
             style={listWidth ? { '--kubecode-execution-popover-width': `${listWidth}px` } as CSSProperties : undefined}
@@ -278,14 +289,14 @@ export function ExecutionStrip({ api, prompts = true, scope, t }: ExecutionStrip
             }}
           >
             {/* The running list as a Queue (ADR 0242): one section, each row a piece of work with its Stop. */}
-            <Queue className="kubecode-execution-queue">
+            <Queue>
               <QueueSection>
-                <QueueSectionTrigger className="kubecode-execution-queue-trigger">
+                <QueueSectionTrigger>
                   <QueueSectionLabel label={t('kubecode.execution.runningCount', { count: entries.length })} />
                 </QueueSectionTrigger>
                 <QueueSectionContent>
                   {/* The popover scrolls; a second scroll area inside it would clip the rows. */}
-                  <ul className="kubecode-execution-rows kubecode-execution-queue-list">{entries.map(row)}</ul>
+                  <ul className="kubecode-execution-rows flex flex-col gap-1">{entries.map((entry) => row(entry))}</ul>
                 </QueueSectionContent>
               </QueueSection>
             </Queue>
@@ -293,7 +304,7 @@ export function ExecutionStrip({ api, prompts = true, scope, t }: ExecutionStrip
         </Popover>
       )}
       {failures.length > 0 && (
-        <ul className="kubecode-execution-rows">
+        <ul className="flex flex-col gap-1">
           {failures.map((entry) => (
             <FailureRow
               failure={entry}

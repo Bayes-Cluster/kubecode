@@ -1,19 +1,24 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
 
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { Empty, EmptyContent, EmptyDescription } from '@/components/ui/empty'
+import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible'
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader } from '@/components/ui/empty'
+import { Field, FieldLabel } from '@/components/ui/field'
+import { Item, ItemActions, ItemContent, ItemGroup, ItemTitle } from '@/components/ui/item'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Icon } from '@/kubecode/icons'
-import { WORKSPACE_COMMAND_ICONS, WORKSPACE_DESTINATION_ICONS } from '@/kubecode/icons/workspaceIcons'
+import { WORKSPACE_DESTINATION_ICONS } from '@/kubecode/icons/workspaceIcons'
 import type { Translator } from '@/lib/i18n'
 
 import { DestinationHeader } from '../app/DestinationHeader'
 
 import type { TaskBoard, TaskDraft, TaskStage } from '../api'
 import { usePlaceState, useScrollMemory } from '../app/location/placeMemory'
+import { ReaderLoading } from '../resources/ReaderStates'
 import { TaskCardView } from './TaskCardView'
+import { TaskDisclosure } from './TaskDisclosure'
 import { StatusBadge } from '@/components/workspace/StatusBadge'
 import { initialBoardStage, inspectedStage, requiredActionOf } from './taskLifecycle'
 import { outcomeLabel, stageLabel, TASK_STAGES } from './taskLabels'
@@ -115,26 +120,28 @@ export function TaskBoardView({
     <section aria-label={t('kubecode.nav.board')} className="kubecode-task-board" ref={scroller}>
       <DestinationHeader
         actions={(
-          <span className="kubecode-task-needs-you">
-            <Switch aria-labelledby={switchId} checked={needsYou} onCheckedChange={setNeedsYou} />
-            <span id={switchId}>{t('kubecode.task.needsYouOnly')}</span>
-          </span>
+          <Field className="w-auto" orientation="horizontal">
+            <Switch checked={needsYou} id={switchId} onCheckedChange={setNeedsYou} />
+            <FieldLabel htmlFor={switchId}>{t('kubecode.task.needsYouOnly')}</FieldLabel>
+          </Field>
         )}
         destination="board"
         t={t}
       />
       {status === 'error' && (
-        <p className="kubecode-research-error" role="alert">
-          {t('kubecode.task.loadFailed')}{' '}
-          <Button size="xs" variant="ghost" onClick={onReload}>{t('kubecode.retry')}</Button>
-        </p>
+        <Alert variant="destructive">
+          <AlertDescription className="flex flex-wrap items-center gap-2">
+            <span>{t('kubecode.task.loadFailed')}</span>
+            <Button className="pointer-coarse:min-h-11" size="xs" variant="outline" onClick={onReload}>{t('kubecode.retry')}</Button>
+          </AlertDescription>
+        </Alert>
       )}
-      {status === 'loading' && (
-        <p className="kubecode-research-muted" role="status">{t('kubecode.task.loading')}</p>
-      )}
+      {status === 'loading' && <ReaderLoading>{t('kubecode.task.loading')}</ReaderLoading>}
       {empty && (
         <Empty className="kubecode-task-empty">
-          <EmptyDescription>{t('kubecode.task.boardEmpty')}</EmptyDescription>
+          <EmptyHeader>
+            <EmptyDescription>{t('kubecode.task.boardEmpty')}</EmptyDescription>
+          </EmptyHeader>
           <EmptyContent>
             <Button size="sm" variant="outline" onClick={onOpenGeneral}>
               <Icon role="command" source={WORKSPACE_DESTINATION_ICONS.general.Icon} />
@@ -149,66 +156,71 @@ export function TaskBoardView({
           defaultOpen={board !== null && board.cards.length === 0}
           key={board !== null && board.cards.length === 0 ? 'open' : 'closed'}
         >
-          <CollapsibleTrigger className="kubecode-task-disclosure">
-            <Icon className="kubecode-task-disclosure-chevron" role="command" size="secondary" source={WORKSPACE_COMMAND_ICONS.expand.Icon} />
-            {t('kubecode.task.proposals', { count: drafts.length })}
-          </CollapsibleTrigger>
-          <CollapsibleContent asChild><ul>
-            {drafts.map((draft) => (
-              <li key={draft.id}>
-                <button
-                  aria-current={selectedId === draft.id ? 'true' : undefined}
-                  className="kubecode-research-nav-item"
-                  data-focus-key={`card:${draft.id}`}
-                  type="button"
-                  onClick={() => onOpenTask(draft.id)}
+          <TaskDisclosure>{t('kubecode.task.proposals', { count: drafts.length })}</TaskDisclosure>
+          <CollapsibleContent>
+            <ItemGroup className="gap-1">
+              {drafts.map((draft) => (
+                <BoardRow
+                  current={selectedId === draft.id}
+                  id={draft.id}
+                  key={draft.id}
+                  title={draft.title}
+                  onOpen={onOpenTask}
                 >
-                  <span className="kubecode-research-nav-title">{draft.title}</span>
                   <StatusBadge>{t('kubecode.task.revision', { revision: draft.revision })}</StatusBadge>
-                </button>
-              </li>
-            ))}
-          </ul></CollapsibleContent>
+                </BoardRow>
+              ))}
+            </ItemGroup>
+          </CollapsibleContent>
         </Collapsible>
       )}
       {nothingNeedsYou && (
-        <p className="kubecode-task-empty kubecode-research-muted" role="status">{t('kubecode.task.nothingNeedsYou')}</p>
+        <Empty className="kubecode-task-empty" role="status">
+          <EmptyHeader>
+            <EmptyDescription>{t('kubecode.task.nothingNeedsYou')}</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
       )}
       {board && !nothingNeedsYou && (
-        <>
-          <Tabs className="kubecode-task-stages" value={stage} onValueChange={(value) => setStage(value as TaskStage)}>
-            <TabsList aria-label={t('kubecode.task.stagePicker')} className="kubecode-task-stage-tabs" variant="line">
-              {TASK_STAGES.map((value) => (
-                <TabsTrigger className="kubecode-task-stage-tab" key={value} value={value}>
-                  {t('kubecode.task.stageTab', {
-                    stage: stageLabel(t, value),
-                    count: cards.filter((card) => card.stage === value).length,
-                  })}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-            <div className="kubecode-task-columns">
-              {TASK_STAGES.map((value) => {
-                const column = cards.filter((card) => card.stage === value)
-                return (
-                  // Every column stays mounted: a wide board shows all four, a narrow one the picked stage.
-                  <TabsContent asChild forceMount key={value} value={value}>
-                    <section
-                      // A column is named by its stage, not by its tab, and is no extra tab stop.
-                      aria-label={stageLabel(t, value)}
-                      aria-labelledby={undefined}
-                      className="kubecode-task-column"
-                      data-selected={stage === value}
-                      data-stage={value}
-                      role="region"
-                      tabIndex={undefined}
-                    >
-                      <h3>
-                        {stageLabel(t, value)}
-                        <StatusBadge>{column.length}</StatusBadge>
-                      </h3>
-                      {column.length === 0 && <p className="kubecode-research-muted">{t('kubecode.task.columnEmpty')}</p>}
-                      <ul>
+        <Tabs className="kubecode-task-stages" value={stage} onValueChange={(value) => setStage(value as TaskStage)}>
+          <TabsList aria-label={t('kubecode.task.stagePicker')} className="kubecode-task-stage-tabs" variant="line">
+            {TASK_STAGES.map((value) => (
+              <TabsTrigger key={value} value={value}>
+                {t('kubecode.task.stageTab', {
+                  stage: stageLabel(t, value),
+                  count: cards.filter((card) => card.stage === value).length,
+                })}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+          <div className="kubecode-task-columns">
+            {TASK_STAGES.map((value) => {
+              const column = cards.filter((card) => card.stage === value)
+              return (
+                // Every column stays mounted: a wide board shows all four, a narrow one the picked stage.
+                <TabsContent asChild forceMount key={value} value={value}>
+                  <section
+                    // A column is named by its stage, not by its tab, and is no extra tab stop.
+                    aria-label={stageLabel(t, value)}
+                    aria-labelledby={undefined}
+                    className="kubecode-task-column"
+                    data-selected={stage === value}
+                    data-stage={value}
+                    role="region"
+                    tabIndex={undefined}
+                  >
+                    <h3 className="kubecode-task-column-heading flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                      {stageLabel(t, value)}
+                      <StatusBadge>{column.length}</StatusBadge>
+                    </h3>
+                    {column.length === 0 ? (
+                      <Empty className="border p-4 md:p-4">
+                        <EmptyHeader>
+                          <EmptyDescription>{t('kubecode.task.columnEmpty')}</EmptyDescription>
+                        </EmptyHeader>
+                      </Empty>
+                    ) : (
+                      <ul className="flex flex-col gap-2">
                         {column.map((card) => (
                           <li key={card.id}>
                             <TaskCardView
@@ -221,44 +233,59 @@ export function TaskBoardView({
                           </li>
                         ))}
                       </ul>
-                    </section>
-                  </TabsContent>
-                )
-              })}
-            </div>
-          </Tabs>
-        </>
+                    )}
+                  </section>
+                </TabsContent>
+              )
+            })}
+          </div>
+        </Tabs>
       )}
       {archived.length > 0 && (
         <Collapsible className="kubecode-task-archived">
-          <CollapsibleTrigger className="kubecode-task-disclosure">
-            <Icon className="kubecode-task-disclosure-chevron" role="command" size="secondary" source={WORKSPACE_COMMAND_ICONS.expand.Icon} />
-            {t('kubecode.task.archivedList', { count: archived.length })}
-          </CollapsibleTrigger>
-          <CollapsibleContent asChild><ul>
-            {archived.map((item) => {
-              const outcome = outcomeLabel(t, item.outcome)
-              return (
-                <li key={item.id}>
-                  <button
-                    aria-current={selectedId === item.id ? 'true' : undefined}
-                    className="kubecode-research-nav-item"
-                    data-focus-key={`card:${item.id}`}
-                    type="button"
-                    onClick={() => onOpenTask(item.id)}
-                  >
-                    <span className="kubecode-research-nav-title">{item.title}</span>
+          <TaskDisclosure>{t('kubecode.task.archivedList', { count: archived.length })}</TaskDisclosure>
+          <CollapsibleContent>
+            <ItemGroup className="gap-1">
+              {archived.map((item) => {
+                const outcome = outcomeLabel(t, item.outcome)
+                return (
+                  <BoardRow current={selectedId === item.id} id={item.id} key={item.id} title={item.title} onOpen={onOpenTask}>
                     <StatusBadge>
                       {item.stage ? stageLabel(t, item.stage) : t('kubecode.task.archivedProposal')}
                     </StatusBadge>
                     {outcome && <StatusBadge tone="ok">{outcome}</StatusBadge>}
-                  </button>
-                </li>
-              )
-            })}
-          </ul></CollapsibleContent>
+                  </BoardRow>
+                )
+              })}
+            </ItemGroup>
+          </CollapsibleContent>
         </Collapsible>
       )}
     </section>
+  )
+}
+
+/** A proposal or an archived Task: one official Item that is itself the button opening it. */
+function BoardRow({ children, current, id, onOpen, title }: {
+  id: string
+  title: string
+  current: boolean
+  onOpen: (id: string) => void
+  children: ReactNode
+}) {
+  return (
+    <Item asChild size="sm" variant={current ? 'muted' : 'default'}>
+      <button
+        aria-current={current ? 'true' : undefined}
+        data-focus-key={`card:${id}`}
+        type="button"
+        onClick={() => onOpen(id)}
+      >
+        <ItemContent>
+          <ItemTitle className="[overflow-wrap:anywhere]">{title}</ItemTitle>
+        </ItemContent>
+        <ItemActions className="flex-wrap">{children}</ItemActions>
+      </button>
+    </Item>
   )
 }

@@ -1,14 +1,15 @@
-import { Loader2 } from 'lucide-react'
 import { useId, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
-import { Empty, EmptyDescription } from '@/components/ui/empty'
-import { Item, ItemGroup } from '@/components/ui/item'
+import { Empty, EmptyDescription, EmptyHeader } from '@/components/ui/empty'
+import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from '@/components/ui/item'
+import { Spinner } from '@/components/ui/spinner'
 import type { Translator } from '@/lib/i18n'
 
 import { StatusBadge } from '@/components/workspace/StatusBadge'
 
 import type { NeedsYouEntry, NeedsYouTarget } from '../app/location/needsYou'
+import { ReaderNotice } from '../resources/ReaderStates'
 
 const SHOWN = 6
 
@@ -33,34 +34,38 @@ function Rows({ entries, label, onOpenTarget, t }: {
   const heading = useId()
   if (entries.length === 0) return null
   return (
-    <div className="kubecode-needs-you-group">
-      <h3 className="kubecode-nav-heading" id={heading}>{label}</h3>
-      <ItemGroup aria-labelledby={heading} className="kubecode-research-nav-list">
+    <div className="flex flex-col gap-1">
+      <h3 className="px-2 text-xs font-medium text-muted-foreground" id={heading}>{label}</h3>
+      <ItemGroup aria-labelledby={heading} className="gap-1" role="list">
         {entries.map((entry) => {
           const resolving = entry.state === 'resolving'
           return (
-            <Item className="kubecode-needs-you-item" key={entry.key} role="listitem" size="sm">
-              <button
-                aria-busy={resolving || undefined}
-                className="kubecode-research-nav-item kubecode-needs-you-row"
-                data-attention-key={entry.key}
-                data-state={entry.state ?? 'waiting'}
-                type="button"
-                onClick={() => onOpenTarget(entry.target)}
-              >
-                <span className="kubecode-needs-you-text">
-                  <span className="kubecode-needs-you-title">{entry.title}</span>
-                  {(resolving || entry.detail) && (
-                    <span className="kubecode-needs-you-detail">
-                      {resolving ? t('kubecode.attention.resolving') : entry.detail}
-                    </span>
-                  )}
-                </span>
-                {resolving
-                  ? <Loader2 aria-hidden className="animate-spin motion-reduce:animate-none" size={14} />
-                  : <StatusBadge tone={entry.reason.tone}>{entry.reason.label}</StatusBadge>}
-              </button>
-            </Item>
+            <div key={entry.key} role="listitem">
+              {/* The official Item is the row's one button (#259): it opens the context holding the request. */}
+              <Item asChild className="text-left" size="sm">
+                <button
+                  aria-busy={resolving || undefined}
+                  data-attention-key={entry.key}
+                  data-state={entry.state ?? 'waiting'}
+                  type="button"
+                  onClick={() => onOpenTarget(entry.target)}
+                >
+                  <ItemContent className="min-w-0">
+                    <ItemTitle className="[overflow-wrap:anywhere]">{entry.title}</ItemTitle>
+                    {(resolving || entry.detail) && (
+                      <ItemDescription className="line-clamp-none [overflow-wrap:anywhere]">
+                        {resolving ? t('kubecode.attention.resolving') : entry.detail}
+                      </ItemDescription>
+                    )}
+                  </ItemContent>
+                  <ItemActions>
+                    {resolving
+                      ? <Spinner aria-hidden aria-label={undefined} className="motion-reduce:animate-none" role={undefined} />
+                      : <StatusBadge tone={entry.reason.tone}>{entry.reason.label}</StatusBadge>}
+                  </ItemActions>
+                </button>
+              </Item>
+            </div>
           )
         })}
       </ItemGroup>
@@ -86,25 +91,33 @@ export function NeedsYouList({ entries, incomplete, onOpenTarget, onRetryLoad, s
 
 
   return (
-    <div className="kubecode-needs-you-list">
+    <div className="kubecode-needs-you-list flex flex-col gap-3">
+      {/* No live region of its own: the shell announces what newly waits (ADR 0234). */}
       {status === 'loading' && entries.length === 0 && (
-        <p className="kubecode-research-nav-note">{t('kubecode.nav.needsYouLoading')}</p>
+        <div className="flex items-center gap-2 p-2 text-sm text-muted-foreground">
+          <Spinner aria-hidden aria-label={undefined} role={undefined} />
+          <span>{t('kubecode.nav.needsYouLoading')}</span>
+        </div>
       )}
       {status === 'ready' && !incomplete && entries.length === 0 && (
-        <Empty className="kubecode-needs-you-empty">
-          <EmptyDescription>{t('kubecode.nav.needsYouNone')}</EmptyDescription>
+        <Empty className="p-6 md:p-6">
+          <EmptyHeader>
+            <EmptyDescription>{t('kubecode.nav.needsYouNone')}</EmptyDescription>
+          </EmptyHeader>
         </Empty>
       )}
       {failed && (
-        <p className="kubecode-research-nav-note" data-tone="warn">
-          {t('kubecode.nav.needsYouIncomplete')}{' '}
-          <Button size="xs" variant="ghost" onClick={onRetryLoad}>{t('kubecode.vocab.command.retry')}</Button>
-        </p>
+        <ReaderNotice
+          action={<Button className="pointer-coarse:min-h-11" size="xs" variant="outline" onClick={onRetryLoad}>{t('kubecode.vocab.command.retry')}</Button>}
+          live={false}
+        >
+          {t('kubecode.nav.needsYouIncomplete')}
+        </ReaderNotice>
       )}
       <Rows entries={decisions} label={t('kubecode.nav.groupDecisions')} t={t} onOpenTarget={onOpenTarget} />
       <Rows entries={setup} label={t('kubecode.nav.groupSetup')} t={t} onOpenTarget={onOpenTarget} />
       {!all && entries.length > SHOWN && (
-        <Button size="xs" variant="ghost" onClick={() => setAll(true)}>
+        <Button className="self-start" size="xs" variant="ghost" onClick={() => setAll(true)}>
           {t('kubecode.nav.needsYouShowAll', { count: entries.length })}
         </Button>
       )}

@@ -1,5 +1,6 @@
 import { QueueItem } from '@/components/ai-elements/queue'
 import { Shimmer } from '@/components/ai-elements/shimmer'
+import { Badge } from '@/components/ui/badge'
 import { Item, ItemActions, ItemContent, ItemDescription, ItemTitle } from '@/components/ui/item'
 import { MemberIdentity } from '@/components/workspace/MemberIdentity'
 import { StopButton } from '@/components/workspace/SendButton'
@@ -9,6 +10,8 @@ import type { AttentionTaskRef, ExecutionView } from '../api'
 import { askerName } from './attentionTargets'
 
 export type ExecutionRowProps = {
+  /** The only running work at the dock: framed as an outline Item on its own. */
+  alone?: boolean
   entryKey: string
   /** Every turn this Stop ends: all the turns on one Task, or one reply. */
   runs: ExecutionView[]
@@ -30,25 +33,25 @@ function waitText(runs: ExecutionView[], t: Translator): string | null {
  * with their handle, a queued count and one Stop on the first line; the Task,
  * or "Replying", on the second. The name is never repeated in the status.
  */
-export function ExecutionRow({ entryKey, onStop, runs, stopping, t, task }: ExecutionRowProps) {
+export function ExecutionRow({ alone = false, entryKey, onStop, runs, stopping, t, task }: ExecutionRowProps) {
   const name = askerName(runs[0], t)
   const queued = runs.reduce((sum, run) => sum + run.queued, 0)
   const waiting = waitText(runs, t)
   const title = task ? task.title : t('kubecode.execution.replying')
   return (
     // A Queue item (ADR 0242) holding one Item: who and the Stop on the first line, the work on the second.
-    <QueueItem className="kubecode-execution-row" data-entry={entryKey}>
-      <Item className="kubecode-execution-item" size="sm">
-        <ItemContent className="kubecode-execution-content">
-          <ItemTitle className="kubecode-execution-line">
-            <span className="kubecode-execution-who">
+    <QueueItem className="kubecode-execution-row list-none p-0" data-entry={entryKey}>
+      <Item className="w-full flex-nowrap py-1.5" size="sm" variant={alone ? 'outline' : 'default'}>
+        <ItemContent className="min-w-0 gap-0.5">
+          <ItemTitle className="flex w-full min-w-0 items-center gap-2">
+            <span className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
               {runs.map((run) => (run.member
                 ? <MemberIdentity handle={run.member.handle} key={run.run_id} name={run.member.name} role={run.member.role === 'general' ? 'manager' : 'specialist'} size="sm" />
                 : <strong key={run.run_id}>{askerName(run, t)}</strong>))}
             </span>
-            {queued > 0 && <span className="kubecode-execution-queued">{t('kubecode.execution.queuedCount', { count: queued })}</span>}
+            {queued > 0 && <Badge className="kubecode-execution-queued shrink-0" variant="secondary">{t('kubecode.execution.queuedCount', { count: queued })}</Badge>}
           </ItemTitle>
-          <ItemDescription className="kubecode-execution-state">
+          <ItemDescription className="kubecode-execution-state truncate">
             {stopping
               ? t('kubecode.execution.stopping')
               : waiting

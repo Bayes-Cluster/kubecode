@@ -92,3 +92,4 @@ ADRs are immutable after acceptance; a later decision supersedes an earlier one.
 | [0246](0246-official-components-cleanup-and-acceptance.md) | Cleanup after the move to official components |
 | [0247](0247-official-components-own-base-appearance.md) | Official components own base appearance; shared contract for UI A–I |
 | [0248](0248-workspace-shell-on-official-sidebar-sheet-and-resizable.md) | The Workspace shell on the official Sidebar, Sheet and Resizable |
+| [0251](0251-tasks-reviews-and-attention-on-official-components.md) | Tasks, reviews, Needs you and execution feedback on official components |

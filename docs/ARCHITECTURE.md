@@ -887,7 +887,18 @@ the official parts (ADR 0243): the brief is a Plan, internal work a Task list,
 the review's decision a Confirmation and its evidence Sources of Item rows,
 the board a Card per Task with Tabs for the narrow stage picker and
 Collapsibles for proposals and archived Tasks, and Needs you named Item
-groups with Empty.
+groups with Empty. ADR 0251 (#259) removes what was still handcrafted around
+them: the open review is one Card with the official Checkbox, RadioGroup and
+Field controls; archiving asks through an AlertDialog; rows (proposals,
+archived Tasks, Needs you, recent General messages) are `Item asChild` on
+their own button; record sections are Collapsibles; failures, notices,
+loading and empty states use the shared reader states (`ReaderNotice`,
+`ReaderLoading`, `ReaderEmpty` over Alert, Spinner and Empty); prompts report
+an unrecorded answer with a destructive Alert; and a failed turn in the
+execution strip is a destructive Alert. Domain authority is unchanged: stage
+is a Task's only state, a decision resolves once through the attention
+context, Stop pauses only its own Task's round, and `kubecode.css` keeps only
+the board's container-query layout and the sticky review decision on a phone.
 
 Resources and Members are on the official parts (ADR 0244): `RecordPreview`
 shows code and text files in the AI Elements Code Block (one Shiki language

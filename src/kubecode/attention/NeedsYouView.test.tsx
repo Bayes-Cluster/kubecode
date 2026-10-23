@@ -46,7 +46,7 @@ describe('NeedsYouView', () => {
     const decisions = screen.getByRole('list', { name: 'Decisions' })
     expect(within(decisions).getAllByRole('button')).toHaveLength(3)
     expect(decisions).toHaveAttribute('data-slot', 'item-group')
-    expect(within(decisions).getAllByRole('listitem')[0]).toHaveAttribute('data-slot', 'item')
+    expect(within(within(decisions).getAllByRole('listitem')[0]).getByRole('button')).toHaveAttribute('data-slot', 'item')
     fireEvent.click(screen.getByRole('button', { name: /Run pytest/ }))
     expect(onOpenTarget).toHaveBeenLastCalledWith({ place: { view: 'general' }, focus: 'permission:q1' })
     fireEvent.click(screen.getByRole('button', { name: /Which ratios/ }))

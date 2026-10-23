@@ -1,6 +1,8 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { Field, FieldLabel } from '@/components/ui/field'
+import { Item, ItemContent, ItemDescription, ItemGroup, ItemTitle } from '@/components/ui/item'
 import { Textarea } from '@/components/ui/textarea'
 
 import type { TaskDetail } from '../api'
@@ -8,6 +10,7 @@ import { errorMessage } from '../app/errors'
 import { useInspectorServices } from '../app/inspector/inspectorContext'
 import { placeKey, usePlaceState } from '../app/location/placeMemory'
 import { resolveThrough, useAttention } from '../attention/attentionContext'
+import { ReaderNotice } from '../resources/ReaderStates'
 
 type Question = TaskDetail['open_questions'][number]
 
@@ -23,9 +26,9 @@ export function TaskQuestions({ detail, onChanged, projectId }: {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   return (
-    <div className="kubecode-task-questions">
-      {error && <p className="kubecode-research-error" role="alert">{error}</p>}
-      <ul>
+    <div className="flex flex-col gap-2">
+      {error && <ReaderNotice failed>{error}</ReaderNotice>}
+      <ItemGroup className="gap-2">
         {detail.open_questions.map((question) => (
           <QuestionItem
             busy={busy}
@@ -38,7 +41,7 @@ export function TaskQuestions({ detail, onChanged, projectId }: {
             projectId={projectId}
           />
         ))}
-      </ul>
+      </ItemGroup>
     </div>
   )
 }
@@ -69,30 +72,35 @@ function QuestionItem({ busy, memoryKey, onAnswered, onBusy, onError, projectId,
       onBusy(false)
     }
   }
+  const fieldId = useId()
+  // One question as an official Item: what is asked and why, then its answer (#259).
   return (
-    <li data-focus-key={`question:${question.id}`} tabIndex={-1}>
-      <p><strong>{question.question}</strong> <small>({question.work_title})</small></p>
-      {question.impact && <p className="kubecode-research-muted">{question.impact}</p>}
-      {/* A question with options is answered with one of them (the server refuses anything else). */}
-      {question.options.length > 0 ? (
-        <div className="kubecode-work-command-row">
-          {question.options.map((option) => (
-            <Button disabled={busy} key={option} size="xs" variant="outline" onClick={() => void send(option)}>
-              {option}
-            </Button>
-          ))}
-        </div>
-      ) : (
-        <>
-          <label>
-            <span className="sr-only">{t('kubecode.task.answerField')}</span>
-            <Textarea rows={2} value={answer} onChange={(event) => setAnswer(event.target.value)} />
-          </label>
-          <Button disabled={busy || answer.trim() === ''} size="xs" onClick={() => void send(answer.trim())}>
-            {t('kubecode.work.question.answer')}
-          </Button>
-        </>
-      )}
-    </li>
+    <Item data-focus-key={`question:${question.id}`} role="listitem" size="sm" tabIndex={-1} variant="outline">
+      <ItemContent className="gap-2">
+        <ItemTitle className="[overflow-wrap:anywhere]">{question.question}</ItemTitle>
+        <ItemDescription>{question.work_title}</ItemDescription>
+        {question.impact && <ItemDescription className="line-clamp-none">{question.impact}</ItemDescription>}
+        {/* A question with options is answered with one of them (the server refuses anything else). */}
+        {question.options.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {question.options.map((option) => (
+              <Button disabled={busy} key={option} className="pointer-coarse:min-h-11" size="xs" variant="outline" onClick={() => void send(option)}>
+                {option}
+              </Button>
+            ))}
+          </div>
+        ) : (
+          <Field>
+            <FieldLabel className="sr-only" htmlFor={fieldId}>{t('kubecode.task.answerField')}</FieldLabel>
+            <Textarea id={fieldId} rows={2} value={answer} onChange={(event) => setAnswer(event.target.value)} />
+            <div>
+              <Button disabled={busy || answer.trim() === ''} className="pointer-coarse:min-h-11" size="xs" onClick={() => void send(answer.trim())}>
+                {t('kubecode.work.question.answer')}
+              </Button>
+            </div>
+          </Field>
+        )}
+      </ItemContent>
+    </Item>
   )
 }

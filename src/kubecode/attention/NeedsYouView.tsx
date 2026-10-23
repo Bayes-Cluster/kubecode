@@ -1,6 +1,6 @@
 import { useId } from 'react'
 
-import { Item, ItemContent, ItemDescription, ItemGroup, ItemTitle } from '@/components/ui/item'
+import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from '@/components/ui/item'
 import type { StatusTone } from '@/components/workspace/StatusBadge'
 import type { Translator } from '@/lib/i18n'
 
@@ -41,31 +41,32 @@ function ManagerDecisions({ decisions, t }: { decisions: ManagerDecision[]; t: T
   const heading = useId()
   if (decisions.length === 0) return null
   return (
-    <div className="kubecode-needs-you-group">
-      <h3 className="kubecode-nav-heading" id={heading}>{t('kubecode.needsYou.managerDecisions.title')}</h3>
-      <ItemGroup aria-labelledby={heading} className="kubecode-research-nav-list">
+    <div className="flex flex-col gap-1">
+      <h3 className="px-2 text-xs font-medium text-muted-foreground" id={heading}>{t('kubecode.needsYou.managerDecisions.title')}</h3>
+      <ItemGroup aria-labelledby={heading} className="gap-1" role="list">
         {decisions.map((decision) => (
           <Item
-            className="kubecode-needs-you-decision"
             data-decision={decision.decision}
             key={decision.id}
             role="listitem"
             size="sm"
           >
-            <ItemContent className="kubecode-needs-you-text">
-              <ItemTitle className="kubecode-needs-you-title">
+            <ItemContent className="min-w-0">
+              <ItemTitle className="[overflow-wrap:anywhere]">
                 {t('kubecode.needsYou.managerDecisions.summary', {
                   member: decision.member?.name ?? t('kubecode.needsYou.managerDecisions.someone'),
                   tool: decision.tool,
                 })}
               </ItemTitle>
-              <ItemDescription className="kubecode-needs-you-detail">
+              <ItemDescription className="line-clamp-none [overflow-wrap:anywhere]">
                 {t('kubecode.needsYou.managerDecisions.reason', { reason: reasonOf(decision, t) })}
               </ItemDescription>
             </ItemContent>
-            <StatusBadge tone={DECISION_TONE[decision.decision]}>
-              {t(`kubecode.needsYou.managerDecisions.${decision.decision}`)}
-            </StatusBadge>
+            <ItemActions>
+              <StatusBadge tone={DECISION_TONE[decision.decision]}>
+                {t(`kubecode.needsYou.managerDecisions.${decision.decision}`)}
+              </StatusBadge>
+            </ItemActions>
           </Item>
         ))}
       </ItemGroup>
@@ -83,7 +84,7 @@ export function NeedsYouView({ entries, incomplete, managerDecisions = [], onOpe
   return (
     <section aria-label={t('kubecode.nav.needsYou')} className="kubecode-needs-you-view">
       <DestinationHeader description={t('kubecode.nav.needsYouDescription')} destination="needs-you" t={t} />
-      <div className="kubecode-destination-body">
+      <div className="kubecode-destination-body flex flex-col gap-4">
         <NeedsYouList
           entries={entries}
           incomplete={incomplete}

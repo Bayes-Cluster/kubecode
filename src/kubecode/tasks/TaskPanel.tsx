@@ -1,17 +1,22 @@
+import { CircleAlert } from 'lucide-react'
 import { useCallback, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { Spinner } from '@/components/ui/spinner'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DecisionButton } from '@/components/workspace/DecisionButton'
+import { StatusBadge } from '@/components/workspace/StatusBadge'
 import { MoreActions, type MoreActionItem } from '@/components/workspace/MoreActions'
 import { Icon } from '@/kubecode/icons'
 import { WORKSPACE_DESTINATION_ICONS, WORKSPACE_OBJECT_ICONS } from '@/kubecode/icons/workspaceIcons'
@@ -25,6 +30,7 @@ import type { InspectorPanelProps } from '../app/inspector/inspectorPanels'
 import type { InspectorEntry } from '../app/location/inspector'
 import { placeKey, usePlaceState } from '../app/location/placeMemory'
 import { useResearchBundle } from '../research/useResearch'
+import { ReaderNotice } from '../resources/ReaderStates'
 import { TaskActivity } from './TaskActivity'
 import { outcomeLabel } from './taskLabels'
 import { defaultTabOf, nextStepOf, type TaskNextStep, type TaskTab } from './taskLifecycle'
@@ -33,7 +39,6 @@ import { TaskOverview } from './TaskOverview'
 import { TaskResults } from './TaskResults'
 import { TaskStatusBadges } from './TaskStatusBadges'
 import { TaskWork } from './TaskWork'
-import { StatusBadge } from '@/components/workspace/StatusBadge'
 import { useTaskDetail } from './useTaskDetail'
 
 const RESULTS_PENDING = new Set(['review', 'evidence_changed', 'suggestion'])
@@ -123,10 +128,9 @@ export function TaskPanel({ entry, projectId }: InspectorPanelProps<Extract<Insp
   if (status === 'error') {
     return (
       <InspectorPanel icon={<TaskIcon />} title={t('kubecode.nav.taskDetail')}>
-        <p className="kubecode-research-error" role="alert">
-          {t('kubecode.task.loadFailed')}{' '}
-          <Button size="xs" variant="ghost" onClick={reload}>{t('kubecode.retry')}</Button>
-        </p>
+        <ReaderNotice action={<Button className="pointer-coarse:min-h-11" size="xs" variant="outline" onClick={reload}>{t('kubecode.retry')}</Button>} failed>
+          {t('kubecode.task.loadFailed')}
+        </ReaderNotice>
       </InspectorPanel>
     )
   }
@@ -177,16 +181,19 @@ export function TaskPanel({ entry, projectId }: InspectorPanelProps<Extract<Insp
       meta={<TaskStatusBadges archived={archived} draft={draft} t={t} task={detail} />}
       title={title}
     >
-      <div className="kubecode-task-panel">
+      <div className="flex min-w-0 flex-col gap-3">
         {/* What happens next, and where it is said: the header keeps only the Task's own facts (360px inspector). */}
-        <div aria-label={t('kubecode.task.nextTitle')} className="kubecode-task-next-step" data-tone={next.tone} role="group">
-          {nextText && <p className="kubecode-task-next" data-tone={next.tone}>{nextText}</p>}
-          <Button size="sm" variant="outline" onClick={discuss}>
-            <Icon role="command" source={WORKSPACE_DESTINATION_ICONS.general.Icon} />
-            {t('kubecode.task.discuss')}
-          </Button>
-        </div>
-        {error && <p className="kubecode-research-error" role="alert">{error}</p>}
+        <Alert aria-label={t('kubecode.task.nextTitle')} className="kubecode-task-next-step" data-tone={next.tone} role="group">
+          {next.tone === 'warn' && <CircleAlert aria-hidden />}
+          <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
+            {nextText && <span className="min-w-0 flex-1">{nextText}</span>}
+            <Button size="sm" variant="outline" onClick={discuss}>
+              <Icon role="command" source={WORKSPACE_DESTINATION_ICONS.general.Icon} />
+              {t('kubecode.task.discuss')}
+            </Button>
+          </AlertDescription>
+        </Alert>
+        {error && <ReaderNotice failed>{error}</ReaderNotice>}
         {/* An accepted (Done) Task has no work left to run, pause or stop (#229). */}
         {detail && !archived && detail.stage !== 'done' && <TaskWork detail={detail} projectId={projectId} onChanged={changed} />}
         {archived && (
@@ -195,8 +202,8 @@ export function TaskPanel({ entry, projectId }: InspectorPanelProps<Extract<Insp
           </DecisionButton>
         )}
         {draft || !detail ? overview : (
-          <Tabs className="kubecode-task-tabs" value={tab} onValueChange={(value) => setTab(value as TaskTab)}>
-            <TabsList aria-label={t('kubecode.task.tabs')} variant="line">
+          <Tabs className="min-w-0" value={tab} onValueChange={(value) => setTab(value as TaskTab)}>
+            <TabsList aria-label={t('kubecode.task.tabs')} className="sticky top-0 z-[1] max-w-full overflow-x-auto bg-background" variant="line">
               <TabsTrigger value="overview">{t('kubecode.task.tab.overview')}</TabsTrigger>
               <TabsTrigger value="results">
                 {t('kubecode.task.tab.results')}
@@ -216,35 +223,45 @@ export function TaskPanel({ entry, projectId }: InspectorPanelProps<Extract<Insp
           </Tabs>
         )}
       </div>
-      <Dialog open={dialog !== null} onOpenChange={(open) => { if (!open) setDialog(null) }}>
-        <DialogContent>
+      {/* Archiving asks first, or says why it cannot happen now: the official AlertDialog (#259). */}
+      <AlertDialog open={dialog !== null} onOpenChange={(open) => { if (!open && !busy) setDialog(null) }}>
+        <AlertDialogContent>
           {dialog?.kind === 'blocked' ? (
             <>
-              <DialogHeader>
-                <DialogTitle>{t('kubecode.task.archiveBlocked.title')}</DialogTitle>
-                <DialogDescription>{blockedText(t, dialog.reason)}</DialogDescription>
-              </DialogHeader>
-              <DialogFooter>
-                <DialogClose asChild><Button variant="ghost">{t('kubecode.cancel')}</Button></DialogClose>
-                <Button onClick={() => { setDialog(null); discuss() }}>{t('kubecode.task.discuss')}</Button>
-              </DialogFooter>
+              <AlertDialogHeader>
+                <AlertDialogTitle>{t('kubecode.task.archiveBlocked.title')}</AlertDialogTitle>
+                <AlertDialogDescription>{blockedText(t, dialog.reason)}</AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>{t('kubecode.cancel')}</AlertDialogCancel>
+                <AlertDialogAction onClick={discuss}>{t('kubecode.task.discuss')}</AlertDialogAction>
+              </AlertDialogFooter>
             </>
           ) : (
             <>
-              <DialogHeader>
-                <DialogTitle>{t('kubecode.task.archiveConfirm.title', { title })}</DialogTitle>
-                <DialogDescription>{t('kubecode.task.archiveConfirm.body')}</DialogDescription>
-              </DialogHeader>
-              <DialogFooter>
-                <DialogClose asChild><Button variant="ghost">{t('kubecode.cancel')}</Button></DialogClose>
-                <Button aria-busy={busy || undefined} disabled={busy} onClick={() => void setArchived(true)}>
+              <AlertDialogHeader>
+                <AlertDialogTitle>{t('kubecode.task.archiveConfirm.title', { title })}</AlertDialogTitle>
+                <AlertDialogDescription>{t('kubecode.task.archiveConfirm.body')}</AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={busy}>{t('kubecode.cancel')}</AlertDialogCancel>
+                <AlertDialogAction
+                  aria-busy={busy || undefined}
+                  disabled={busy}
+                  onClick={(event) => {
+                    // The dialog stays until the server answers: it closes on success, or turns into why not.
+                    event.preventDefault()
+                    void setArchived(true)
+                  }}
+                >
+                  {busy && <Spinner aria-hidden aria-label={undefined} data-icon="inline-start" role={undefined} />}
                   {t('kubecode.task.archiveConfirm.confirm')}
-                </Button>
-              </DialogFooter>
+                </AlertDialogAction>
+              </AlertDialogFooter>
             </>
           )}
-        </DialogContent>
-      </Dialog>
+        </AlertDialogContent>
+      </AlertDialog>
     </InspectorPanel>
   )
 }

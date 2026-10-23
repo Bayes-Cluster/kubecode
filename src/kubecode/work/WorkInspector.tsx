@@ -16,6 +16,7 @@ import type {
   WorkspaceEvent,
 } from '../api'
 import type { WorkspaceConnectionState } from '../useWorkspaceEventStream'
+import { ReaderEmpty, ReaderLoading, ReaderNotice } from '../resources/ReaderStates'
 import {
   CONDITION_LABELS,
   hasOpenAttempt,
@@ -112,9 +113,9 @@ export function WorkInspector({
         <header>
           <IconButton icon={<X aria-hidden size={16} />} label={t('kubecode.work.closeInspector')} onClick={onClose} />
         </header>
-        <p className="kubecode-research-muted" role={status === 'error' ? 'alert' : 'status'}>
-          {status === 'error' ? t('kubecode.work.loadFailed') : t('kubecode.work.loading')}
-        </p>
+        {status === 'error'
+          ? <ReaderNotice failed>{t('kubecode.work.loadFailed')}</ReaderNotice>
+          : <ReaderLoading>{t('kubecode.work.loading')}</ReaderLoading>}
       </aside>
     )
   }
@@ -234,28 +235,24 @@ export function WorkInspector({
       </dl>
 
       {item.condition_reason && item.condition !== 'none' && (
-        <p className="kubecode-research-notice">{item.condition_reason}</p>
+        <ReaderNotice live={false}>{item.condition_reason}</ReaderNotice>
       )}
       {item.stage === 'analyzing' && (
-        <p className="kubecode-research-notice" role="status">{t('kubecode.work.analysisWaiting')}</p>
+        <ReaderNotice>{t('kubecode.work.analysisWaiting')}</ReaderNotice>
       )}
       {item.closed_reason && (
-        <p className="kubecode-research-notice">
-          {t('kubecode.work.closedReason', { reason: item.closed_reason })}
-        </p>
+        <ReaderNotice live={false}>{t('kubecode.work.closedReason', { reason: item.closed_reason })}</ReaderNotice>
       )}
       {detail.operable === 'legacy_team' && (
-        <p className="kubecode-research-notice" role="status">
-          {t('kubecode.work.legacyNotice')}
-          {onOpenTeam && detail.team && (
-            <>
-              {' '}
-              <Button size="xs" variant="ghost" onClick={() => onOpenTeam(detail.team!.id)}>
-                {t('kubecode.work.openTeam')}
-              </Button>
-            </>
+        <ReaderNotice
+          action={onOpenTeam && detail.team && (
+            <Button size="xs" variant="outline" onClick={() => onOpenTeam(detail.team!.id)}>
+              {t('kubecode.work.openTeam')}
+            </Button>
           )}
-        </p>
+        >
+          {t('kubecode.work.legacyNotice')}
+        </ReaderNotice>
       )}
 
       <Section title={t('kubecode.work.field.objective')} text={item.description} />
@@ -279,7 +276,7 @@ export function WorkInspector({
 
       <section>
         <h4>{t('kubecode.work.field.attempts')}</h4>
-        {detail.attempts.length === 0 && <p className="kubecode-research-muted">{t('kubecode.work.noAttempts')}</p>}
+        {detail.attempts.length === 0 && <ReaderEmpty>{t('kubecode.work.noAttempts')}</ReaderEmpty>}
         <ol>
           {detail.attempts.map((attempt) => (
             <li key={attempt.id} data-status={attempt.status}>
@@ -431,9 +428,9 @@ export function WorkInspector({
         <section aria-label={t('kubecode.work.stale.title')}>
           <h4>{t('kubecode.work.stale.title')}</h4>
           {/* A Task's evidence is accepted only by the researcher, at a version they displayed, in its Results (ADR 0230 §4). */}
-          <p className="kubecode-research-notice">
+          <ReaderNotice live={false}>
             {detail.research?.task ? t('kubecode.work.stale.taskHint') : t('kubecode.work.stale.hint')}
-          </p>
+          </ReaderNotice>
           {native && !detail.research?.task && detail.stale_evidence.map((entry) => (
             <div className="kubecode-work-command-row" key={entry.result_id}>
               <span>{entry.kind}: {entry.ref_id}</span>
@@ -481,7 +478,7 @@ export function WorkInspector({
         </section>
       )}
 
-      {error && <p className="kubecode-research-error" role="alert">{error}</p>}
+      {error && <ReaderNotice failed>{error}</ReaderNotice>}
 
       {native && (
         <section className="kubecode-work-commands" aria-label={t('kubecode.work.commands')}>
