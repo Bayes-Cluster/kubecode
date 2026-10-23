@@ -178,7 +178,7 @@ export function RecordPreview({
   const showNewer = <Button size="xs" variant="outline" onClick={showCurrent}>{t('kubecode.resources.preview.showNewer')}</Button>
   return (
     <div
-      className={cn('kubecode-record-preview flex min-w-0 flex-col gap-3', compact && 'kubecode-record-preview-compact')}
+      className="flex min-w-0 flex-col gap-3"
       data-shown-revision={shownRevision ?? undefined}
       data-testid="evidence-viewer"
     >

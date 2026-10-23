@@ -549,9 +549,6 @@
     padding: 0;
     overflow: hidden;
   }
-  body.custom-window-chrome {
-    padding-top: 32px;
-  }
   html, body {
     height: 100%;
     width: 100%;
@@ -573,23 +570,12 @@
     option,
     [contenteditable]:not([contenteditable="false"]),
     [contenteditable]:not([contenteditable="false"]) *,
-    .editor__blocknote-container .bn-editor,
-    .editor__blocknote-container .bn-editor *,
-    .raw-editor-codemirror,
-    .raw-editor-codemirror .cm-editor,
-    .raw-editor-codemirror .cm-scroller,
-    .raw-editor-codemirror .cm-content,
-    .raw-editor-codemirror .cm-content *,
     .ai-markdown,
     .ai-markdown *,
     [data-testid="ai-message"],
     [data-testid="ai-message"] *,
     [data-testid="action-card-details"],
     [data-testid="action-card-details"] *,
-    .diff-view,
-    .diff-view *,
-    .sheet-editor,
-    .sheet-editor *,
     pre,
     pre *,
     code,
@@ -621,25 +607,6 @@
     -webkit-user-select: none;
     user-select: none;
   }
-  html.ai-workspace-native-window,
-  html.ai-workspace-native-window body,
-  html.ai-workspace-native-window #root {
-    background: transparent;
-    overflow: hidden;
-  }
-  html.ai-workspace-native-window body {
-    padding: 20px;
-  }
-  html.ai-workspace-native-window #root {
-    background: var(--background);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.12), 0 1px 3px rgba(15, 23, 42, 0.10);
-  }
-  html.ai-workspace-native-window.dark #root,
-  html.ai-workspace-native-window[data-theme="dark"] #root {
-    box-shadow: 0 12px 26px rgba(0, 0, 0, 0.30), 0 1px 4px rgba(0, 0, 0, 0.22);
-  }
   /* Interactive controls should advertise clickability unless disabled. */
   :where(
     button:not(:disabled):not([aria-disabled="true"]),
@@ -651,27 +618,6 @@
   ) {
     cursor: pointer;
   }
-}
-
-/* --- Label typography (Inter, sentence case) --- */
-/* t8: Section labels, metadata tags — 11px medium */
-.font-mono-label {
-  font-family: 'Inter', sans-serif;
-  font-size: 11px;
-  font-weight: 500;
-}
-
-/* t9: Overlines, category labels — 10px regular */
-.font-mono-overline {
-  font-family: 'Inter', sans-serif;
-  font-size: 10px;
-  font-weight: 400;
-  letter-spacing: 0.02em;
-}
-
-.referenced-by-panel button:hover {
-  text-decoration: underline;
-  text-decoration-style: dotted;
 }
 
 /* --- AI Chat markdown rendering --- */
@@ -844,25 +790,3 @@
 .ai-markdown .hljs-deletion { color: var(--syntax-highlight-deletion); background: var(--syntax-highlight-deletion-bg); }
 .ai-markdown .hljs-meta { color: var(--syntax-highlight-comment); }
 
-/* --- AI panel working border animation --- */
-
-@keyframes ai-border-pulse {
-  0%, 100% { border-color: var(--accent-blue); opacity: 1; }
-  50% { border-color: var(--accent-blue-hover); opacity: 0.6; }
-}
-
-/* --- Typing indicator dots --- */
-
-.typing-dot {
-  display: inline-block;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--muted-foreground);
-  animation: typing-bounce 1.2s ease-in-out infinite;
-}
-
-@keyframes typing-bounce {
-  0%, 60%, 100% { opacity: 0.3; transform: translateY(0); }
-  30% { opacity: 1; transform: translateY(-2px); }
-}
