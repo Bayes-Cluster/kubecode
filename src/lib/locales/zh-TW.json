@@ -1201,6 +1201,8 @@
   "kubecode.resizeNavigation": "調整導覽大小",
   "kubecode.resizeContextPanel": "調整脈絡面板大小",
   "kubecode.resizeTerminal": "調整終端機大小",
+  "kubecode.resizeTerminalSplit": "調整分割終端機大小",
+  "kubecode.resizeTerminalNavigator": "調整終端機清單大小",
   "kubecode.collapse": "收合",
   "kubecode.settings": "設定",
   "kubecode.settingsDescription": "設定 Kubecode 工作區。",

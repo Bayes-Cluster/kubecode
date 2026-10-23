@@ -16,7 +16,10 @@ import {
 } from 'lucide-react'
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 
+import { IconButton } from '@/components/workspace/IconButton'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { Spinner } from '@/components/ui/spinner'
 import type { Translator } from '@/lib/i18n'
 
 import type { Entry, FileChangedPayload, KubecodeApi } from './api'
@@ -359,17 +362,14 @@ export function ProjectFileTree({
   return (
     <div className="kubecode-project-file-browser">
       <div className="kubecode-file-tree-controls">
-        <Button
-          aria-label={showExcluded
+        <IconButton
+          aria-pressed={showExcluded}
+          icon={showExcluded ? <Eye /> : <EyeOff />}
+          label={showExcluded
             ? t('kubecode.hideExcludedFiles')
             : t('kubecode.showExcludedFiles')}
-          aria-pressed={showExcluded}
-          size="icon-xs"
-          variant="ghost"
           onClick={() => setShowExcluded((current) => !current)}
-        >
-          {showExcluded ? <Eye  size={16}/> : <EyeOff  size={16}/>}
-        </Button>
+        />
       </div>
       <div
         aria-busy={isLoading || undefined}
@@ -398,9 +398,15 @@ export function ProjectFileTree({
           />
         ) : rows.map((row, index) => renderRow(index, row))}
       </div>
-      {isLoading && <div className="kubecode-file-tree-empty">{t('kubecode.loading')}</div>}
+      {isLoading && (
+        <div className="flex items-center gap-2 px-2 py-3 text-xs text-muted-foreground">
+          <Spinner /> {t('kubecode.loading')}
+        </div>
+      )}
       {expandedErrors.map((message) => (
-        <div className="kubecode-file-tree-empty" key={message} role="status">{message}</div>
+        <Alert className="mx-1 my-2 w-auto" key={message} role="status">
+          <AlertDescription className="[overflow-wrap:anywhere]">{message}</AlertDescription>
+        </Alert>
       ))}
     </div>
   )

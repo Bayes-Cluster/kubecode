@@ -1201,6 +1201,8 @@
   "kubecode.resizeNavigation": "ナビゲーションのサイズを変更",
   "kubecode.resizeContextPanel": "コンテキストパネルのサイズを変更",
   "kubecode.resizeTerminal": "ターミナルのサイズを変更",
+  "kubecode.resizeTerminalSplit": "分割したターミナルのサイズを変更",
+  "kubecode.resizeTerminalNavigator": "ターミナル一覧のサイズを変更",
   "kubecode.collapse": "Collapse",
   "kubecode.settings": "Settings",
   "kubecode.settingsDescription": "Configure the Kubecode workspace.",

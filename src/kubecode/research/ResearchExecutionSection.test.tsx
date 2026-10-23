@@ -72,7 +72,7 @@ describe('ResearchExecutionSection', () => {
       }),
     })
     await screen.findByText('kubecode.research.exec.title')
-    const card = (name: string) => screen.getByText(name).closest('li')!
+    const card = (name: string) => screen.getByText(name).closest('[data-slot="item"]') as HTMLElement
     expect(within(card('running one')).getByText('kubecode.research.exec.notYetAnalyzable')).toBeInTheDocument()
     expect(within(card('finished one')).getByText('kubecode.research.exec.awaitingAnalysis')).toBeInTheDocument()
     expect(within(card('settled one')).getByText('kubecode.research.exec.analyzed')).toBeInTheDocument()
@@ -93,7 +93,7 @@ describe('ResearchExecutionSection', () => {
         })),
       }),
     })
-    const card = (await screen.findByText('baseline')).closest('li')!
+    const card = (await screen.findByText('baseline')).closest('[data-slot="item"]') as HTMLElement
     expect(within(card).getByText('kubecode.research.availability.changed')).toBeInTheDocument()
     expect(within(card).getByText(/exec\.policyRevision/)).toHaveTextContent('"revision":2')
     expect(within(card).getByText('kubecode.research.exec.decision.followUp')).toBeInTheDocument()
@@ -137,7 +137,8 @@ describe('ResearchExecutionSection', () => {
     })
     fireEvent.click(await screen.findByRole('button', { name: 'kubecode.research.exec.cancelAll' }))
     expect(cancelResearchExecution).not.toHaveBeenCalled()
-    const dialog = screen.getByRole('alertdialog')
+    const dialog = screen.getByRole('alertdialog', { name: 'kubecode.research.exec.cancelAll' })
+    expect(dialog).toHaveAttribute('data-slot', 'alert-dialog-content')
     expect(dialog).toHaveTextContent('"count":1')
     fireEvent.click(within(dialog).getByRole('button', { name: 'kubecode.research.exec.keepRunning' }))
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()

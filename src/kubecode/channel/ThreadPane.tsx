@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ViewHeader } from '@/components/workspace/ViewHeader'
 import { Icon } from '@/kubecode/icons'
 import { WORKSPACE_COMMAND_ICONS } from '@/kubecode/icons/workspaceIcons'
@@ -27,7 +28,7 @@ import { MessageList } from './MessageList'
 import { useMessageFeed } from './useChannel'
 
 const NOT_LINKED = '__none__'
-const WHOLE_QUESTION = ''
+const WHOLE_QUESTION = '__whole__'
 
 type ThreadPaneProps = {
   api: KubecodeApi
@@ -144,31 +145,35 @@ export function ThreadPane({
       />
       <Alert role="note"><AlertDescription>{t('kubecode.channel.legacyThread.readOnly')}</AlertDescription></Alert>
       <div className="kubecode-channel-link">
-        <select
-          aria-label={t('kubecode.channel.linkLabel')}
-          className="kubecode-channel-select"
-          value={selected}
-          onChange={(event) => setChoice(event.target.value)}
-        >
-          <option value={NOT_LINKED}>{t('kubecode.channel.notLinked')}</option>
-          {candidates.map((item) => (
-            <option key={item.id} value={item.id}>{item.title}</option>
-          ))}
-        </select>
+        <Select value={selected} onValueChange={setChoice}>
+          <SelectTrigger aria-label={t('kubecode.channel.linkLabel')} className="max-w-full min-w-0" size="sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectItem value={NOT_LINKED}>{t('kubecode.channel.notLinked')}</SelectItem>
+              {candidates.map((item) => (
+                <SelectItem key={item.id} value={item.id}>{item.title}</SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
         {chosenResearch && roundOptions.length > 0 && (
-          <select
-            aria-label={t('kubecode.channel.roundLabel')}
-            className="kubecode-channel-select"
-            value={selectedRound}
-            onChange={(event) => setRoundChoice(event.target.value)}
-          >
-            <option value={WHOLE_QUESTION}>{t('kubecode.channel.noRound')}</option>
-            {roundOptions.map((round) => (
-              <option key={round.id} value={round.id}>
-                {t('kubecode.channel.roundOption', { round: round.round })}
-              </option>
-            ))}
-          </select>
+          <Select value={selectedRound} onValueChange={setRoundChoice}>
+            <SelectTrigger aria-label={t('kubecode.channel.roundLabel')} className="max-w-full min-w-0" size="sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                <SelectItem value={WHOLE_QUESTION}>{t('kubecode.channel.noRound')}</SelectItem>
+                {roundOptions.map((round) => (
+                  <SelectItem key={round.id} value={round.id}>
+                    {t('kubecode.channel.roundOption', { round: round.round })}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
         )}
         <Button
           disabled={link.busy || (

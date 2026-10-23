@@ -1201,6 +1201,8 @@
   "kubecode.resizeNavigation": "调整导航大小",
   "kubecode.resizeContextPanel": "调整上下文面板大小",
   "kubecode.resizeTerminal": "调整终端大小",
+  "kubecode.resizeTerminalSplit": "调整拆分终端大小",
+  "kubecode.resizeTerminalNavigator": "调整终端列表大小",
   "kubecode.collapse": "收起",
   "kubecode.settings": "设置",
   "kubecode.settingsDescription": "配置 Kubecode 工作区。",

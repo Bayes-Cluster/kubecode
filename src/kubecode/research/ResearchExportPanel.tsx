@@ -1,6 +1,10 @@
-import { useRef, useState } from 'react'
+import { useId, useRef, useState } from 'react'
+import { CircleCheck, TriangleAlert } from 'lucide-react'
 
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Field, FieldGroup, FieldLabel, FieldLegend, FieldSet } from '@/components/ui/field'
 import { Textarea } from '@/components/ui/textarea'
 import type { TranslationKey, Translator } from '@/lib/i18n'
 
@@ -10,6 +14,7 @@ import type {
   ResearchExportPacket,
   ResearchPacketSectionId,
 } from '../api'
+import { ResearchSection } from './ResearchLayout'
 
 const SECTIONS: Array<{ id: ResearchPacketSectionId; label: TranslationKey }> = [
   { id: 'brief', label: 'kubecode.research.export.section.brief' },
@@ -49,6 +54,7 @@ export function ResearchExportPanel({
   const [copy, setCopy] = useState<'idle' | 'copied' | 'failed'>('idle')
   // Only the newest build may land: a slow response for other checkboxes is dropped.
   const ticket = useRef(0)
+  const fieldId = useId()
 
   const build = async () => {
     const mine = ++ticket.current
@@ -78,33 +84,34 @@ export function ResearchExportPanel({
   }
 
   return (
-    <section className="kubecode-research-section" aria-label={t('kubecode.research.export.title')}>
-      <h3>{t('kubecode.research.export.title')}</h3>
-      <p className="kubecode-research-muted">{t('kubecode.research.export.intro')}</p>
-      <fieldset className="kubecode-research-carry">
-        <legend>{t('kubecode.research.export.sections')}</legend>
-        {SECTIONS.map((section) => (
-          <label key={section.id}>
-            <input
-              checked={included.has(section.id)}
-              type="checkbox"
-              onChange={(event) => {
-                ticket.current += 1
-                setPacket(null)
-                setState('idle')
-                setIncluded((current) => {
-                  const next = new Set(current)
-                  if (event.target.checked) next.add(section.id)
-                  else next.delete(section.id)
-                  return next
-                })
-              }}
-            />
-            <span>{t(section.label)}</span>
-          </label>
-        ))}
-      </fieldset>
-      <div className="kubecode-research-panel-actions">
+    <ResearchSection label={t('kubecode.research.export.title')} named>
+      <p className="m-0 text-sm text-muted-foreground">{t('kubecode.research.export.intro')}</p>
+      <FieldSet className="rounded-md border p-3">
+        <FieldLegend variant="label">{t('kubecode.research.export.sections')}</FieldLegend>
+        <FieldGroup className="gap-2">
+          {SECTIONS.map((section) => (
+            <Field key={section.id} orientation="horizontal">
+              <Checkbox
+                checked={included.has(section.id)}
+                id={`${fieldId}-${section.id}`}
+                onCheckedChange={(checked) => {
+                  ticket.current += 1
+                  setPacket(null)
+                  setState('idle')
+                  setIncluded((current) => {
+                    const next = new Set(current)
+                    if (checked === true) next.add(section.id)
+                    else next.delete(section.id)
+                    return next
+                  })
+                }}
+              />
+              <FieldLabel className="font-normal" htmlFor={`${fieldId}-${section.id}`}>{t(section.label)}</FieldLabel>
+            </Field>
+          ))}
+        </FieldGroup>
+      </FieldSet>
+      <div className="flex justify-end">
         <Button
           aria-busy={state === 'loading'}
           disabled={included.size === 0 || state === 'loading'}
@@ -116,28 +123,29 @@ export function ResearchExportPanel({
         </Button>
       </div>
       {state === 'failed' && (
-        <p className="kubecode-research-error" role="alert">{t('kubecode.research.export.previewFailed')}</p>
+        <Alert variant="destructive"><AlertDescription>{t('kubecode.research.export.previewFailed')}</AlertDescription></Alert>
       )}
       {packet && packet.brief_revision !== detail.revision && (
-        <p className="kubecode-research-notice" role="status">{t('kubecode.research.export.outdated')}</p>
+        <Alert role="status"><TriangleAlert /><AlertDescription>{t('kubecode.research.export.outdated')}</AlertDescription></Alert>
       )}
       {packet && packet.brief_revision === detail.revision && (
-        <div>
-          <h4>{t('kubecode.research.export.leaves')}</h4>
-          <ul>
-            {SECTIONS.filter((section) => (
-              packet.sections.find((item) => item.id === section.id)?.included
-            )).map((section) => <li key={section.id}>{t(CONTENTS[section.id])}</li>)}
-            <li>{t('kubecode.research.export.contents.never')}</li>
-          </ul>
-          <p className="kubecode-research-muted">
+        <div className="flex flex-col gap-2">
+          <ResearchSection label={t('kubecode.research.export.leaves')} level={4}>
+            <ul className="m-0 list-disc pl-5 text-sm">
+              {SECTIONS.filter((section) => (
+                packet.sections.find((item) => item.id === section.id)?.included
+              )).map((section) => <li key={section.id}>{t(CONTENTS[section.id])}</li>)}
+              <li>{t('kubecode.research.export.contents.never')}</li>
+            </ul>
+          </ResearchSection>
+          <p className="m-0 text-xs text-muted-foreground">
             {t('kubecode.research.export.size', {
               bytes: packet.total_bytes,
               revision: packet.brief_revision,
             })}
           </p>
           {packet.truncated && (
-            <p className="kubecode-research-notice" role="status">{t('kubecode.research.export.truncated')}</p>
+            <Alert role="status"><TriangleAlert /><AlertDescription>{t('kubecode.research.export.truncated')}</AlertDescription></Alert>
           )}
           <Textarea
             aria-label={t('kubecode.research.export.packet')}
@@ -145,15 +153,15 @@ export function ResearchExportPanel({
             rows={10}
             value={packet.markdown}
           />
-          <div className="kubecode-research-panel-actions">
+          <div className="flex justify-end">
             <Button size="sm" onClick={() => void copyPacket()}>
               {t('kubecode.research.export.copy')}
             </Button>
           </div>
-          {copy === 'copied' && <p className="kubecode-research-notice" role="status">{t('kubecode.research.export.copied')}</p>}
-          {copy === 'failed' && <p className="kubecode-research-error" role="alert">{t('kubecode.research.export.copyFailed')}</p>}
+          {copy === 'copied' && <Alert role="status"><CircleCheck /><AlertDescription>{t('kubecode.research.export.copied')}</AlertDescription></Alert>}
+          {copy === 'failed' && <Alert variant="destructive"><AlertDescription>{t('kubecode.research.export.copyFailed')}</AlertDescription></Alert>}
         </div>
       )}
-    </section>
+    </ResearchSection>
   )
 }

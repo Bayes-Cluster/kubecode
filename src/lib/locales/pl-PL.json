@@ -1201,6 +1201,8 @@
   "kubecode.resizeNavigation": "Zmień rozmiar nawigacji",
   "kubecode.resizeContextPanel": "Zmień rozmiar panelu kontekstu",
   "kubecode.resizeTerminal": "Zmień rozmiar terminala",
+  "kubecode.resizeTerminalSplit": "Zmień rozmiar podzielonych terminali",
+  "kubecode.resizeTerminalNavigator": "Zmień rozmiar listy terminali",
   "kubecode.collapse": "Collapse",
   "kubecode.settings": "Settings",
   "kubecode.settingsDescription": "Configure the Kubecode workspace.",

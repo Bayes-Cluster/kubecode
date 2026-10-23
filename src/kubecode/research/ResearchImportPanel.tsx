@@ -1,14 +1,22 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
+import { CircleCheck, TriangleAlert } from 'lucide-react'
 
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Empty, EmptyDescription } from '@/components/ui/empty'
+import { Field, FieldGroup, FieldLabel, FieldLegend, FieldSet } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Item, ItemGroup, ItemTitle } from '@/components/ui/item'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
 import type { TranslationKey, Translator } from '@/lib/i18n'
 
@@ -27,7 +35,9 @@ import {
   utf8Bytes,
   type BriefChange,
 } from './researchImport'
+import { ResearchSection } from './ResearchLayout'
 import { useAction } from './useAction'
+import { ReaderLoading, ReaderNotice } from '../resources/ReaderStates'
 
 const FIELD_LABELS: Record<BriefChange['field'], TranslationKey> = {
   question: 'kubecode.research.field.question',
@@ -95,20 +105,20 @@ export function ResearchImportPanel({
   }
 
   return (
-    <section className="kubecode-research-section" aria-label={t('kubecode.research.import.title')}>
-      <h3>{t('kubecode.research.import.title')}</h3>
-      <p className="kubecode-research-muted">{t('kubecode.research.import.intro')}</p>
+    <ResearchSection label={t('kubecode.research.import.title')} named>
+      <p className="m-0 text-sm text-muted-foreground">{t('kubecode.research.import.intro')}</p>
       {!detail.archived && (
         <form
-          className="kubecode-research-form"
+          className="flex flex-col gap-2"
           onSubmit={(event) => {
             event.preventDefault()
             void submit()
           }}
         >
-          <div className="kubecode-research-row">
+          <div className="flex flex-wrap items-center gap-2">
             <Input
               aria-label={t('kubecode.research.import.label')}
+              className="min-w-[160px] flex-1"
               maxLength={200}
               placeholder={t('kubecode.research.import.labelPlaceholder')}
               value={label}
@@ -127,8 +137,10 @@ export function ResearchImportPanel({
             >
               <SelectTrigger aria-label={t('kubecode.research.import.origin')}><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="markdown">{t('kubecode.research.import.originMarkdown')}</SelectItem>
-                <SelectItem value="paste">{t('kubecode.research.import.originPaste')}</SelectItem>
+                <SelectGroup>
+                  <SelectItem value="markdown">{t('kubecode.research.import.originMarkdown')}</SelectItem>
+                  <SelectItem value="paste">{t('kubecode.research.import.originPaste')}</SelectItem>
+                </SelectGroup>
               </SelectContent>
             </Select>
           </div>
@@ -143,17 +155,14 @@ export function ResearchImportPanel({
               setContent(event.target.value)
             }}
           />
-          <p
-            className={tooLarge ? 'kubecode-research-error' : 'kubecode-research-muted'}
-            role={tooLarge ? 'alert' : undefined}
-          >
-            {tooLarge
-              ? t('kubecode.research.import.tooLarge')
-              : t('kubecode.research.import.size', { bytes, max: MAX_IMPORT_BYTES })}
-          </p>
-          {importing.error && <p className="kubecode-research-error" role="alert">{importing.error}</p>}
-          {saved && <p className="kubecode-research-notice" role="status">{t('kubecode.research.import.saved')}</p>}
-          <div className="kubecode-research-panel-actions">
+          {tooLarge ? (
+            <Alert variant="destructive"><AlertDescription>{t('kubecode.research.import.tooLarge')}</AlertDescription></Alert>
+          ) : (
+            <p className="m-0 text-xs text-muted-foreground">{t('kubecode.research.import.size', { bytes, max: MAX_IMPORT_BYTES })}</p>
+          )}
+          {importing.error && <Alert variant="destructive"><AlertDescription>{importing.error}</AlertDescription></Alert>}
+          {saved && <Alert role="status"><CircleCheck /><AlertDescription>{t('kubecode.research.import.saved')}</AlertDescription></Alert>}
+          <div className="flex justify-end">
             <Button aria-busy={importing.busy} disabled={!canImport || importing.busy} size="sm" type="submit">
               {t('kubecode.research.import.submit')}
             </Button>
@@ -161,19 +170,20 @@ export function ResearchImportPanel({
         </form>
       )}
       {importsStatus === 'error' && imports.length === 0 ? (
-        <div role="alert">
-          <p className="kubecode-research-error">{t('kubecode.research.import.listFailed')}</p>
-          <Button size="xs" variant="outline" onClick={onChanged}>{t('kubecode.retry')}</Button>
-        </div>
+        <ReaderNotice action={<Button size="xs" variant="outline" onClick={onChanged}>{t('kubecode.retry')}</Button>} failed>
+          {t('kubecode.research.import.listFailed')}
+        </ReaderNotice>
       ) : imports.length === 0 ? (
-        <p className="kubecode-research-muted">{t('kubecode.research.import.empty')}</p>
+        <Empty className="items-start p-0 text-left md:p-0">
+          <EmptyDescription>{t('kubecode.research.import.empty')}</EmptyDescription>
+        </Empty>
       ) : (
-        <ul className="kubecode-research-list">
+        <ItemGroup className="gap-2">
           {imports.map((item) => (
-            <li key={item.id}>
-              <div className="kubecode-research-row">
-                <strong>{item.label}</strong>
-                <span className="kubecode-research-muted">
+            <Item className="flex-col items-stretch" key={item.id} role="listitem" size="sm" variant="outline">
+              <div className="flex flex-wrap items-center gap-2">
+                <ItemTitle className="[overflow-wrap:anywhere]">{item.label}</ItemTitle>
+                <span className="text-xs text-muted-foreground">
                   {item.origin === 'markdown'
                     ? t('kubecode.research.import.originMarkdown')
                     : t('kubecode.research.import.originPaste')}
@@ -194,21 +204,24 @@ export function ResearchImportPanel({
                 </Button>
               </div>
               {item.stale && (
-                <p className="kubecode-research-notice" role="status">
-                  {t('kubecode.research.import.stale', {
-                    based: item.based_on_revision,
-                    current: item.current_revision,
-                  })}
-                </p>
+                <Alert role="status">
+                  <TriangleAlert />
+                  <AlertDescription>
+                    {t('kubecode.research.import.stale', {
+                      based: item.based_on_revision,
+                      current: item.current_revision,
+                    })}
+                  </AlertDescription>
+                </Alert>
               )}
               {openId === item.id && (
                 <ImportReview api={api} detail={detail} item={item} onChanged={onChanged} t={t} />
               )}
-            </li>
+            </Item>
           ))}
-        </ul>
+        </ItemGroup>
       )}
-    </section>
+    </ResearchSection>
   )
 }
 
@@ -245,6 +258,7 @@ function ImportReview({
   // is kept, Apply is held, and the researcher confirms against the new revision.
   const [reviewedRevision, setReviewedRevision] = useState(detail.revision)
   const apply = useAction(t)
+  const fieldId = useId()
   const clearApplyError = apply.clearError
   const moved = detail.revision !== reviewedRevision
 
@@ -265,10 +279,10 @@ function ImportReview({
 
   const ready = loaded && loaded.id === item.id ? loaded : null
   if (!ready) {
-    return <p className="kubecode-research-muted" role="status">{t('kubecode.loadingContext')}</p>
+    return <ReaderLoading>{t('kubecode.loadingContext')}</ReaderLoading>
   }
   if ('failed' in ready) {
-    return <p className="kubecode-research-error" role="alert">{t('kubecode.research.import.loadFailed')}</p>
+    return <Alert variant="destructive"><AlertDescription>{t('kubecode.research.import.loadFailed')}</AlertDescription></Alert>
   }
   const { candidates, content } = ready.value
   const proposal = proposeBrief(detail.brief, candidates, selected)
@@ -324,17 +338,17 @@ function ImportReview({
   return (
     <div
       aria-label={item.label}
-      className="kubecode-research-review"
+      className="mt-2 flex flex-col gap-2"
       id={`research-import-review-${item.id}`}
       role="group"
     >
       {item.stale && (
-        <p className="kubecode-research-notice" role="status">
-          {t('kubecode.research.import.staleWarning')}
-        </p>
+        <Alert role="status"><TriangleAlert /><AlertDescription>{t('kubecode.research.import.staleWarning')}</AlertDescription></Alert>
       )}
       {moved && (
-        <div className="kubecode-research-notice" role="status">
+        <Alert role="status">
+          <TriangleAlert />
+          <AlertDescription>
           <p>{t('kubecode.research.import.briefChanged', { revision: detail.revision })}</p>
           <Button
             size="xs"
@@ -347,19 +361,22 @@ function ImportReview({
           >
             {t('kubecode.research.import.reReview', { revision: detail.revision })}
           </Button>
-        </div>
+          </AlertDescription>
+        </Alert>
       )}
       <pre
         aria-label={t('kubecode.research.import.text')}
-        className="kubecode-research-import-text"
+        className="m-0 max-h-80 overflow-auto rounded-md border bg-muted p-2 text-xs whitespace-pre-wrap [overflow-wrap:anywhere]"
         tabIndex={0}
       >
         {content}
       </pre>
-      <h4>{t('kubecode.research.import.candidates')}</h4>
-      <p className="kubecode-research-muted">{t('kubecode.research.import.candidatesNote')}</p>
+      <ResearchSection label={t('kubecode.research.import.candidates')} level={4}>
+      <p className="m-0 text-xs text-muted-foreground">{t('kubecode.research.import.candidatesNote')}</p>
       {candidates.length === 0 ? (
-        <p className="kubecode-research-muted">{t('kubecode.research.import.noCandidates')}</p>
+        <Empty className="items-start p-0 text-left md:p-0">
+          <EmptyDescription>{t('kubecode.research.import.noCandidates')}</EmptyDescription>
+        </Empty>
       ) : (
         CANDIDATE_KIND_ORDER.map((kind) => {
           const ofKind = candidates
@@ -367,67 +384,85 @@ function ImportReview({
             .filter(({ candidate }) => candidate.kind === kind)
           if (ofKind.length === 0) return null
           return (
-            <fieldset className="kubecode-research-carry" key={kind}>
-              <legend>{t(`kubecode.research.import.kind.${kind}`)}</legend>
-              {ofKind.map(({ candidate, index }) => (
-                <label key={index}>
-                  <input
-                    checked={selected.has(index)}
-                    disabled={detail.archived || kind === 'open_question'}
-                    type="checkbox"
-                    onChange={(event) => toggle(index, event.target.checked)}
-                  />
-                  <span>{candidate.text}</span>
-                  <span className="kubecode-research-muted">
-                    {t('kubecode.research.import.line', { line: candidate.line })}
-                  </span>
-                </label>
-              ))}
-            </fieldset>
+            <FieldSet className="rounded-md border p-3" key={kind}>
+              <FieldLegend variant="label">{t(`kubecode.research.import.kind.${kind}`)}</FieldLegend>
+              <FieldGroup className="gap-2">
+                {ofKind.map(({ candidate, index }) => {
+                  const disabled = detail.archived || kind === 'open_question'
+                  const controlId = `${fieldId}-candidate-${index}`
+                  return (
+                    <Field data-disabled={disabled || undefined} key={index} orientation="horizontal">
+                      <Checkbox
+                        checked={selected.has(index)}
+                        disabled={disabled}
+                        id={controlId}
+                        onCheckedChange={(checked) => toggle(index, checked === true)}
+                      />
+                      <FieldLabel className="flex-wrap font-normal [overflow-wrap:anywhere]" htmlFor={controlId}>
+                        <span>{candidate.text}</span>
+                        <span className="text-muted-foreground">
+                          {t('kubecode.research.import.line', { line: candidate.line })}
+                        </span>
+                      </FieldLabel>
+                    </Field>
+                  )
+                })}
+              </FieldGroup>
+            </FieldSet>
           )
         })
       )}
       {candidates.some((candidate) => candidate.kind === 'open_question') && (
-        <p className="kubecode-research-muted">{t('kubecode.research.import.openNote')}</p>
+        <p className="m-0 text-xs text-muted-foreground">{t('kubecode.research.import.openNote')}</p>
       )}
-      <h4>{t('kubecode.research.import.proposal')}</h4>
+      </ResearchSection>
+      <ResearchSection label={t('kubecode.research.import.proposal')} level={4}>
       {!hasChange ? (
-        <p className="kubecode-research-muted">{t('kubecode.research.import.proposalNone')}</p>
+        <Empty className="items-start p-0 text-left md:p-0">
+          <EmptyDescription>{t('kubecode.research.import.proposalNone')}</EmptyDescription>
+        </Empty>
       ) : (
-        <div className="kubecode-research-compare">
-          {proposal.changes.map((change) => (
-            <div key={change.field}>
-              <strong>{t(FIELD_LABELS[change.field])}</strong>
-              <div className="kubecode-research-row">
-                <div>
-                  <small>{t('kubecode.research.import.before')}</small>
-                  <p className="whitespace-pre-line">{Array.isArray(change.before) ? change.before.join('\n') || '—' : change.before}</p>
-                </div>
-                <div>
-                  <small>{t('kubecode.research.import.after')}</small>
-                  <p className="whitespace-pre-line">{Array.isArray(change.after) ? change.after.join('\n') : change.after}</p>
-                </div>
-              </div>
-            </div>
-          ))}
+        <div className="flex flex-col gap-2">
+          {proposal.changes.length > 0 && (
+            <Table className="table-fixed">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-1/4"><span className="sr-only">{t('kubecode.research.import.proposal')}</span></TableHead>
+                  <TableHead>{t('kubecode.research.import.before')}</TableHead>
+                  <TableHead>{t('kubecode.research.import.after')}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {proposal.changes.map((change) => (
+                  <TableRow key={change.field}>
+                    <TableHead scope="row" className="align-top whitespace-normal">{t(FIELD_LABELS[change.field])}</TableHead>
+                    <TableCell className="align-top whitespace-pre-line [overflow-wrap:anywhere]">{Array.isArray(change.before) ? change.before.join('\n') || '—' : change.before}</TableCell>
+                    <TableCell className="align-top whitespace-pre-line [overflow-wrap:anywhere]">{Array.isArray(change.after) ? change.after.join('\n') : change.after}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
           {proposal.decisions.length > 0 && (
             <div>
-              <p className="kubecode-research-muted">{t('kubecode.research.import.decisionsNote')}</p>
-              <ul>{proposal.decisions.map((decision) => <li key={decision}>{decision}</li>)}</ul>
+              <p className="m-0 text-xs text-muted-foreground">{t('kubecode.research.import.decisionsNote')}</p>
+              <ul className="m-0 list-disc pl-5">{proposal.decisions.map((decision) => <li key={decision}>{decision}</li>)}</ul>
             </div>
           )}
         </div>
       )}
+      </ResearchSection>
       {proposal.overLimit && (
-        <p className="kubecode-research-error" role="alert">{t('kubecode.research.import.overLimit')}</p>
+        <Alert variant="destructive"><AlertDescription>{t('kubecode.research.import.overLimit')}</AlertDescription></Alert>
       )}
-      {apply.error && <p className="kubecode-research-error" role="alert">{apply.error}</p>}
+      {apply.error && <Alert variant="destructive"><AlertDescription>{apply.error}</AlertDescription></Alert>}
       {applied !== null && !moved && (
-        <p className="kubecode-research-notice" role="status">
-          {t('kubecode.research.import.applied', { revision: applied })}
-        </p>
+        <Alert role="status">
+          <CircleCheck />
+          <AlertDescription>{t('kubecode.research.import.applied', { revision: applied })}</AlertDescription>
+        </Alert>
       )}
-      <div className="kubecode-research-panel-actions">
+      <div className="flex justify-end">
         <Button
           aria-busy={apply.busy}
           disabled={detail.archived || moved || !hasChange || proposal.overLimit || apply.busy}

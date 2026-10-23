@@ -271,7 +271,9 @@ describe('discussion packet export', () => {
     await screen.findByText('Does structured pruning keep accuracy?')
     openTab('kubecode.research.tab.discussion')
     const exportSection = within(await screen.findByRole('region', { name: 'kubecode.research.export.title' }))
-    fireEvent.click(exportSection.getByRole('checkbox', { name: 'kubecode.research.export.section.evidence' }))
+    const evidence = exportSection.getByRole('checkbox', { name: 'kubecode.research.export.section.evidence' })
+    expect(evidence).toHaveAttribute('data-slot', 'checkbox')
+    fireEvent.click(evidence)
     fireEvent.click(exportSection.getByRole('button', { name: 'kubecode.research.export.preview' }))
     await waitFor(() => expect(exportResearchPacket).toHaveBeenCalledTimes(1))
     expect(exportResearchPacket).toHaveBeenCalledWith('p1', 'rq-1', [

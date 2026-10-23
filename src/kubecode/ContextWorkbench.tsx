@@ -10,21 +10,43 @@ import {
   RotateCw,
   Search,
   Trash2,
+  TriangleAlert,
   X
 } from 'lucide-react'
 import { Virtuoso } from 'react-virtuoso'
 
+import { IconButton } from '@/components/workspace/IconButton'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import {
   Dialog,
-  DialogClose,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from '@/components/ui/empty'
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '@/components/ui/input-group'
+import { Item, ItemContent, ItemGroup, ItemMedia, ItemTitle } from '@/components/ui/item'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import type { Translator } from '@/lib/i18n'
 import { trackEvent } from '@/lib/telemetry'
@@ -110,6 +132,8 @@ export function ContextWorkbench({
   const [error, setError] = useState<string | null>(null)
   const { state: diffState, open: requestDiff, close: closeDiff } = useGitDiff(api)
   const [commitMessage, setCommitMessage] = useState('')
+  const [committing, setCommitting] = useState(false)
+  const committingRef = useRef(false)
   const [discardPath, setDiscardPath] = useState<string | null>(null)
   const systemMessages = useSystemMessages()
   const processedWorkspaceEventRef = useRef(workspaceEvents.at(-1)?.id ?? 0)
@@ -313,7 +337,9 @@ export function ContextWorkbench({
   }
 
   const commit = async () => {
-    if (!projectId || !commitMessage.trim()) return
+    if (!projectId || !commitMessage.trim() || committingRef.current) return
+    committingRef.current = true
+    setCommitting(true)
     beginMutation('commit')
     try {
       applyMutationResult(await api.commitGit(projectId, commitMessage))
@@ -322,6 +348,9 @@ export function ContextWorkbench({
     } catch (cause) {
       cancelMutation('commit')
       reportError(cause)
+    } finally {
+      committingRef.current = false
+      setCommitting(false)
     }
   }
 
@@ -356,8 +385,8 @@ export function ContextWorkbench({
           setTab(value)
         }}
       >
-        <div className="kubecode-context-tabbar">
-          <TabsList className="kubecode-context-primary-tabs">
+        <div className="flex h-9 shrink-0 items-center justify-between gap-1 border-b px-1">
+          <TabsList className="min-w-0 justify-start overflow-x-auto" variant="line">
             <TabsTrigger value="explorer" onClick={() => setTab('explorer')}>
               {t('kubecode.explorer')}
             </TabsTrigger>
@@ -375,7 +404,7 @@ export function ContextWorkbench({
                   }}
                 >
                   <MaterialFileIcon id={resolveFileIcon(item.document.path)} /> {item.document.path.split('/').at(-1)}
-                  {itemDirty && <span className="kubecode-dirty-dot" />}
+                  {itemDirty && <span aria-label={t('kubecode.unsaved')} className="size-1.5 shrink-0 rounded-full bg-warning" role="img" />}
                 </TabsTrigger>
               )
             })}
@@ -385,15 +414,15 @@ export function ContextWorkbench({
               </TabsTrigger>
             )}
           </TabsList>
-          <div className="kubecode-context-tab-actions">
+          <div className="flex shrink-0 items-center gap-px">
             {tab === 'explorer' && (
               <>
-                <Button aria-label={t('kubecode.searchFiles')} disabled={!projectId} size="icon-xs" variant="ghost" onClick={() => setQuickOpen(true)}><Search  size={16}/></Button>
-                <Button aria-label={t('kubecode.newFile')} disabled={!projectId} size="icon-xs" variant="ghost" onClick={() => setEntryDialog({ kind: 'file' })}><File  size={16}/></Button>
-                <Button aria-label={t('kubecode.newFolder')} disabled={!projectId} size="icon-xs" variant="ghost" onClick={() => setEntryDialog({ kind: 'directory' })}><Folder  size={16}/></Button>
+                <IconButton disabled={!projectId} icon={<Search />} label={t('kubecode.searchFiles')} onClick={() => setQuickOpen(true)} />
+                <IconButton disabled={!projectId} icon={<File />} label={t('kubecode.newFile')} onClick={() => setEntryDialog({ kind: 'file' })} />
+                <IconButton disabled={!projectId} icon={<Folder />} label={t('kubecode.newFolder')} onClick={() => setEntryDialog({ kind: 'directory' })} />
               </>
             )}
-            <Button aria-label={t('kubecode.refresh')} size="icon-xs" variant="ghost" onClick={refreshContext}><RotateCw  size={16}/></Button>
+            <IconButton icon={<RotateCw />} label={t('kubecode.refresh')} onClick={refreshContext} />
           </div>
         </div>
 
@@ -406,23 +435,30 @@ export function ContextWorkbench({
             section="changes"
           >
             {!gitStatus?.is_repository ? (
-              <div className="kubecode-review-empty">
-                <GitCompare size={24} />
-                <strong>{t('kubecode.createGitRepository')}</strong>
-                <span>{t('kubecode.createGitRepositoryDescription')}</span>
-                <Button disabled={!projectId} size="sm" onClick={() => void initializeGit()}>{t('kubecode.createGitRepository')}</Button>
-              </div>
+              <Empty className="p-4 md:p-6">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon"><GitCompare /></EmptyMedia>
+                  <EmptyTitle>{t('kubecode.createGitRepository')}</EmptyTitle>
+                  <EmptyDescription>{t('kubecode.createGitRepositoryDescription')}</EmptyDescription>
+                </EmptyHeader>
+                <EmptyContent>
+                  <Button disabled={!projectId} size="sm" onClick={() => void initializeGit()}>{t('kubecode.createGitRepository')}</Button>
+                </EmptyContent>
+              </Empty>
             ) : gitStatus.files.length === 0 ? (
-              <div className="kubecode-review-empty kubecode-review-empty-compact">
-                <strong>{t('kubecode.noChanges')}</strong>
-                <span>{t('kubecode.reviewDescription')}</span>
-              </div>
+              <Empty className="p-4">
+                <EmptyHeader>
+                  <EmptyTitle>{t('kubecode.noChanges')}</EmptyTitle>
+                  <EmptyDescription>{t('kubecode.reviewDescription')}</EmptyDescription>
+                </EmptyHeader>
+              </Empty>
             ) : (
               <div className="kubecode-review-body">
                 {gitStatus.truncated && (
-                  <div className="kubecode-git-notice" role="status">
-                    {t('kubecode.gitStatusTruncated', { count: gitStatus.files.length })}
-                  </div>
+                  <Alert className="my-1" role="status">
+                    <TriangleAlert />
+                    <AlertDescription>{t('kubecode.gitStatusTruncated', { count: gitStatus.files.length })}</AlertDescription>
+                  </Alert>
                 )}
                 {conflictChanges.length > 0 && (
                   <GitChangeGroup
@@ -435,9 +471,10 @@ export function ContextWorkbench({
                   />
                 )}
                 {conflictChanges.length > 0 && (
-                  <div className="kubecode-git-notice" role="status">
-                    {t('kubecode.conflictHint')}
-                  </div>
+                  <Alert className="my-1" role="status">
+                    <TriangleAlert />
+                    <AlertDescription>{t('kubecode.conflictHint')}</AlertDescription>
+                  </Alert>
                 )}
                 {stagedChanges.length > 0 && (
                   <GitChangeGroup
@@ -447,7 +484,7 @@ export function ContextWorkbench({
                     onDiff={(change) => void openDiff(change, true)}
                     onPrimary={(change) => void mutateGit('unstage', change.path)}
                     primaryLabel={t('kubecode.unstage')}
-                    primaryIcon={<Minus  size={16}/>}
+                    primaryIcon={<Minus />}
                     statusColumn="index"
                     t={t}
                   />
@@ -461,17 +498,29 @@ export function ContextWorkbench({
                     onDiscard={(change) => setDiscardPath(change.path)}
                     onPrimary={(change) => void mutateGit('stage', change.path)}
                     primaryLabel={t('kubecode.stage')}
-                    primaryIcon={<Plus  size={16}/>}
+                    primaryIcon={<Plus />}
                     discardLabel={t('kubecode.discard')}
                     statusColumn="worktree"
                     t={t}
                   />
                 )}
                 {stagedChanges.length > 0 && (
-                  <div className="kubecode-commit-box">
-                    <Input aria-label={t('kubecode.commitMessage')} placeholder={t('kubecode.commitMessage')} value={commitMessage} onChange={(event) => setCommitMessage(event.target.value)} />
-                    <Button disabled={!commitMessage.trim()} size="sm" onClick={() => void commit()}><GitCommitHorizontal  size={16}/> {t('kubecode.commit')}</Button>
-                  </div>
+                  <InputGroup className="mt-2">
+                    <InputGroupInput
+                      aria-label={t('kubecode.commitMessage')}
+                      placeholder={t('kubecode.commitMessage')}
+                      value={commitMessage}
+                      onChange={(event) => setCommitMessage(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' && !event.repeat && !event.nativeEvent.isComposing) void commit()
+                      }}
+                    />
+                    <InputGroupAddon align="inline-end">
+                      <InputGroupButton disabled={committing || !commitMessage.trim()} size="sm" variant="default" onClick={() => void commit()}>
+                        <GitCommitHorizontal data-icon="inline-start" /> {t('kubecode.commit')}
+                      </InputGroupButton>
+                    </InputGroupAddon>
+                  </InputGroup>
                 )}
               </div>
             )}
@@ -489,21 +538,24 @@ export function ContextWorkbench({
               }}
               section="plan"
             >
-              <ol className="kubecode-context-plan-list">
+              <ItemGroup className="p-1" role="list">
                 {planEntries.map((entry, index) => (
-                  <li
-                    className="kubecode-session-plan-entry"
+                  <Item
                     data-priority={entry.priority}
                     data-status={entry.status}
                     key={`${index}-${entry.content}`}
+                    role="listitem"
+                    size="sm"
                   >
-                    <span className="kubecode-session-plan-state" aria-hidden="true">
+                    <ItemMedia aria-hidden="true">
                       <Icon role="status" size="secondary" source={PLAN_STATUS_ICONS[entry.status].Icon} />
-                    </span>
-                    <span>{entry.content}</span>
-                  </li>
+                    </ItemMedia>
+                    <ItemContent>
+                      <ItemTitle className="font-normal">{entry.content}</ItemTitle>
+                    </ItemContent>
+                  </Item>
                 ))}
-              </ol>
+              </ItemGroup>
             </ExplorerSection>
           )}
           <ExplorerSection
@@ -536,19 +588,16 @@ export function ContextWorkbench({
             className="kubecode-context-content kubecode-context-editor"
             value={`editor:${activeDocumentKey}`}
           >
-            <div className="kubecode-editor-toolbar">
-              <span title={activeDocument.document.path}>{activeDocument.document.path}</span>
-              <div>
-                {dirty && <span className="kubecode-unsaved-label">{t('kubecode.unsaved')}</span>}
+            <div className="flex h-10 shrink-0 items-center justify-between gap-2 border-b px-3">
+              <span className="min-w-0 truncate text-sm text-muted-foreground" title={activeDocument.document.path}>{activeDocument.document.path}</span>
+              <div className="flex shrink-0 items-center gap-1.5">
+                {dirty && <Badge variant="warning">{t('kubecode.unsaved')}</Badge>}
                 <Button disabled={!dirty} size="xs" onClick={() => void save()}>{t('kubecode.save')}</Button>
-                <Button
-                  aria-label={t('kubecode.closeEditor')}
-                  size="icon-xs"
-                  variant="ghost"
+                <IconButton
+                  icon={<X />}
+                  label={t('kubecode.closeEditor')}
                   onClick={() => closeEditor(activeDocumentKey as string)}
-                >
-                  <X  size={16}/>
-                </Button>
+                />
               </div>
             </div>
             <CodeEditor
@@ -623,35 +672,40 @@ export function ContextWorkbench({
           )}
         </DialogContent>
       </Dialog>
-      <Dialog open={Boolean(discardPath)} onOpenChange={(open) => { if (!open) setDiscardPath(null) }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t('kubecode.discardChanges')}</DialogTitle>
-            <DialogDescription>{t('kubecode.discardChangesDescription')}</DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <DialogClose asChild><Button variant="outline">{t('kubecode.cancel')}</Button></DialogClose>
-            <Button variant="destructive" onClick={() => {
-              if (discardPath) void mutateGit('discard', discardPath)
-              setDiscardPath(null)
-            }}><Trash2  size={16}/> {t('kubecode.discard')}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      <Dialog
+      <AlertDialog open={Boolean(discardPath)} onOpenChange={(open) => { if (!open) setDiscardPath(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('kubecode.discardChanges')}</AlertDialogTitle>
+            <AlertDialogDescription>{t('kubecode.discardChangesDescription')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('kubecode.cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                if (discardPath) void mutateGit('discard', discardPath)
+                setDiscardPath(null)
+              }}
+            >
+              <Trash2 data-icon="inline-start" /> {t('kubecode.discard')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog
         open={Boolean(closeDocumentKey)}
         onOpenChange={(open) => {
           if (!open) setCloseDocumentKey(null)
         }}
       >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t('kubecode.unsavedChanges')}</DialogTitle>
-            <DialogDescription>{t('kubecode.unsavedChangesDescription')}</DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <DialogClose asChild><Button variant="outline">{t('kubecode.cancel')}</Button></DialogClose>
-            <Button
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('kubecode.unsavedChanges')}</AlertDialogTitle>
+            <AlertDialogDescription>{t('kubecode.unsavedChangesDescription')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('kubecode.cancel')}</AlertDialogCancel>
+            <AlertDialogAction
               variant="destructive"
               onClick={() => {
                 if (closeDocumentKey) closeEditor(closeDocumentKey, true)
@@ -659,10 +713,10 @@ export function ContextWorkbench({
               }}
             >
               {t('kubecode.discard')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </aside>
   )
 }
@@ -685,23 +739,29 @@ function ExplorerSection({
   section: 'changes' | 'files' | 'plan'
 }) {
   return (
-    <section className="kubecode-explorer-section" data-expanded={expanded} data-fill={fill}>
-      <Button
-        aria-expanded={expanded}
-        className="kubecode-explorer-section-trigger"
-        variant="ghost"
-        onClick={() => {
-          const nextExpanded = !expanded
-          onExpandedChange(nextExpanded)
-          if (nextExpanded) trackEvent('kubecode_context_section_opened', { section })
-        }}
-      >
-        <ChevronDown data-expanded={expanded}  size={16}/>
-        <span>{label}</span>
-        {typeof count === 'number' && count > 0 && <small>{count}</small>}
-      </Button>
-      {expanded && <div className="kubecode-explorer-section-content">{children}</div>}
-    </section>
+    <Collapsible
+      asChild
+      open={expanded}
+      onOpenChange={(nextExpanded) => {
+        onExpandedChange(nextExpanded)
+        if (nextExpanded) trackEvent('kubecode_context_section_opened', { section })
+      }}
+    >
+      <section className="kubecode-explorer-section" data-expanded={expanded} data-fill={fill}>
+        <CollapsibleTrigger asChild>
+          <Button
+            className="h-7 w-full shrink-0 justify-start gap-1.5 rounded-none px-2 text-xs font-semibold uppercase text-muted-foreground [&[data-state=closed]>svg]:-rotate-90"
+            size="sm"
+            variant="ghost"
+          >
+            <ChevronDown data-icon="inline-start" />
+            <span className="min-w-0 truncate">{label}</span>
+            {typeof count === 'number' && count > 0 && <Badge className="ml-auto" variant="secondary">{count}</Badge>}
+          </Button>
+        </CollapsibleTrigger>
+        <CollapsibleContent className="kubecode-explorer-section-content">{children}</CollapsibleContent>
+      </section>
+    </Collapsible>
   )
 }
 
@@ -734,7 +794,10 @@ function GitChangeGroup({
 
   return (
     <section className="kubecode-git-group" data-group={group} data-virtualized={isVirtualized || undefined}>
-      <header><strong>{label}</strong><span>{changes.length}</span></header>
+      <header className="flex h-7 items-center justify-between px-1.5 text-xs font-semibold uppercase text-muted-foreground">
+        <span>{label}</span>
+        <Badge variant="secondary">{changes.length}</Badge>
+      </header>
       {isVirtualized ? (
         <Virtuoso
           className="kubecode-git-virtual-list"
@@ -822,10 +885,10 @@ function GitChangeRow({
         </span>
       </Button>
       {onDiscard && (
-        <Button aria-label={`${discardLabel}: ${change.path}`} size="icon-xs" variant="ghost" onClick={() => onDiscard(change)}><Trash2  size={16}/></Button>
+        <IconButton icon={<Trash2 />} label={`${discardLabel}: ${change.path}`} onClick={() => onDiscard(change)} />
       )}
-      {onPrimary && (
-        <Button aria-label={`${primaryLabel}: ${change.path}`} size="icon-xs" variant="ghost" onClick={() => onPrimary(change)}>{primaryIcon}</Button>
+      {onPrimary && primaryIcon && (
+        <IconButton icon={primaryIcon} label={`${primaryLabel}: ${change.path}`} onClick={() => onPrimary(change)} />
       )}
     </div>
   )
@@ -977,7 +1040,7 @@ function EntryDialog({
           ariaLabel={t('kubecode.entryPath')}
           emptyMessage={t('kubecode.noDirectoriesFound')}
           footer={createError ? (
-            <div className="kubecode-path-picker-error" role="alert">{createError}</div>
+            <Alert className="m-2 w-auto" variant="destructive"><AlertDescription>{createError}</AlertDescription></Alert>
           ) : undefined}
           loading={loading}
           loadingMessage={t('kubecode.loading')}

@@ -95,4 +95,5 @@ ADRs are immutable after acceptance; a later decision supersedes an earlier one.
 | [0249](0249-general-and-dm-conversation-on-official-components.md) | General and DMs on the official conversation and composer components (UI C) |
 | [0250](0250-workspace-readers-on-official-command-and-attachment.md) | Workspace search, references and evidence readers on official Command, Attachment and Alert |
 | [0251](0251-tasks-reviews-and-attention-on-official-components.md) | Tasks, reviews, Needs you and execution feedback on official components |
+| [0252](0252-file-git-terminal-and-research-utilities-on-official-components.md) | File, Git, terminal and research utilities on official components |
 | [0253](0253-session-and-team-execution-views-on-official-components.md) | Session and Team execution views on official components |

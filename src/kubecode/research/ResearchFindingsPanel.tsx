@@ -1,14 +1,19 @@
 import { useRef, useState } from 'react'
 
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { Empty, EmptyDescription } from '@/components/ui/empty'
+import { FieldDescription, FieldGroup } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from '@/components/ui/item'
 import { Textarea } from '@/components/ui/textarea'
 import { DecisionButton } from '@/components/workspace/DecisionButton'
 import { StatusBadge } from '@/components/workspace/StatusBadge'
@@ -25,6 +30,7 @@ import type {
 } from '../api'
 import { newClientMessageId } from '../session/sessionModel'
 import { authorLabel, findingKindLabel, sourceKindLabel } from './researchLabels'
+import { ResearchPanel, ResearchSection } from './ResearchLayout'
 import { AvailabilityBadge, StaleBadge } from './SourceBadge'
 import { useAction } from './useAction'
 
@@ -58,12 +64,11 @@ export function ResearchFindingsPanel({
   const roundNumber = (roundId: string | null) => rounds.find((round) => round.id === roundId)?.round ?? null
 
   return (
-    <div className="kubecode-research-panel">
+    <ResearchPanel>
       {pendingProposals.length > 0 && (
-        <section className="kubecode-research-section" aria-label={t('kubecode.research.suggestedChanges')}>
-          <h3>{t('kubecode.research.suggestedChanges')}</h3>
-          <p className="kubecode-research-muted">{t('kubecode.research.proposalHint')}</p>
-          <ul className="kubecode-research-cards">
+        <ResearchSection label={t('kubecode.research.suggestedChanges')} named>
+          <p className="m-0 text-sm text-muted-foreground">{t('kubecode.research.proposalHint')}</p>
+          <ItemGroup className="gap-2">
             {pendingProposals.map((proposal) => {
               // Agreeing or declining is a researcher decision (ADR 0227), named
               // apart from accepting a Task's results.
@@ -80,13 +85,15 @@ export function ResearchFindingsPanel({
               }
               const held = review.busy ? t('kubecode.task.blocked.deciding') : undefined
               return (
-                <li data-focus-key={`suggestion:${proposal.entry.id}`} key={proposal.entry.id} tabIndex={-1}>
-                  <p>{proposal.entry.body}</p>
-                  <span className="kubecode-research-muted">
-                    {authorLabel(t, proposal.entry.author_kind)} · {t('kubecode.research.revisionShort', { revision: proposal.entry.brief_revision })}
-                  </span>
+                <Item data-focus-key={`suggestion:${proposal.entry.id}`} key={proposal.entry.id} role="listitem" size="sm" tabIndex={-1} variant="outline">
+                  <ItemContent>
+                    <p className="m-0 whitespace-pre-wrap text-sm [overflow-wrap:anywhere]">{proposal.entry.body}</p>
+                    <ItemDescription>
+                      {authorLabel(t, proposal.entry.author_kind)} · {t('kubecode.research.revisionShort', { revision: proposal.entry.brief_revision })}
+                    </ItemDescription>
+                  </ItemContent>
                   {!detail.archived && (
-                    <div aria-label={proposal.entry.body.slice(0, 60)} className="kubecode-research-row" role="group">
+                    <ItemActions aria-label={proposal.entry.body.slice(0, 60)} className="flex-wrap" role="group">
                       <DecisionButton
                         busy={deciding === `${proposal.entry.id}:accepted`}
                         disabledReason={deciding === `${proposal.entry.id}:accepted` ? undefined : held}
@@ -103,26 +110,28 @@ export function ResearchFindingsPanel({
                       >
                         {t('kubecode.research.decline')}
                       </DecisionButton>
-                    </div>
+                    </ItemActions>
                   )}
-                </li>
+                </Item>
               )
             })}
-          </ul>
-          {review.error && <p className="kubecode-research-error" role="alert">{review.error}</p>}
-        </section>
+          </ItemGroup>
+          {review.error && <Alert variant="destructive"><AlertDescription>{review.error}</AlertDescription></Alert>}
+        </ResearchSection>
       )}
 
       {pendingOutcomes.length > 0 && (
-        <section className="kubecode-research-section" aria-label={t('kubecode.research.pendingOutcomes')}>
-          <h3>{t('kubecode.research.pendingOutcomes')}</h3>
-          <ul className="kubecode-research-cards">
+        <ResearchSection label={t('kubecode.research.pendingOutcomes')} named>
+          <ItemGroup className="gap-2">
             {pendingOutcomes.map((outcome) => {
               const link = detail.links.find((item) => item.ref_id === outcome.team_id)
               return (
-                <li key={outcome.team_id}>
-                  <p>{t('kubecode.research.outcomePending', { team: link?.title || outcome.team_id })}</p>
+                <Item key={outcome.team_id} role="listitem" size="sm" variant="outline">
+                  <ItemContent>
+                    <ItemTitle className="font-normal [overflow-wrap:anywhere]">{t('kubecode.research.outcomePending', { team: link?.title || outcome.team_id })}</ItemTitle>
+                  </ItemContent>
                   {!detail.archived && (
+                    <ItemActions>
                     <Button
                       disabled={decline.busy}
                       size="xs"
@@ -134,22 +143,27 @@ export function ResearchFindingsPanel({
                     >
                       {t('kubecode.research.nothingToRecord')}
                     </Button>
+                    </ItemActions>
                   )}
-                </li>
+                </Item>
               )
             })}
-          </ul>
-          {decline.error && <p className="kubecode-research-error" role="alert">{decline.error}</p>}
-        </section>
+          </ItemGroup>
+          {decline.error && <Alert variant="destructive"><AlertDescription>{decline.error}</AlertDescription></Alert>}
+        </ResearchSection>
       )}
 
-      <section className="kubecode-research-section">
-        <h3>{t('kubecode.research.findings')}</h3>
-        {findings.length === 0 && <p className="kubecode-research-muted">{t('kubecode.research.noFindings')}</p>}
-        <ul className="kubecode-research-cards">
+      <ResearchSection label={t('kubecode.research.findings')}>
+        {findings.length === 0 && (
+          <Empty className="items-start p-0 text-left md:p-0">
+            <EmptyDescription>{t('kubecode.research.noFindings')}</EmptyDescription>
+          </Empty>
+        )}
+        <ItemGroup className="gap-2 empty:hidden">
           {findings.map((finding) => (
-            <li key={finding.id} data-basis={finding.basis}>
-              <header>
+            <Item key={finding.id} data-basis={finding.basis} role="listitem" size="sm" variant="outline">
+              <ItemContent className="gap-1.5">
+              <div className="flex flex-wrap items-center gap-2">
                 <StatusBadge tone="muted">{findingKindLabel(t, finding.kind)}</StatusBadge>
                 <StatusBadge
                   tone={finding.basis === 'observation' ? 'ok' : 'warn'}
@@ -160,18 +174,18 @@ export function ResearchFindingsPanel({
                     : t('kubecode.research.basis.interpretation')}
                 </StatusBadge>
                 {finding.stale && <StaleBadge t={t} />}
-              </header>
-              <p>{finding.statement}</p>
-              <span className="kubecode-research-muted">
+              </div>
+              <p className="m-0 whitespace-pre-wrap text-sm [overflow-wrap:anywhere]">{finding.statement}</p>
+              <ItemDescription>
                 {authorLabel(t, finding.author_kind)}
                 {' · '}
                 {t('kubecode.research.revisionShort', { revision: finding.brief_revision })}
                 {roundNumber(finding.round_id) !== null && ` · ${t('kubecode.research.roundShort', { round: roundNumber(finding.round_id)! })}`}
-              </span>
+              </ItemDescription>
               {finding.producer_state.length > 0 && (
-                <ul className="kubecode-research-sources" aria-label={t('kubecode.research.producedBy')}>
+                <ul className={SOURCE_LIST} aria-label={t('kubecode.research.producedBy')}>
                   {finding.producer_state.map((source) => (
-                    <li key={`${source.kind}:${source.id}`}>
+                    <li className={SOURCE_ROW} key={`${source.kind}:${source.id}`}>
                       <span>{t('kubecode.research.producedByItem', { kind: sourceKindLabel(t, source.kind) })}</span>
                       <AvailabilityBadge availability={source.availability} t={t} />
                     </li>
@@ -179,43 +193,45 @@ export function ResearchFindingsPanel({
                 </ul>
               )}
               {finding.evidence_state.length > 0 && (
-                <ul className="kubecode-research-sources" aria-label={t('kubecode.research.evidence')}>
+                <ul className={SOURCE_LIST} aria-label={t('kubecode.research.evidence')}>
                   {finding.evidence_state.map((source) => (
-                    <li key={`${source.kind}:${source.id}`}>
+                    <li className={SOURCE_ROW} key={`${source.kind}:${source.id}`}>
                       <span>{sourceKindLabel(t, source.kind)}</span>
-                      <code>{source.id}</code>
+                      <code className="[overflow-wrap:anywhere]">{source.id}</code>
                       <AvailabilityBadge availability={source.availability} t={t} />
                     </li>
                   ))}
                 </ul>
               )}
-            </li>
+              </ItemContent>
+            </Item>
           ))}
-        </ul>
-      </section>
+        </ItemGroup>
+      </ResearchSection>
 
       {!detail.archived && (
         <CaptureForm api={api} detail={detail} onChanged={onChanged} t={t} />
       )}
 
       {decidedProposals.length > 0 && (
-        <section className="kubecode-research-section">
-          <h3>{t('kubecode.research.decidedProposals')}</h3>
-          <ul className="kubecode-research-cards">
+        <ResearchSection label={t('kubecode.research.decidedProposals')}>
+          <ItemGroup className="gap-2">
             {decidedProposals.map((proposal) => (
-              <li key={proposal.entry.id}>
-                <p>{proposal.entry.body}</p>
+              <Item key={proposal.entry.id} role="listitem" size="sm" variant="outline">
+                <ItemContent>
+                  <p className="m-0 whitespace-pre-wrap text-sm [overflow-wrap:anywhere]">{proposal.entry.body}</p>
+                </ItemContent>
                 <StatusBadge tone={proposal.review?.decision === 'accepted' ? 'ok' : 'muted'}>
                   {proposal.review?.decision === 'accepted'
                     ? t('kubecode.research.accepted')
                     : t('kubecode.research.rejected')}
                 </StatusBadge>
-              </li>
+              </Item>
             ))}
-          </ul>
-        </section>
+          </ItemGroup>
+        </ResearchSection>
       )}
-    </div>
+    </ResearchPanel>
   )
 }
 
@@ -240,7 +256,11 @@ function CaptureForm({
   const source = sources.find((link) => link.ref_id === sourceId) ?? sources[0]
 
   if (sources.length === 0) {
-    return <p className="kubecode-research-muted">{t('kubecode.research.captureNeedsLink')}</p>
+    return (
+      <Empty className="items-start p-0 text-left md:p-0">
+        <EmptyDescription>{t('kubecode.research.captureNeedsLink')}</EmptyDescription>
+      </Empty>
+    )
   }
   const submit = async () => {
     const text = statement.trim()
@@ -266,72 +286,80 @@ function CaptureForm({
   return (
     <form
       aria-label={t('kubecode.research.capture')}
-      className="kubecode-research-section kubecode-research-form"
       onSubmit={(event) => {
         event.preventDefault()
         void submit()
       }}
     >
-      <h3>{t('kubecode.research.capture')}</h3>
-      <p className="kubecode-research-muted">{t('kubecode.research.captureHint')}</p>
-      <div className="kubecode-research-row">
-        <Select
-          value={source?.ref_id ?? ''}
-          onValueChange={(value) => {
-            key.current = newClientMessageId()
-            setSourceId(value)
-          }}
-        >
-          <SelectTrigger aria-label={t('kubecode.research.captureFrom')}><SelectValue /></SelectTrigger>
-          <SelectContent>
-            {sources.map((link) => (
-              <SelectItem key={link.ref_id} value={link.ref_id}>
-                {link.title || link.ref_id}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select
-          value={kind}
-          onValueChange={(value) => {
-            key.current = newClientMessageId()
-            setKind(value as ResearchFindingKind)
-          }}
-        >
-          <SelectTrigger aria-label={t('kubecode.research.findingKind')}><SelectValue /></SelectTrigger>
-          <SelectContent>
-            {FINDING_KINDS.map((item) => (
-              <SelectItem key={item} value={item}>{findingKindLabel(t, item)}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      <Textarea
-        aria-label={t('kubecode.research.statement')}
-        rows={3}
-        value={statement}
-        maxLength={4000}
-        onChange={(event) => {
-          key.current = newClientMessageId()
-          setStatement(event.target.value)
-        }}
-      />
-      <Input
-        aria-label={t('kubecode.research.evidenceFile')}
-        placeholder={t('kubecode.research.evidenceFilePlaceholder')}
-        value={evidence}
-        onChange={(event) => {
-          key.current = newClientMessageId()
-          setEvidence(event.target.value)
-        }}
-      />
-      {capture.error && <p className="kubecode-research-error" role="alert">{capture.error}</p>}
-      <div className="kubecode-research-panel-actions">
-        <Button aria-busy={capture.busy} disabled={!statement.trim() || capture.busy} size="sm" type="submit">
-          {t('kubecode.research.record')}
-        </Button>
-      </div>
+      <ResearchSection label={t('kubecode.research.capture')}>
+        <FieldGroup className="gap-3">
+          <FieldDescription>{t('kubecode.research.captureHint')}</FieldDescription>
+          <div className="flex flex-wrap items-center gap-2">
+            <Select
+              value={source?.ref_id ?? ''}
+              onValueChange={(value) => {
+                key.current = newClientMessageId()
+                setSourceId(value)
+              }}
+            >
+              <SelectTrigger aria-label={t('kubecode.research.captureFrom')} className="min-w-[140px] flex-1 sm:flex-none"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {sources.map((link) => (
+                    <SelectItem key={link.ref_id} value={link.ref_id}>
+                      {link.title || link.ref_id}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <Select
+              value={kind}
+              onValueChange={(value) => {
+                key.current = newClientMessageId()
+                setKind(value as ResearchFindingKind)
+              }}
+            >
+              <SelectTrigger aria-label={t('kubecode.research.findingKind')} className="min-w-[140px] flex-1 sm:flex-none"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {FINDING_KINDS.map((item) => (
+                    <SelectItem key={item} value={item}>{findingKindLabel(t, item)}</SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </div>
+          <Textarea
+            aria-label={t('kubecode.research.statement')}
+            rows={3}
+            value={statement}
+            maxLength={4000}
+            onChange={(event) => {
+              key.current = newClientMessageId()
+              setStatement(event.target.value)
+            }}
+          />
+          <Input
+            aria-label={t('kubecode.research.evidenceFile')}
+            placeholder={t('kubecode.research.evidenceFilePlaceholder')}
+            value={evidence}
+            onChange={(event) => {
+              key.current = newClientMessageId()
+              setEvidence(event.target.value)
+            }}
+          />
+          {capture.error && <Alert variant="destructive"><AlertDescription>{capture.error}</AlertDescription></Alert>}
+          <div className="flex justify-end">
+            <Button aria-busy={capture.busy} disabled={!statement.trim() || capture.busy} size="sm" type="submit">
+              {t('kubecode.research.record')}
+            </Button>
+          </div>
+        </FieldGroup>
+      </ResearchSection>
     </form>
   )
 }
 
+const SOURCE_LIST = 'm-0 flex list-none flex-col gap-0.5 p-0 text-xs text-muted-foreground'
+const SOURCE_ROW = 'flex flex-wrap items-center gap-1.5'

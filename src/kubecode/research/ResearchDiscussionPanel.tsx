@@ -1,9 +1,13 @@
 import { useMemo, useRef, useState } from 'react'
 
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { Empty, EmptyDescription } from '@/components/ui/empty'
+import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from '@/components/ui/item'
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -22,6 +26,7 @@ import type {
 } from '../api'
 import { newClientMessageId } from '../session/sessionModel'
 import { agentLabel, authorLabel, entryKindLabel } from './researchLabels'
+import { ResearchPanel, ResearchSection } from './ResearchLayout'
 import { AvailabilityBadge } from './SourceBadge'
 import { useAction } from './useAction'
 
@@ -110,54 +115,67 @@ export function ResearchDiscussionPanel({
   }
 
   return (
-    <div className="kubecode-research-panel">
-      <section className="kubecode-research-section">
-        <h3>{t('kubecode.research.discussionSessions')}</h3>
+    <ResearchPanel>
+      <ResearchSection label={t('kubecode.research.discussionSessions')}>
         {sessions.length === 0 && (
-          <p className="kubecode-research-muted">{t('kubecode.research.noDiscussionSessions')}</p>
+          <Empty className="items-start p-0 text-left md:p-0">
+            <EmptyDescription>{t('kubecode.research.noDiscussionSessions')}</EmptyDescription>
+          </Empty>
         )}
-        <ul className="kubecode-research-list">
-          {sessions.map((link) => (
-            <li key={link.ref_id}>
-              <span className="kubecode-research-item-title">
-                {link.title || t('kubecode.untitledSession')}
-              </span>
-              {link.agent_id && <span className="kubecode-research-muted">{agentLabel(link.agent_id)}</span>}
-              {link.availability !== 'available' && <AvailabilityBadge availability={link.availability} t={t} />}
-              {link.state === 'archived' && (
-                <StatusBadge tone="muted">{t('kubecode.research.sessionArchived')}</StatusBadge>
-              )}
-              <Button
-                aria-label={`${t('kubecode.research.openSession')}: ${link.title || t('kubecode.untitledSession')}`}
-                disabled={link.availability === 'removed'}
-                size="xs"
-                variant="outline"
-                onClick={() => onOpenSession(link.ref_id)}
-              >
-                {t('kubecode.research.openSession')}
-              </Button>
-              <Button
-                aria-label={`${t('kubecode.research.unlink')}: ${link.title || t('kubecode.untitledSession')}`}
-                disabled={discussion.busy}
-                size="xs"
-                variant="ghost"
-                onClick={() => unlink(link.ref_id)}
-              >
-                {t('kubecode.research.unlink')}
-              </Button>
-            </li>
-          ))}
-        </ul>
+        {sessions.length > 0 && (
+          <ItemGroup>
+            {sessions.map((link) => (
+              <Item key={link.ref_id} role="listitem" size="sm" variant="outline">
+                <ItemContent>
+                  <ItemTitle className="[overflow-wrap:anywhere]">
+                    {link.title || t('kubecode.untitledSession')}
+                  </ItemTitle>
+                  {(link.agent_id || link.availability !== 'available' || link.state === 'archived') && (
+                    <ItemDescription className="flex flex-wrap items-center gap-2">
+                      {link.agent_id && <span>{agentLabel(link.agent_id)}</span>}
+                      {link.availability !== 'available' && <AvailabilityBadge availability={link.availability} t={t} />}
+                      {link.state === 'archived' && (
+                        <StatusBadge tone="muted">{t('kubecode.research.sessionArchived')}</StatusBadge>
+                      )}
+                    </ItemDescription>
+                  )}
+                </ItemContent>
+                <ItemActions>
+                  <Button
+                    aria-label={`${t('kubecode.research.openSession')}: ${link.title || t('kubecode.untitledSession')}`}
+                    disabled={link.availability === 'removed'}
+                    size="xs"
+                    variant="outline"
+                    onClick={() => onOpenSession(link.ref_id)}
+                  >
+                    {t('kubecode.research.openSession')}
+                  </Button>
+                  <Button
+                    aria-label={`${t('kubecode.research.unlink')}: ${link.title || t('kubecode.untitledSession')}`}
+                    disabled={discussion.busy}
+                    size="xs"
+                    variant="ghost"
+                    onClick={() => unlink(link.ref_id)}
+                  >
+                    {t('kubecode.research.unlink')}
+                  </Button>
+                </ItemActions>
+              </Item>
+            ))}
+          </ItemGroup>
+        )}
         {!detail.archived && (
-          <div className="kubecode-research-row">
+          <div className="flex flex-wrap items-center gap-2">
             <Select value={selectedAgent} onValueChange={(value) => setAgentId(value as AgentId)}>
-              <SelectTrigger aria-label={t('kubecode.agent')} disabled={available.length === 0}>
+              <SelectTrigger aria-label={t('kubecode.agent')} className="min-w-[140px] flex-1 sm:flex-none" disabled={available.length === 0}>
                 <SelectValue placeholder={t('kubecode.research.noAgents')} />
               </SelectTrigger>
               <SelectContent>
-                {available.map((agent) => (
-                  <SelectItem key={agent.id} value={agent.id}>{agentLabel(agent.id)}</SelectItem>
-                ))}
+                <SelectGroup>
+                  {available.map((agent) => (
+                    <SelectItem key={agent.id} value={agent.id}>{agentLabel(agent.id)}</SelectItem>
+                  ))}
+                </SelectGroup>
               </SelectContent>
             </Select>
             <Button
@@ -171,17 +189,19 @@ export function ResearchDiscussionPanel({
           </div>
         )}
         {!detail.archived && linkable.length > 0 && (
-          <div className="kubecode-research-row">
+          <div className="flex flex-wrap items-center gap-2">
             <Select value={linkId} onValueChange={setLinkId}>
-              <SelectTrigger aria-label={t('kubecode.research.linkSession')}>
+              <SelectTrigger aria-label={t('kubecode.research.linkSession')} className="min-w-[140px] flex-1 sm:flex-none">
                 <SelectValue placeholder={t('kubecode.research.linkSession')} />
               </SelectTrigger>
               <SelectContent>
-                {linkable.map((item) => (
-                  <SelectItem key={item.id} value={item.id}>
-                    {item.title || t('kubecode.untitledSession')}
-                  </SelectItem>
-                ))}
+                <SelectGroup>
+                  {linkable.map((item) => (
+                    <SelectItem key={item.id} value={item.id}>
+                      {item.title || t('kubecode.untitledSession')}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
               </SelectContent>
             </Select>
             <Button disabled={!linkId || discussion.busy} size="sm" variant="outline" onClick={() => void linkExisting()}>
@@ -189,30 +209,37 @@ export function ResearchDiscussionPanel({
             </Button>
           </div>
         )}
-        {discussion.error && <p className="kubecode-research-error" role="alert">{discussion.error}</p>}
-      </section>
+        {discussion.error && <Alert variant="destructive"><AlertDescription>{discussion.error}</AlertDescription></Alert>}
+      </ResearchSection>
 
-      <section className="kubecode-research-section">
-        <h3>{t('kubecode.research.log')}</h3>
-        {entries.length === 0 && <p className="kubecode-research-muted">{t('kubecode.research.noEntries')}</p>}
-        <ol className="kubecode-research-log">
-          {entries.map((item) => (
-            <li key={item.id} data-kind={item.kind}>
-              <header>
-                <StatusBadge tone={item.kind === 'decision' ? 'ok' : 'muted'}>
-                  {entryKindLabel(t, item.kind)}
-                </StatusBadge>
-                <span className="kubecode-research-muted">
-                  {authorLabel(t, item.author_kind)} · {t('kubecode.research.revisionShort', { revision: item.brief_revision })}
-                </span>
-              </header>
-              <p>{item.body}</p>
-            </li>
-          ))}
-        </ol>
+      <ResearchSection label={t('kubecode.research.log')}>
+        {entries.length === 0 && (
+          <Empty className="items-start p-0 text-left md:p-0">
+            <EmptyDescription>{t('kubecode.research.noEntries')}</EmptyDescription>
+          </Empty>
+        )}
+        {entries.length > 0 && (
+          <ItemGroup className="gap-2">
+            {entries.map((item) => (
+              <Item data-kind={item.kind} key={item.id} role="listitem" size="sm" variant={item.kind === 'decision' ? 'outline' : 'muted'}>
+                <ItemContent>
+                  <ItemDescription className="flex flex-wrap items-center gap-2">
+                    <StatusBadge tone={item.kind === 'decision' ? 'ok' : 'muted'}>
+                      {entryKindLabel(t, item.kind)}
+                    </StatusBadge>
+                    <span>
+                      {authorLabel(t, item.author_kind)} · {t('kubecode.research.revisionShort', { revision: item.brief_revision })}
+                    </span>
+                  </ItemDescription>
+                  <p className="m-0 whitespace-pre-wrap text-sm [overflow-wrap:anywhere]">{item.body}</p>
+                </ItemContent>
+              </Item>
+            ))}
+          </ItemGroup>
+        )}
         {!detail.archived && (
           <form
-            className="kubecode-research-form"
+            className="flex flex-col gap-2"
             onSubmit={(event) => {
               event.preventDefault()
               void addEntry()
@@ -229,7 +256,7 @@ export function ResearchDiscussionPanel({
                 setBody(event.target.value)
               }}
             />
-            <div className="kubecode-research-row">
+            <div className="flex flex-wrap items-center justify-end gap-2">
               <Select
                 value={kind}
                 onValueChange={(value) => {
@@ -239,18 +266,20 @@ export function ResearchDiscussionPanel({
               >
                 <SelectTrigger aria-label={t('kubecode.research.entryKind')}><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="note">{t('kubecode.research.entryKind.note')}</SelectItem>
-                  <SelectItem value="decision">{t('kubecode.research.entryKind.decision')}</SelectItem>
+                  <SelectGroup>
+                    <SelectItem value="note">{t('kubecode.research.entryKind.note')}</SelectItem>
+                    <SelectItem value="decision">{t('kubecode.research.entryKind.decision')}</SelectItem>
+                  </SelectGroup>
                 </SelectContent>
               </Select>
               <Button aria-busy={entry.busy} disabled={!body.trim() || entry.busy} size="sm" type="submit">
                 {t('kubecode.research.addEntry')}
               </Button>
             </div>
-            {entry.error && <p className="kubecode-research-error" role="alert">{entry.error}</p>}
+            {entry.error && <Alert variant="destructive"><AlertDescription>{entry.error}</AlertDescription></Alert>}
           </form>
         )}
-      </section>
-    </div>
+      </ResearchSection>
+    </ResearchPanel>
   )
 }

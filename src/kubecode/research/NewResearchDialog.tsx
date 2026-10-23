@@ -1,5 +1,6 @@
-import { useRef, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -10,6 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import type { Translator } from '@/lib/i18n'
@@ -38,6 +40,7 @@ export function NewResearchDialog({
   const [question, setQuestion] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const fieldId = useId()
   // One key per attempt: a retry after a lost response returns the same RQ.
   const requestId = useRef(newClientMessageId())
 
@@ -71,17 +74,18 @@ export function NewResearchDialog({
           <DialogTitle>{t('kubecode.research.new')}</DialogTitle>
           <DialogDescription>{t('kubecode.research.newDescription')}</DialogDescription>
         </DialogHeader>
-        <div className="kubecode-research-form">
-          <label>
-            <span>{t('kubecode.research.field.title')}</span>
-            <Input value={title} maxLength={200} onChange={(event) => {
+        <FieldGroup>
+          <Field>
+            <FieldLabel htmlFor={`${fieldId}-title`}>{t('kubecode.research.field.title')}</FieldLabel>
+            <Input id={`${fieldId}-title`} value={title} maxLength={200} onChange={(event) => {
                 requestId.current = newClientMessageId()
                 setTitle(event.target.value)
               }} />
-          </label>
-          <label>
-            <span>{t('kubecode.research.field.question')}</span>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor={`${fieldId}-question`}>{t('kubecode.research.field.question')}</FieldLabel>
             <Textarea
+              id={`${fieldId}-question`}
               rows={4}
               value={question}
               maxLength={4000}
@@ -90,9 +94,9 @@ export function NewResearchDialog({
                 setQuestion(event.target.value)
               }}
             />
-          </label>
-          {error && <p className="kubecode-research-error" role="alert">{error}</p>}
-        </div>
+          </Field>
+          {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
+        </FieldGroup>
         <DialogFooter>
           <DialogClose asChild><Button disabled={saving} variant="ghost">{t('kubecode.cancel')}</Button></DialogClose>
           <Button aria-busy={saving} disabled={!valid || saving || !projectId} onClick={() => void submit()}>

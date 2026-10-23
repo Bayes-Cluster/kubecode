@@ -1201,6 +1201,8 @@
   "kubecode.resizeNavigation": "Zmianić pamier navihacyi",
   "kubecode.resizeContextPanel": "Zmianić pamier panieli kantekstu",
   "kubecode.resizeTerminal": "Zmianić pamier terminala",
+  "kubecode.resizeTerminalSplit": "Zmianić pamier padzielenych terminałaŭ",
+  "kubecode.resizeTerminalNavigator": "Zmianić pamier śpisa terminałaŭ",
   "kubecode.collapse": "Collapse",
   "kubecode.settings": "Settings",
   "kubecode.settingsDescription": "Configure the Kubecode workspace.",

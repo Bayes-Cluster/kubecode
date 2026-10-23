@@ -1,15 +1,16 @@
 import { useState } from 'react'
 
-import { Button } from '@/components/ui/button'
 import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { Button } from '@/components/ui/button'
+import { Spinner } from '@/components/ui/spinner'
 import type { Translator } from '@/lib/i18n'
 
 type DeleteTeamDialogProps = {
@@ -41,25 +42,25 @@ export function DeleteTeamDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={(nextOpen) => {
+    <AlertDialog open={open} onOpenChange={(nextOpen) => {
       if (!deleting) onOpenChange(nextOpen)
     }}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{t('kubecode.deleteTeamTitle', { title: teamName })}</DialogTitle>
-          <DialogDescription>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{t('kubecode.deleteTeamTitle', { title: teamName })}</AlertDialogTitle>
+          <AlertDialogDescription>
             {t('kubecode.deleteTeamDescription', { count: teammateCount })}
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <DialogClose asChild>
-            <Button disabled={deleting} variant="outline">{t('kubecode.cancel')}</Button>
-          </DialogClose>
-          <Button disabled={deleting} variant="destructive" onClick={() => void confirm()}>
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={deleting}>{t('kubecode.cancel')}</AlertDialogCancel>
+          {/* Not AlertDialogAction: the dialog stays until the Team is deleted. */}
+          <Button aria-busy={deleting} disabled={deleting} variant="destructive" onClick={() => void confirm()}>
+            {deleting && <Spinner data-icon="inline-start" />}
             {t('kubecode.delete')}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   )
 }

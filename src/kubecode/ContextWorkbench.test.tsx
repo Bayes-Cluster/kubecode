@@ -79,6 +79,39 @@ describe('ContextWorkbench', () => {
     expect(screen.getByText('Staged changes')).toBeInTheDocument()
   })
 
+  it('commits once when Enter repeats while the commit is in flight', async () => {
+    let finish: (value: unknown) => void = () => {}
+    const commitGit = vi.fn().mockImplementation(() => new Promise((resolve) => { finish = resolve }))
+    const api = {
+      listEntries: vi.fn().mockResolvedValue([]),
+      gitStatus: vi.fn().mockResolvedValue({
+        is_repository: true,
+        branch: 'main',
+        files: [{ path: 'README.md', index_status: 'M', worktree_status: null }],
+      }),
+      commitGit,
+    } as unknown as KubecodeApi
+    render(
+      <ContextWorkbench
+        api={api}
+        projectId="project-1"
+        t={createTranslator('en')}
+        width={440}
+        workspaceEvents={[]}
+      />,
+    )
+
+    const input = await screen.findByRole('textbox', { name: 'Commit message' })
+    fireEvent.change(input, { target: { value: 'docs: note' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    fireEvent.keyDown(input, { key: 'Enter', repeat: true })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(commitGit).toHaveBeenCalledTimes(1)
+
+    await act(async () => finish({ is_repository: true, branch: 'main', files: [] }))
+    expect(commitGit).toHaveBeenCalledTimes(1)
+  })
+
   it('loads untracked diffs from GitService and renders explicit unavailable reasons', async () => {
     const gitDiff = vi.fn()
       .mockResolvedValueOnce({ diff: '+server patch', unavailable_reason: null })
@@ -126,7 +159,7 @@ describe('ContextWorkbench', () => {
 
     fireEvent.click(screen.getByRole('tab', { name: 'Explorer' }))
     fireEvent.click(screen.getByText('binary.dat').closest('button') as HTMLButtonElement)
-    expect(await screen.findByText('Binary diffs cannot be attached.')).toBeInTheDocument()
+    expect((await screen.findByText('Binary diffs cannot be attached.')).closest('[data-slot="empty"]')).toBeInTheDocument()
   })
 
   it('does not display a stale diff when the selection changes quickly', async () => {
@@ -311,7 +344,7 @@ describe('ContextWorkbench', () => {
     }
 
     await clickRow('binary.dat')
-    expect(await screen.findByText('Binary diffs cannot be attached.')).toBeInTheDocument()
+    expect((await screen.findByText('Binary diffs cannot be attached.')).closest('[data-slot="empty"]')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('tab', { name: 'Explorer' }))
     await clickRow('large.txt')
     expect(await screen.findByText('This diff exceeds the context byte limit. Select a smaller changed file instead.')).toBeInTheDocument()
@@ -349,7 +382,9 @@ describe('ContextWorkbench', () => {
     )
 
     fireEvent.click((await screen.findByText('a.txt')).closest('button') as HTMLButtonElement)
-    expect(await screen.findByRole('alert')).toHaveTextContent('This diff could not be loaded.')
+    const failed = await screen.findByRole('alert')
+    expect(failed).toHaveTextContent('This diff could not be loaded.')
+    expect(failed).toHaveAttribute('data-slot', 'alert')
     expect(screen.getByText('boom')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
@@ -404,9 +439,11 @@ describe('ContextWorkbench', () => {
       />,
     )
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Create a Git repository' }))
+    const create = await screen.findByRole('button', { name: 'Create a Git repository' })
+    expect(create.closest('[data-slot="empty"]')).toBeInTheDocument()
+    fireEvent.click(create)
     await waitFor(() => expect(api.initializeGit).toHaveBeenCalledWith('project-1'))
-    expect(screen.getByText('No changes to review')).toBeInTheDocument()
+    expect(screen.getByText('No changes to review').closest('[data-slot="empty"]')).toBeInTheDocument()
   })
 
   it('refreshes Files when a file event is followed by another workspace event', async () => {
@@ -574,8 +611,10 @@ describe('ContextWorkbench', () => {
 
     await waitFor(() => expect(api.gitStatus).toHaveBeenCalled())
     const files = screen.getByRole('button', { name: 'Files' })
+    expect(files).toHaveAttribute('data-slot', 'collapsible-trigger')
     fireEvent.click(files)
     expect(files).toHaveAttribute('aria-expanded', 'false')
+    expect(files.closest('[data-slot="collapsible"]')).toHaveAttribute('data-state', 'closed')
     expect(screen.getByRole('tab', { name: 'Explorer' })).toHaveAttribute('data-state', 'active')
   })
 
@@ -603,7 +642,7 @@ describe('ContextWorkbench', () => {
       'aria-expanded',
       'true',
     )
-    expect(screen.getByText('Inspect the project')).toBeInTheDocument()
+    expect(screen.getByText('Inspect the project').closest('[data-slot="item"]')).toBeInTheDocument()
     expect(screen.getByText('Implement the change')).toBeInTheDocument()
   })
 
@@ -650,7 +689,7 @@ describe('ContextWorkbench', () => {
     expect(screen.getByText('first edited')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Close editor' }))
     expect(screen.getByText(/Your edits to this file have not been saved/)).toBeInTheDocument()
-    const dialog = screen.getByRole('dialog')
+    const dialog = screen.getByRole('alertdialog')
     fireEvent.click(within(dialog).getByRole('button', { name: 'Discard' }))
     expect(screen.queryByRole('tab', { name: /one.ts/ })).not.toBeInTheDocument()
     expect(screen.getByText('second')).toBeInTheDocument()
@@ -725,6 +764,12 @@ describe('ContextWorkbench', () => {
 
     fireEvent.keyDown(document, { key: 'p', metaKey: true })
     const picker = await screen.findByRole('dialog', { name: 'Search files' })
+    expect(picker.querySelector('[data-slot="command"]')).not.toBeNull()
+    expect(within(picker).getByRole('combobox', { name: 'Search files' })).toHaveAttribute('data-slot', 'command-input')
+    const excluded = within(picker).getByRole('button', { name: 'Show hidden, ignored, and generated files' })
+    expect(excluded).toHaveAttribute('data-slot', 'toggle')
+    fireEvent.click(excluded)
+    expect(within(picker).getByRole('button', { name: 'Hide hidden, ignored, and generated files' })).toHaveAttribute('aria-pressed', 'true')
     fireEvent.click(await within(picker).findByRole('option', { name: /README\.md/ }))
 
     expect(await screen.findByText('# Demo')).toBeInTheDocument()
@@ -829,7 +874,7 @@ describe('ContextWorkbench', () => {
     expect(within(conflict).getByText('conflict.txt')).toBeInTheDocument()
     expect(within(conflict).getByText('UU')).toBeInTheDocument()
 
-    const notices = screen.getAllByRole('status')
+    const notices = screen.getAllByRole('status').filter((notice) => notice.getAttribute('data-slot') === 'alert')
     expect(notices.some((notice) => notice.textContent?.includes('first 6 changes'))).toBe(true)
     expect(notices.some((notice) => notice.textContent?.includes('Resolve these conflicts'))).toBe(true)
   })
@@ -957,6 +1002,31 @@ describe('ContextWorkbench', () => {
       const list = await screen.findByTestId(`git-change-virtual-list-${group}`)
       expect(list.querySelectorAll('.kubecode-git-row').length).toBeLessThan(210)
     }
+  })
+
+  it('confirms discarding worktree changes in an AlertDialog', async () => {
+    const api = {
+      listEntries: vi.fn().mockResolvedValue([]),
+      gitStatus: vi.fn().mockResolvedValue({
+        is_repository: true,
+        branch: 'main',
+        files: [{ path: 'README.md', index_status: null, worktree_status: 'M' }],
+        truncated: false,
+      }),
+      mutateGit: vi.fn().mockResolvedValue({ is_repository: true, branch: 'main', files: [], truncated: false }),
+    } as unknown as KubecodeApi
+    render(
+      <ContextWorkbench api={api} projectId="project-1" t={createTranslator('en')} width={440} workspaceEvents={[]} />,
+    )
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Discard: README.md' }))
+    const confirm = screen.getByRole('alertdialog', { name: 'Discard changes?' })
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Cancel' }))
+    expect(api.mutateGit).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Discard: README.md' }))
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Discard' }))
+    await waitFor(() => expect(api.mutateGit).toHaveBeenCalledWith('project-1', 'discard', ['README.md']))
   })
 })
 

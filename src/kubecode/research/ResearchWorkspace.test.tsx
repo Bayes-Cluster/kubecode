@@ -130,7 +130,9 @@ describe('ResearchWorkspace', () => {
   it('offers retry on a failed load and reports a missing question without retry', async () => {
     const getResearch = vi.fn().mockRejectedValueOnce(new Error('boom')).mockResolvedValue(detailFixture)
     mount({ api: fakeApi({ getResearch }) })
-    expect(await screen.findByRole('alert')).toHaveTextContent('kubecode.research.loadFailed')
+    const failed = await screen.findByRole('alert')
+    expect(failed).toHaveTextContent('kubecode.research.loadFailed')
+    expect(failed).toHaveAttribute('data-slot', 'alert')
     fireEvent.click(screen.getByRole('button', { name: 'kubecode.retry' }))
     expect(await screen.findByText('Does structured pruning keep accuracy?')).toBeInTheDocument()
 
@@ -209,10 +211,10 @@ describe('ResearchWorkspace', () => {
     const { props } = mount({ api: fakeApi({ getResearch: vi.fn().mockResolvedValue(detail) }) })
     await screen.findByText('Does structured pruning keep accuracy?')
     openTab('kubecode.research.tab.discussion')
-    const list = (await panel().findByText('Pruning chat')).closest('li')!
+    const list = (await panel().findByText('Pruning chat')).closest('[data-slot="item"]') as HTMLElement
     fireEvent.click(within(list).getByRole('button', { name: /kubecode.research.openSession/ }))
     expect(props.onOpenSession).toHaveBeenCalledWith('s-1')
-    const gone = panel().getByText('Old chat').closest('li')!
+    const gone = panel().getByText('Old chat').closest('[data-slot="item"]') as HTMLElement
     expect(within(gone).getByText('kubecode.research.availability.removed')).toBeInTheDocument()
     expect(within(gone).getByRole('button', { name: /kubecode.research.openSession/ })).toBeDisabled()
   })
@@ -228,12 +230,12 @@ describe('ResearchWorkspace', () => {
     })
     await screen.findByText('Does structured pruning keep accuracy?')
     openTab('kubecode.research.tab.findings')
-    const observed = (await screen.findByText('Accuracy held at 0.9')).closest('li')!
+    const observed = (await screen.findByText('Accuracy held at 0.9')).closest('[data-slot="item"]') as HTMLElement
     expect(within(observed).getByText('kubecode.research.basis.observation')).toBeInTheDocument()
     expect(within(observed).getByText('kubecode.research.stale')).toBeInTheDocument()
     expect(within(observed).getByText('results.csv')).toBeInTheDocument()
     expect(within(observed).getByText('kubecode.research.availability.changed')).toBeInTheDocument()
-    const guessed = screen.getByText('Probably robust').closest('li')!
+    const guessed = screen.getByText('Probably robust').closest('[data-slot="item"]') as HTMLElement
     expect(within(guessed).getByText('kubecode.research.basis.interpretation')).toBeInTheDocument()
     expect(within(guessed).queryByText('kubecode.research.stale')).not.toBeInTheDocument()
   })
@@ -257,6 +259,8 @@ describe('ResearchWorkspace', () => {
     })
     const banner = await screen.findByRole('button', { name: /kubecode.research.pendingDecisions/ })
     expect(banner).toHaveTextContent('"count":2')
+    expect(banner).toHaveAttribute('data-slot', 'button')
+    expect(banner.closest('[data-slot="alert"]')).toBeInTheDocument()
     fireEvent.click(banner)
 
     expect(await screen.findByText('Drop single-GPU')).toBeInTheDocument()
@@ -308,7 +312,7 @@ describe('ResearchWorkspace', () => {
     })
     await screen.findByText('Does structured pruning keep accuracy?')
     openTab('kubecode.research.tab.work')
-    const round = (await screen.findByText('Compare approaches')).closest('li')!
+    const round = (await screen.findByText('Compare approaches')).closest('[data-slot="item"]') as HTMLElement
     expect(within(round).getByText(/kubecode.research.contextRevision/)).toHaveTextContent('"revision":1')
     expect(within(round).getByText('kubecode.research.stale')).toBeInTheDocument()
     expect(within(round).getByText('kubecode.research.availability.removed')).toBeInTheDocument()
@@ -319,6 +323,8 @@ describe('ResearchWorkspace', () => {
     // never carried forward as if it were still the original evidence.
     expect(startResearchRound).not.toHaveBeenCalled()
     expect(screen.getByRole('checkbox', { name: /ok.csv/ })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: /ok.csv/ })).toHaveAttribute('data-slot', 'checkbox')
+    expect(within(round).getByRole('button', { name: /kubecode.research.exec.hide/ })).toHaveAttribute('data-slot', 'collapsible-trigger')
     expect(screen.getByRole('checkbox', { name: /moved.csv/ })).toBeDisabled()
     fireEvent.change(screen.getByLabelText('kubecode.research.instruction'), { target: { value: 'Try 70% sparsity' } })
     fireEvent.click(screen.getByRole('button', { name: /kubecode.research.startRound/ }))

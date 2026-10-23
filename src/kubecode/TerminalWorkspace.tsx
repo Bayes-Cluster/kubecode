@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { usePanelRef, type PanelImperativeHandle, type PanelSize } from 'react-resizable-panels'
 import {
   closestCenter,
   DndContext,
@@ -28,7 +29,7 @@ import {
 } from 'lucide-react'
 
 import { AiAgentIcon } from '@/components/AiAgentIcon'
-import { ResizeHandle } from '@/components/ResizeHandle'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -38,7 +39,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { Input } from '@/components/ui/input'
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
+import { Spinner } from '@/components/ui/spinner'
 import { trackEvent } from '@/lib/telemetry'
 import type { Translator } from '@/lib/i18n'
 
@@ -95,6 +99,7 @@ const TERMINAL_NAVIGATOR_WIDE_MINIMUM = 80
 const TERMINAL_NAVIGATOR_DEFAULT = 120
 const TERMINAL_NAVIGATOR_MIDPOINT = 63
 const TERMINAL_NAVIGATOR_MAXIMUM = 500
+const TERMINAL_PANE_MINIMUM = 48
 
 export function TerminalWorkspace({
   agents,
@@ -120,7 +125,7 @@ export function TerminalWorkspace({
   const [navigatorWidth, setNavigatorWidth] = useState(() => readTerminalNavigatorLayout(projectId).width)
   const sequence = useRef(0)
   const hadTerminal = useRef(initialTerminals.length > 0)
-  const body = useRef<HTMLDivElement>(null)
+  const navigatorPanel = usePanelRef()
   const activeGroup = workspace.groups.find((group) => group.id === workspace.activeGroupId) ?? null
   const activeTerminal = terminals.find((terminal) => terminal.id === activeGroup?.activeTerminalId) ?? null
   const activePaneIds = useMemo(
@@ -310,20 +315,14 @@ export function TerminalWorkspace({
       : { ...current, [terminalId]: selectedText })
   }, [])
 
-  const resizeNavigator = useCallback((delta: number) => {
-    setNavigatorWidth((current) => resizeTerminalNavigator(
-      current,
-      delta,
-      Math.min(TERMINAL_NAVIGATOR_MAXIMUM, Math.max(
-        TERMINAL_NAVIGATOR_WIDE_MINIMUM,
-        (body.current?.clientWidth ?? 420) - 120,
-      )),
-    ))
+  const rememberNavigator = useCallback((size: PanelSize) => {
+    if (size.inPixels > 0) setNavigatorWidth(Math.round(size.inPixels))
   }, [])
 
   const toggleNavigator = () => {
     const next = navigatorNarrow ? TERMINAL_NAVIGATOR_DEFAULT : TERMINAL_NAVIGATOR_NARROW
     setNavigatorWidth(next)
+    resizePanel(navigatorPanel.current, next)
     trackEvent('kubecode_terminal_navigator_toggled', { next_state: navigatorNarrow ? 'wide' : 'narrow' })
   }
 
@@ -391,8 +390,8 @@ export function TerminalWorkspace({
           onDismiss={() => setError(null)}
         />
       )}
-      <div className="kubecode-terminal-body" ref={body}>
-        <div className="kubecode-terminal-canvas">
+      <ResizablePanelGroup className="kubecode-terminal-body" id="kubecode-terminal-body" orientation="horizontal">
+        <ResizablePanel className="kubecode-terminal-canvas" id="terminal-canvas" minSize={120}>
           {activeGroup ? (
             <TerminalLayoutView
               activeTerminalId={activeGroup.activeTerminalId}
@@ -415,19 +414,30 @@ export function TerminalWorkspace({
               visible={open}
             />
           ) : (
-            <div className="kubecode-empty-small">
-              {creating ? t('kubecode.loading') : t('kubecode.newTerminal')}
-            </div>
+            <Empty className="h-full p-4">
+              <EmptyHeader>
+                {creating && <EmptyMedia><Spinner /></EmptyMedia>}
+                <EmptyTitle className="text-sm font-normal text-muted-foreground">
+                  {creating ? t('kubecode.loading') : t('kubecode.newTerminal')}
+                </EmptyTitle>
+              </EmptyHeader>
+            </Empty>
           )}
-        </div>
+        </ResizablePanel>
         {navigatorVisible && (
           <>
-            <ResizeHandle
-              onDoubleClick={() => setNavigatorWidth((current) => current < TERMINAL_NAVIGATOR_MIDPOINT
-                ? TERMINAL_NAVIGATOR_DEFAULT
-                : TERMINAL_NAVIGATOR_NARROW)}
-              onResize={resizeNavigator}
-            />
+            <ResizableHandle aria-label={t('kubecode.resizeTerminalNavigator')} disableDoubleClick onDoubleClick={toggleNavigator} />
+            <ResizablePanel
+              collapsedSize={TERMINAL_NAVIGATOR_NARROW}
+              collapsible
+              defaultSize={navigatorWidth}
+              groupResizeBehavior="preserve-pixel-size"
+              id="terminal-navigator"
+              maxSize={TERMINAL_NAVIGATOR_MAXIMUM}
+              minSize={TERMINAL_NAVIGATOR_WIDE_MINIMUM}
+              panelRef={navigatorPanel}
+              onResize={rememberNavigator}
+            >
             <DndContext collisionDetection={closestCenter} onDragEnd={dragGroup} sensors={sensors}>
               <SortableContext
                 items={workspace.groups.map((group) => group.id)}
@@ -438,7 +448,6 @@ export function TerminalWorkspace({
                   className="kubecode-terminal-navigator"
                   data-narrow={navigatorNarrow}
                   role="tree"
-                  style={{ width: navigatorWidth }}
                 >
                   {workspace.groups.map((group) => (
                     <TerminalNavigatorGroup
@@ -455,9 +464,10 @@ export function TerminalWorkspace({
                 </div>
               </SortableContext>
             </DndContext>
+            </ResizablePanel>
           </>
         )}
-      </div>
+      </ResizablePanelGroup>
     </div>
   )
 }
@@ -712,10 +722,12 @@ function TerminalLayoutView({
           visible={visible}
         />
         {terminal.status === 'exited' && (
-          <div className="kubecode-terminal-exited">
-            <span>{t('kubecode.terminalExitedCode', { code: terminal.exit_code ?? '?' })}</span>
-            <Button size="sm" variant="outline" onClick={() => void onRestart(terminal)}>{t('kubecode.restartTerminal')}</Button>
-          </div>
+          <Alert className="kubecode-terminal-exited w-auto py-1.5" role="status">
+            <AlertDescription className="flex flex-row flex-wrap items-center gap-2">
+              <span>{t('kubecode.terminalExitedCode', { code: terminal.exit_code ?? '?' })}</span>
+              <Button size="sm" variant="outline" onClick={() => void onRestart(terminal)}>{t('kubecode.restartTerminal')}</Button>
+            </AlertDescription>
+          </Alert>
         )}
       </div>
     )
@@ -742,32 +754,51 @@ function TerminalLayoutView({
 function TerminalSplit(props: Parameters<typeof TerminalLayoutView>[0] & {
   layout: Extract<TerminalLayout, { type: 'split' }>
 }) {
-  const { layout, onResizeSplit } = props
-  const container = useRef<HTMLDivElement>(null)
-  const resize = useCallback((delta: number) => {
-    const size = layout.direction === 'horizontal'
-      ? container.current?.clientWidth
-      : container.current?.clientHeight
-    if (!size) return
-    const minimumRatio = Math.min(49, 48 / size * 100)
-    onResizeSplit(layout.id, clamp(layout.ratio + delta / size * 100, minimumRatio, 100 - minimumRatio))
-  }, [layout.direction, layout.id, layout.ratio, onResizeSplit])
-
+  const { layout, onResizeSplit, t } = props
+  const first = usePanelRef()
+  // The saved ratio is the group's layout when it mounts; a drag (pointer,
+  // keyboard or touch) reports the new ratio back to the stored split tree.
+  const [defaultLayout] = useState(() => ({ first: layout.ratio, second: 100 - layout.ratio }))
   return (
-    <div className="kubecode-terminal-split" data-split-direction={layout.direction} ref={container}>
-      <div className="kubecode-terminal-split-child" style={{ flexBasis: `${layout.ratio}%` }}>
+    <ResizablePanelGroup
+      className="kubecode-terminal-split"
+      data-split-direction={layout.direction}
+      defaultLayout={defaultLayout}
+      id={`terminal-split-${layout.id}`}
+      orientation={layout.direction}
+      onLayoutChanged={(next) => {
+        const ratio = next.first
+        if (typeof ratio === 'number' && Math.abs(ratio - layout.ratio) > 0.1) onResizeSplit(layout.id, ratio)
+      }}
+    >
+      <ResizablePanel className="kubecode-terminal-split-child" id="first" minSize={TERMINAL_PANE_MINIMUM} panelRef={first}>
         <TerminalLayoutView {...props} layout={layout.first} />
-      </div>
-      <ResizeHandle
-        direction={layout.direction === 'horizontal' ? 'horizontal' : 'vertical'}
-        onDoubleClick={() => onResizeSplit(layout.id, 50)}
-        onResize={resize}
+      </ResizablePanel>
+      <ResizableHandle
+        aria-label={t('kubecode.resizeTerminalSplit')}
+        disableDoubleClick
+        onDoubleClick={() => {
+          onResizeSplit(layout.id, 50)
+          resizePanel(first.current, '50%')
+        }}
       />
-      <div className="kubecode-terminal-split-child" style={{ flexBasis: `${100 - layout.ratio}%` }}>
+      <ResizablePanel className="kubecode-terminal-split-child" id="second" minSize={TERMINAL_PANE_MINIMUM}>
         <TerminalLayoutView {...props} layout={layout.second} />
-      </div>
-    </div>
+      </ResizablePanel>
+    </ResizablePanelGroup>
   )
+}
+
+/** Moves a laid-out panel; an unlaid-out one (hidden dock, tests) keeps its default. */
+function resizePanel(panel: PanelImperativeHandle | null, size: number | string) {
+  if (!panel) return
+  window.requestAnimationFrame(() => {
+    try {
+      panel.resize(size)
+    } catch {
+      // Not laid out yet: the stored size applies when it mounts.
+    }
+  })
 }
 
 function TerminalKindIcon({ kind }: { kind: TerminalKind }) {
@@ -833,15 +864,6 @@ function terminalSplitPrefix(index: number, count: number): string {
   if (count < 2) return ''
   if (index === 0) return '┌'
   return index === count - 1 ? '└' : '├'
-}
-
-function resizeTerminalNavigator(current: number, delta: number, maximum: number): number {
-  if (current < TERMINAL_NAVIGATOR_MIDPOINT && delta < 0) {
-    return clamp(Math.max(TERMINAL_NAVIGATOR_WIDE_MINIMUM, current - delta), TERMINAL_NAVIGATOR_WIDE_MINIMUM, maximum)
-  }
-  const next = current - delta
-  if (next < TERMINAL_NAVIGATOR_WIDE_MINIMUM) return TERMINAL_NAVIGATOR_NARROW
-  return clamp(next, TERMINAL_NAVIGATOR_WIDE_MINIMUM, maximum)
 }
 
 function writeTerminalNavigatorLayout(projectId: string, layout: TerminalNavigatorLayout): void {

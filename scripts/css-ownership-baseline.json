@@ -51,38 +51,10 @@
     },
     {
       "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-context-tabbar [data-slot='tabs-trigger'] {",
-      "context": ".kubecode-context-tabbar [data-slot='tabs-trigger']",
-      "kind": "official-internal",
-      "owner": "#262"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-context-tabbar [data-slot='tabs-trigger'][data-state='active'] {",
-      "context": ".kubecode-context-tabbar [data-slot='tabs-trigger'][data-state='active']",
-      "kind": "official-internal",
-      "owner": "#262"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
       "text": ".kubecode-terminal-view .xterm-viewport { background-color: var(--surface-editor) !important; }",
       "context": ".kubecode-terminal-view .xterm-viewport",
       "kind": "important",
       "owner": "#262 (specialist exception: xterm viewport)"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-context-tabbar [data-slot='tabs-trigger'] {",
-      "context": ".kubecode-context-tabbar [data-slot='tabs-trigger']",
-      "kind": "official-internal",
-      "owner": "#262"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-context-tabbar [data-slot='tabs-trigger'][data-state='active'] {",
-      "context": ".kubecode-context-tabbar [data-slot='tabs-trigger'][data-state='active']",
-      "kind": "official-internal",
-      "owner": "#262"
     },
     {
       "file": "src/kubecode/kubecode.css",
@@ -146,27 +118,6 @@
       "context": "@media (prefers-reduced-motion: reduce) / .kubecode-app *, .kubecode-app *::before, .kubecode-app *::after",
       "kind": "important",
       "owner": "#255 (accessibility exception: prefers-reduced-motion)"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-research-row > [data-slot='select-trigger'] { flex: 1 1 140px; }",
-      "context": "@media (max-width: 720px) / .kubecode-research-row > button, .kubecode-research-row > [data-slot='select-trigger']",
-      "kind": "official-internal",
-      "owner": "#262"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": "flex-direction: row !important;",
-      "context": ".kubecode-research-check",
-      "kind": "important",
-      "owner": "#260"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": "gap: 8px !important;",
-      "context": ".kubecode-research-check",
-      "kind": "important",
-      "owner": "#262"
     },
     {
       "file": "src/kubecode/kubecode.css",

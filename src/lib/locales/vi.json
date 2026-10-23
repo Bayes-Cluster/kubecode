@@ -1201,6 +1201,8 @@
   "kubecode.resizeNavigation": "Đổi kích thước thanh điều hướng",
   "kubecode.resizeContextPanel": "Đổi kích thước bảng ngữ cảnh",
   "kubecode.resizeTerminal": "Đổi kích thước terminal",
+  "kubecode.resizeTerminalSplit": "Đổi kích thước các terminal đã chia",
+  "kubecode.resizeTerminalNavigator": "Đổi kích thước danh sách terminal",
   "kubecode.collapse": "Collapse",
   "kubecode.settings": "Settings",
   "kubecode.settingsDescription": "Configure the Kubecode workspace.",

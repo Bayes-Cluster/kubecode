@@ -22,11 +22,11 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 
 | Status | Rows |
 | --- | ---: |
-| migrated | 196 |
-| partial | 25 |
-| handcrafted | 13 |
+| migrated | 223 |
+| partial | 9 |
+| handcrafted | 0 |
 | specialist-engine | 4 |
-| exception | 5 |
+| exception | 8 |
 | not-applicable | 8 |
 
 | Owner | Rows |
@@ -42,14 +42,14 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 | #259 | 48 |
 | #260 | 28 |
 | #261 | 37 |
-| #262 | 35 |
+| #262 | 36 |
 
 ## Shell
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | WorkbenchShell layout root (main.kubecode-app / .kubecode-workspace / main stack) | `src/kubecode/app/WorkbenchShell.tsx:1054,1098,1197` | SidebarProvider (navigation open state) + ResizablePanelGroup/ResizablePanel; `.kubecode-workspace` keeps layout only | shadcn/ui Sidebar (SidebarProvider/SidebarInset) + Resizable | all workspace routes | #256 | migrated | ADR 0248 |
-| Panel resize handles | `src/components/ResizeHandle.tsx:9; src/kubecode/app/ProjectNavigator.tsx:790; WorkbenchShell.tsx:7` | ResizableHandle separators (named, keyboard and touch) in WorkbenchShell; ProjectNavigator has none | shadcn/ui Resizable (ResizablePanelGroup/ResizableHandle) | navigator, main stack, terminal | #256 | migrated | ADR 0248: `react-resizable-panels@4.14.8` added via the CLI. `ResizeHandle` remains only for the terminal split in `TerminalWorkspace` (#262) |
+| Panel resize handles | `src/components/ResizeHandle.tsx:9; src/kubecode/app/ProjectNavigator.tsx:790; WorkbenchShell.tsx:7` | ResizableHandle separators (named, keyboard and touch) in WorkbenchShell; ProjectNavigator has none | shadcn/ui Resizable (ResizablePanelGroup/ResizableHandle) | navigator, main stack, terminal | #256 | migrated | ADR 0248: `react-resizable-panels@4.14.8` added via the CLI. the terminal split moved to Resizable in #262 and `ResizeHandle` was removed (ADR 0252) |
 
 ## Phone
 
@@ -323,7 +323,8 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Research linked threads panel + empty state | `src/kubecode/research/ResearchThreadsPanel.tsx:36-55` | handcrafted section/ul/p with Button | shadcn Item + Empty | ResearchWorkspace, TaskActivity | #262 | handcrafted | — |
+| Research linked threads panel + empty state | `src/kubecode/research/ResearchThreadsPanel.tsx:36-55` | ItemGroup/Item + Empty | shadcn Item + Empty | ResearchWorkspace, TaskActivity | #262 | migrated | ADR 0252 |
+| Earlier thread research and round link | `src/kubecode/channel/ThreadPane.tsx:146-170` | Select + SelectGroup (was native select); note and link error are #257's Alert | shadcn Select | ChannelWorkspace | #262 | migrated | Taken over from #257; ADR 0252 |
 
 ## Members
 
@@ -402,7 +403,7 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Delete team dialog | `src/kubecode/DeleteTeamDialog.tsx:3-12` | official Dialog | Dialog (or AlertDialog) | SessionWorkspace | #261 | migrated | — |
+| Delete team dialog | `src/kubecode/DeleteTeamDialog.tsx:3-12` | AlertDialog; stays open while deleting | Dialog (or AlertDialog) | SessionWorkspace | #261 | migrated | Done under #262 (deletion confirmations); ADR 0252 |
 | Team workspace view + proposal dialog | `src/kubecode/TeamWorkspaceView.tsx:4-21,85` | official Dialog/Button | shadcn Dialog | SessionWorkspace | #261 | migrated | — |
 | Team member overview tree | `src/kubecode/TeamSessionOverview.tsx:26-65` | Item (button) + StatusBadge per member | Item / Sidebar menu / Avatar | SessionWorkspace | #261 | migrated | — |
 | Team setup form (goal, criteria, mode grid, budget) | `src/kubecode/team/TeamSetupView.tsx:114-170` | FieldGroup/Field, RadioGroup choice cards, ToggleGroup, Select, Alert | Field, RadioGroup/ToggleGroup | TeamWorkspaceView | #261 | migrated | — |
@@ -421,85 +422,85 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Explorer/Editor/Diff primary tabs | `src/kubecode/ContextWorkbench.tsx:351-578` | official Tabs + kubecode-context-* CSS | shadcn Tabs | inspector | #262 | migrated | — |
-| New file / New folder icon buttons | `src/kubecode/ContextWorkbench.tsx:392-393` | official Button icon-xs | Button + Tooltip (IconButton) | ContextWorkbench | #262 | partial | aria-label only, no Tooltip |
-| ExplorerSection collapsible header | `src/kubecode/ContextWorkbench.tsx:670-706` | handcrafted heading toggle | shadcn Collapsible | ContextWorkbench | #262 | handcrafted | — |
+| Explorer/Editor/Diff primary tabs | `src/kubecode/ContextWorkbench.tsx:351-578` | official Tabs (`TabsList variant="line"`); tab-bar TabsTrigger redraw removed | shadcn Tabs | inspector | #262 | migrated | ADR 0252 |
+| New file / New folder icon buttons | `src/kubecode/ContextWorkbench.tsx:392-393` | IconButton (Button + Tooltip) for search, new file, new folder, refresh | Button + Tooltip (IconButton) | ContextWorkbench | #262 | migrated | ADR 0252 |
+| ExplorerSection collapsible header | `src/kubecode/ContextWorkbench.tsx:670-706` | Collapsible + ghost Button trigger + Badge count | shadcn Collapsible | ContextWorkbench | #262 | migrated | ADR 0252 |
 
 ## Git
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Create repository / no changes empty states | `src/kubecode/ContextWorkbench.tsx:409-419` | handcrafted kubecode-review-empty divs | shadcn Empty | ContextWorkbench | #262 | handcrafted | — |
-| Git notices (conflict/status) | `src/kubecode/ContextWorkbench.tsx:423,438` | handcrafted div role=status | shadcn Alert | ContextWorkbench | #262 | handcrafted | — |
-| Change groups and rows with stage/unstage/discard | `src/kubecode/ContextWorkbench.tsx:708-832` | handcrafted list + Button | Item/ItemGroup + Button + Tooltip (+ Collapsible) | ContextWorkbench | #262 | partial | — |
-| Commit box | `src/kubecode/ContextWorkbench.tsx:471-474` | official Input + Button in div | InputGroup or Field + Button | ContextWorkbench | #262 | partial | — |
-| Discard changes confirmation | `src/kubecode/ContextWorkbench.tsx:626-668` | official Dialog | shadcn AlertDialog (not installed) | ContextWorkbench | #262 | partial | — |
+| Create repository / no changes empty states | `src/kubecode/ContextWorkbench.tsx:409-419` | Empty (EmptyMedia, EmptyTitle, EmptyDescription, EmptyContent) | shadcn Empty | ContextWorkbench | #262 | migrated | ADR 0252 |
+| Git notices (conflict/status) | `src/kubecode/ContextWorkbench.tsx:423,438` | Alert role=status | shadcn Alert | ContextWorkbench | #262 | migrated | ADR 0252 |
+| Change groups and rows with stage/unstage/discard | `src/kubecode/ContextWorkbench.tsx:708-832` | Button row (open diff) + IconButton actions; Badge group count; virtualised above 200 rows | Item/ItemGroup + Button + Tooltip (+ Collapsible) | ContextWorkbench | #262 | exception | Fixed-height virtualised rows (react-virtuoso) keep a 36 px Button row; Item adds padding/gap that breaks the fixed height. ADR 0252 §3 |
+| Commit box | `src/kubecode/ContextWorkbench.tsx:471-474` | InputGroup + InputGroupInput + InputGroupButton (Enter commits outside IME composition) | InputGroup or Field + Button | ContextWorkbench | #262 | migrated | ADR 0252 |
+| Discard changes confirmation | `src/kubecode/ContextWorkbench.tsx:626-668` | AlertDialog (discard changes, close unsaved file) | shadcn AlertDialog (not installed) | ContextWorkbench | #262 | migrated | ADR 0252; alert-dialog.tsx byte-identical to #259/#260 |
 
 ## Plan panel
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Agent plan list with status icons | `src/kubecode/ContextWorkbench.tsx:484-505` | handcrafted ol | AI Elements Plan or Queue | ContextWorkbench | #262 | handcrafted | — |
+| Agent plan list with status icons | `src/kubecode/ContextWorkbench.tsx:484-505` | ItemGroup + Item with plan status icon | AI Elements Plan or Queue | ContextWorkbench | #262 | migrated | ADR 0252 |
 
 ## File tree
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Project file tree (ARIA tree, keyboard nav) | `src/kubecode/ProjectFileTree.tsx:57-448` | handcrafted ARIA tree with Button in parts | AI Elements File Tree (not installed) | ContextWorkbench | #262 | handcrafted | — |
-| Loading/empty/error message | `src/kubecode/ProjectFileTree.tsx:403` | handcrafted div role=status | Empty / Spinner / Alert | ContextWorkbench | #262 | handcrafted | — |
+| Project file tree (ARIA tree, keyboard nav) | `src/kubecode/ProjectFileTree.tsx:57-448` | lazy per-directory ARIA tree, virtualised above 200 rows, ghost Button rows | AI Elements File Tree (not installed) | ContextWorkbench | #262 | exception | AI Elements File Tree renders a fully loaded nested Collapsible tree with no lazy loading or virtualisation; the tree keeps its domain loader and keyboard model. ADR 0252 §3 |
+| Loading/empty/error message | `src/kubecode/ProjectFileTree.tsx:403` | Spinner line; Alert role=status; IconButton excluded-files toggle | Empty / Spinner / Alert | ContextWorkbench | #262 | migrated | ADR 0252 |
 
 ## File dialogs
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| New file/folder EntryDialog | `src/kubecode/ContextWorkbench.tsx:870-1000,588-595` | official Dialog + Input | Dialog + Field | ContextWorkbench | #262 | partial | Owns the `.kubecode-path-picker-heading` DialogTitle/DialogDescription overrides (re-owned from #260) |
-| Quick open with ProjectFilePicker/PathPicker | `src/kubecode/ContextWorkbench.tsx:600-624; src/kubecode/ProjectFilePicker.tsx:29` | official Dialog wrapping handcrafted combobox/listbox | CommandDialog/Command | ContextWorkbench, ComposerAddMenu, ProjectDialog | #262 | partial | — |
+| New file/folder EntryDialog | `src/kubecode/ContextWorkbench.tsx:870-1000,588-595` | official Dialog + PathPicker on Command; create error is Alert destructive | Dialog + Field + Command | ContextWorkbench | #262 | migrated | PathPicker on Command is a byte-identical copy of #260's file. ADR 0252 |
+| Quick open with ProjectFilePicker/PathPicker | `src/kubecode/ContextWorkbench.tsx:600-624; src/kubecode/ProjectFilePicker.tsx:29` | Dialog + PathPicker on Command; excluded-files toggle is the official Toggle | CommandDialog/Command | ContextWorkbench, ComposerAddMenu, ProjectDialog | #262 | migrated | PathPicker on Command is a byte-identical copy of #260's file. ADR 0252 |
 
 ## Editor
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Editor toolbar (path, unsaved, save, close) | `src/kubecode/ContextWorkbench.tsx:539-552` | handcrafted toolbar + Button | ButtonGroup + Badge + Tooltip | ContextWorkbench | #262 | partial | — |
-| CodeMirror editor | `src/kubecode/CodeEditor.tsx:1-93` | specialist engine (CodeMirror 6) | none (CodeBlock is read-only) | ContextWorkbench | #262 | specialist-engine | Editable code has no shadcn/AI Elements equivalent |
+| Editor toolbar (path, unsaved, save, close) | `src/kubecode/ContextWorkbench.tsx:539-552` | path text + Badge warning (unsaved) + Button + IconButton | ButtonGroup + Badge + Tooltip | ContextWorkbench | #262 | migrated | ADR 0252 |
+| CodeMirror editor | `src/kubecode/CodeEditor.tsx:1-93` | specialist engine (CodeMirror 6) | none (CodeBlock is read-only) | ContextWorkbench | #262 | specialist-engine | Editable code has no shadcn/AI Elements equivalent; the chrome around it is official (ADR 0252 §3) |
 
 ## Diff
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Git diff viewer states and content | `src/kubecode/GitDiffView.tsx:30-50` | handcrafted pre + status/alert divs | AI Elements CodeBlock (diff) + Empty/Alert/Spinner | ContextWorkbench | #262 | handcrafted | — |
+| Git diff viewer states and content | `src/kubecode/GitDiffView.tsx:30-50` | Empty/Spinner (loading), Empty (unavailable), Alert destructive + Retry (failed); diff text in a `pre` | AI Elements CodeBlock (diff) + Empty/Alert/Spinner | ContextWorkbench | #262 | migrated | Diff text stays a `pre`: the server bounds it and a highlighter would re-tokenize it whole (ADR 0252 §3) |
 
 ## Terminal
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| xterm terminal view | `src/kubecode/TerminalView.tsx:1-171` | specialist engine (@xterm/xterm) | none (AI Elements Terminal is output-only) | terminal | #262 | specialist-engine | Interactive PTY requires xterm |
-| Terminal navigator tree | `src/kubecode/TerminalWorkspace.tsx:440-588` | handcrafted ARIA tree | Sidebar menu / Item | terminal | #262 | handcrafted | — |
+| xterm terminal view | `src/kubecode/TerminalView.tsx:1-171` | specialist engine (@xterm/xterm) | none (AI Elements Terminal is output-only) | terminal | #262 | specialist-engine | Interactive PTY requires xterm; split, width, empty, exited and error states are official (ADR 0252 §3) |
+| Terminal navigator tree | `src/kubecode/TerminalWorkspace.tsx:440-588` | ARIA tree of split groups with dnd-kit reordering; Button rows, Input rename, DropdownMenu profiles; collapsible ResizablePanel width | Sidebar menu / Item | terminal | #262 | exception | SidebarMenu is a list without tree semantics or a sortable model (ADR 0252 §3) |
 | Inline rename editor | `src/kubecode/TerminalWorkspace.tsx:590-626` | official Input | shadcn Input | terminal | #262 | migrated | — |
 | New terminal profile menu | `src/kubecode/TerminalWorkspace.tsx:628-663` | official DropdownMenu | shadcn DropdownMenu | terminal | #262 | migrated | — |
-| Split layout and resize handles | `src/kubecode/TerminalWorkspace.tsx:666-771; src/components/ResizeHandle.tsx` | handcrafted layout + ResizeHandle | shadcn Resizable (not installed) | terminal | #262 | handcrafted | Follows the Resizable ADR written by #256 |
+| Split layout and resize handles | `src/kubecode/TerminalWorkspace.tsx:666-771; src/components/ResizeHandle.tsx` | ResizablePanelGroup per split + ResizablePanel + named ResizableHandle; ResizeHandle.tsx removed; empty/exited states Empty/Alert | shadcn Resizable (not installed) | terminal | #262 | migrated | ADR 0248 dependency; ADR 0252 |
 
 ## Research
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Research navigator list | `src/kubecode/research/ResearchNavigator.tsx:34-80` | handcrafted ul with raw button + StatusBadge | Sidebar menu / Item + Badge | history | #262 | handcrafted | — |
-| Workspace header, tabs, loading/error, notices | `src/kubecode/research/ResearchWorkspace.tsx:127-272` | official Tabs; handcrafted header, notices, link button | Tabs + Alert + Empty + Button link | research route | #262 | partial | — |
-| New research dialog | `src/kubecode/research/NewResearchDialog.tsx:68-103` | official Dialog + Input + Textarea | Dialog + Field | research route | #262 | partial | error p not Field/FieldError |
-| Brief form and fields | `src/kubecode/research/ResearchBriefPanel.tsx:133-211` | handcrafted form + Input/Textarea/Button | Field/FieldGroup + Alert | research route | #262 | partial | — |
-| Discussion panel (sessions, Select, Textarea, log, errors) | `src/kubecode/research/ResearchDiscussionPanel.tsx:113-250` | official Select/Textarea/Button in handcrafted lists | Item, Field, Empty, Alert; Conversation for log | research route | #262 | partial | Listed under #259 and #262 in the source inventory; #262 owns research views |
-| Findings, suggested changes, pending outcomes, capture form | `src/kubecode/research/ResearchFindingsPanel.tsx:3-12,63-330` | handcrafted cards/lists + DecisionButton + StatusBadge; Input/Textarea; error p | Card/Item + Badge + Field + Alert; Sources/InlineCitation | research route | #262 | partial | Finding sources lists are #258 (references) |
-| Rounds panel and start-round form | `src/kubecode/research/ResearchRoundsPanel.tsx:164-407` | handcrafted form with raw inputs | Checkbox/RadioGroup (not installed) + Field + Card | research route | #262 | handcrafted | — |
-| Import panel | `src/kubecode/research/ResearchImportPanel.tsx:98-430` | handcrafted with raw checkboxes + Input/Textarea/Button | Field + Checkbox + Alert; CodeBlock | research route, TaskActivity | #262 | partial | — |
-| Export panel | `src/kubecode/research/ResearchExportPanel.tsx:81-155` | handcrafted raw inputs + Textarea/Button | Checkbox/RadioGroup + Alert + CodeBlock | research route, TaskActivity | #262 | partial | — |
+| Research navigator list | `src/kubecode/research/ResearchNavigator.tsx:34-80` | handcrafted ul with raw button + StatusBadge | Sidebar menu / Item + Badge | history | #262 | migrated | Sidebar group + SidebarMenuButton + StatusBadge (#256) |
+| Workspace header, tabs, loading/error, notices | `src/kubecode/research/ResearchWorkspace.tsx:127-272` | Tabs; Alert notices; Button link to pending decisions; ReaderLoading/ReaderNotice | Tabs + Alert + Empty + Button link | research route | #262 | migrated | ADR 0252; ReaderStates.tsx byte-identical to #258 |
+| New research dialog | `src/kubecode/research/NewResearchDialog.tsx:68-103` | Dialog + FieldGroup/Field + Alert destructive | Dialog + Field | research route | #262 | migrated | ADR 0252 |
+| Brief form and fields | `src/kubecode/research/ResearchBriefPanel.tsx:133-211` | FieldGroup/Field/FieldDescription + Alert; read view as labelled sections | Field/FieldGroup + Alert | research route | #262 | migrated | ADR 0252 |
+| Discussion panel (sessions, Select, Textarea, log, errors) | `src/kubecode/research/ResearchDiscussionPanel.tsx:113-250` | ItemGroup/Item lists, Select + SelectGroup, Empty, Alert | Item, Field, Empty, Alert; Conversation for log | research route | #262 | migrated | ADR 0252; log entries are Items, not a Conversation (they are records, not chat) |
+| Findings, suggested changes, pending outcomes, capture form | `src/kubecode/research/ResearchFindingsPanel.tsx:3-12,63-330` | ItemGroup/Item + DecisionButton + StatusBadge; FieldGroup capture form; Alert; Empty | Card/Item + Badge + Field + Alert; Sources/InlineCitation | research route | #262 | migrated | ADR 0252; finding source rows stay text lists of evidence ids |
+| Rounds panel and start-round form | `src/kubecode/research/ResearchRoundsPanel.tsx:164-407` | FieldGroup + FieldSet/Checkbox (carry-over, imports, execution) + Select; rounds as Item with Collapsible execution | Checkbox/RadioGroup (not installed) + Field + Card | research route | #262 | migrated | ADR 0252; checkbox.tsx byte-identical to #259 |
+| Import panel | `src/kubecode/research/ResearchImportPanel.tsx:98-430` | Field + Checkbox + Alert + Item + Table (before/after); reader states | Field + Checkbox + Alert; CodeBlock | research route, TaskActivity | #262 | migrated | ADR 0252; table.tsx added by CLI |
+| Export panel | `src/kubecode/research/ResearchExportPanel.tsx:81-155` | FieldSet + Checkbox + Alert | Checkbox/RadioGroup + Alert + CodeBlock | research route, TaskActivity | #262 | migrated | ADR 0252 |
 | AvailabilityBadge / StaleBadge | `src/kubecode/research/SourceBadge.tsx:11-29` | StatusBadge | shadcn Badge | research route | #255 | migrated | Became the official Badge through StatusBadge in #255 |
 
 ## Experiment runner
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Execution section, envelope, attention, cards, logs | `src/kubecode/research/ResearchExecutionSection.tsx:121-650` | handcrafted cards/lists/pre + Input/Button + StatusBadge | Card + Badge + Alert; Task/Tool, CodeBlock/Terminal | research route | #262 | partial | — |
-| Cancel/reconcile confirmation | `src/kubecode/research/ResearchExecutionSection.tsx:545,656-672` | handcrafted inline alertdialog | AlertDialog or AI Elements Confirmation | research route | #262 | handcrafted | — |
-| Execution envelope fields | `src/kubecode/research/ExecutionEnvelopeFields.tsx:1-79` | official Input/Textarea, handcrafted error | Field/FieldError | research route | #262 | partial | — |
+| Execution section, envelope, attention, cards, logs | `src/kubecode/research/ResearchExecutionSection.tsx:121-650` | Item cards, Alert notices, Field reconcile input, Empty, `pre` logs; reader states | Card + Badge + Alert; Task/Tool, CodeBlock/Terminal | research route | #262 | migrated | ADR 0252 |
+| Cancel/reconcile confirmation | `src/kubecode/research/ResearchExecutionSection.tsx:545,656-672` | AlertDialog (cancel all); reconcile is an Alert group with Field | AlertDialog or AI Elements Confirmation | research route | #262 | migrated | ADR 0252 |
+| Execution envelope fields | `src/kubecode/research/ExecutionEnvelopeFields.tsx:1-79` | FieldSet/FieldLegend/FieldGroup/Field/FieldError | Field/FieldError | research route | #262 | migrated | ADR 0252 |
 
 ## Shared primitive
 
