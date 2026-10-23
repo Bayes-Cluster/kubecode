@@ -78,7 +78,7 @@ const box = () => (screen.queryByRole('combobox', { name: 'Message the Workspace
   ?? screen.getByRole('textbox', { name: 'Message the Workspace' })) as HTMLTextAreaElement
 const toRow = () => document.querySelector('.kubecode-composer-to') as HTMLElement | null
 // What still needs the researcher (members loading or failed, nobody can receive): shown in the card.
-const notice = () => document.querySelector('.kubecode-composer-notice') as HTMLElement
+const notice = () => document.querySelector('[data-composer-notice]') as HTMLElement
 const type = (value: string) => fireEvent.change(box(), { target: { value, selectionStart: value.length } })
 
 /** Add context is a menu (ADR 0242): attach from the Workspace, or mention someone. */
@@ -124,7 +124,7 @@ describe('MessageComposer', () => {
     expect(send).toBeDisabled()
     const reason = "Unready can't receive messages yet (Needs setup). Remove the mention, or fix Unready in Members."
     expect(send).toHaveAccessibleDescription(reason)
-    expect(screen.getAllByText(reason).some((element) => element.getAttribute('role') === 'status')).toBe(true)
+    expect(screen.getAllByText(reason).some((element) => element.closest('[role="status"]') !== null)).toBe(true)
     fireEvent.keyDown(box(), { key: 'Enter' })
     expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()
   })
@@ -150,7 +150,7 @@ describe('MessageComposer', () => {
     type('hello')
     const reason = "The members could not be loaded, so Kubecode can't tell whom this goes to. Try again before sending."
     expect(screen.getByRole('button', { name: 'Send' })).toHaveAccessibleDescription(reason)
-    expect(screen.getAllByText(reason).some((element) => element.getAttribute('role') === 'status')).toBe(true)
+    expect(screen.getAllByText(reason).some((element) => element.closest('[role="status"]') !== null)).toBe(true)
     expect(screen.queryByText(/needs setup/)).not.toBeInTheDocument()
     fireEvent.click(within(notice()).getByRole('button', { name: 'Try again' }))
     expect(reload).toHaveBeenCalledTimes(1)
@@ -164,6 +164,7 @@ describe('MessageComposer', () => {
     render(<Harness directory={memberDirectory({ members: [manager, analyst], general_id: 'g' }, 'ready')} onSend={onSend} />)
     type('anyone?')
     expect(notice()).toHaveTextContent('No one can receive this yet: the project manager needs setup.')
+    expect(notice()).toHaveAttribute('data-slot', 'alert')
     const send = screen.getByRole('button', { name: 'Send' })
     expect(send).toBeDisabled()
     expect(send).toHaveAccessibleDescription(
@@ -202,7 +203,7 @@ describe('MessageComposer', () => {
   it('shows the Task it is about, sent first, and lets the researcher take it off', async () => {
     const onSend = vi.fn().mockResolvedValue(saved())
     render(<Harness initial={emptyGeneralDraft('r1')} onSend={onSend} />)
-    const about = document.querySelector('.kubecode-composer-about') as HTMLElement
+    const about = document.querySelector('[data-composer-about]') as HTMLElement
     expect(about).toHaveTextContent('About')
     expect(within(about).getByText('Pruning')).toBeInTheDocument()
     await addContext()
@@ -215,9 +216,9 @@ describe('MessageComposer', () => {
       { kind: 'artifact', id: 'a1', revision: '3' },
     ])
     // The Task stays for the next message; its references were sent.
-    expect(within(document.querySelector('.kubecode-composer-about') as HTMLElement).queryByText('results.csv')).toBeNull()
+    expect(within(document.querySelector('[data-composer-about]') as HTMLElement).queryByText('results.csv')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Not about Pruning' }))
-    expect(document.querySelector('.kubecode-composer-about')).toBeNull()
+    expect(document.querySelector('[data-composer-about]')).toBeNull()
     expect(box()).toHaveFocus()
   })
 
@@ -227,7 +228,7 @@ describe('MessageComposer', () => {
       await addContext()
       fireEvent.click(await screen.findByRole('button', { name }))
     }
-    const about = document.querySelector('.kubecode-composer-about') as HTMLElement
+    const about = document.querySelector('[data-composer-about]') as HTMLElement
     expect(about.querySelectorAll('.kubecode-reference-chip')).toHaveLength(3)
     expect(within(about).getByText('Quantization')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Remove reference results.csv' }))
@@ -239,7 +240,7 @@ describe('MessageComposer', () => {
     await addContext()
     fireEvent.click(await screen.findByRole('button', { name: 'pick results' }))
     expect(screen.getByText('Added results.csv to your message.')).toBeInTheDocument()
-    const about = document.querySelector('.kubecode-composer-about') as HTMLElement
+    const about = document.querySelector('[data-composer-about]') as HTMLElement
     expect(within(about).getByText('v3')).toBeInTheDocument()
     await addContext()
     fireEvent.click(await screen.findByRole('button', { name: 'pick newer results' }))
@@ -286,7 +287,7 @@ describe('MessageComposer', () => {
   it('is one input surface: the reply and references head the card, and the text and its controls fill it', async () => {
     const initial = { ...emptyGeneralDraft('r1'), reply: { messageId: 'm4', authorName: 'Analyst', excerpt: 'Ran it' } }
     render(<Harness initial={initial} />)
-    const card = document.querySelector('.kubecode-prompt-input') as HTMLElement
+    const card = box().closest('form') as HTMLElement
     expect(card).not.toBeNull()
     const header = card.querySelector('.kubecode-composer-context') as HTMLElement
     expect(header).toHaveTextContent('Replying to Analyst: Ran it')
@@ -422,7 +423,7 @@ describe('MessageComposer', () => {
     expect(again).toEqual(first)
     expect(again.references).toEqual(pinned)
     // The new draft keeps its own version.
-    const about = document.querySelector('.kubecode-composer-about') as HTMLElement
+    const about = document.querySelector('[data-composer-about]') as HTMLElement
     expect(within(about).getByText('v3')).toBeInTheDocument()
   })
 
@@ -439,7 +440,7 @@ describe('MessageComposer', () => {
     // The Task is taken off the next message before the failed one is edited.
     fireEvent.click(screen.getByRole('button', { name: 'Not about Pruning' }))
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
-    expect(within(document.querySelector('.kubecode-composer-about') as HTMLElement).getByText('v4')).toBeInTheDocument()
+    expect(within(document.querySelector('[data-composer-about]') as HTMLElement).getByText('v4')).toBeInTheDocument()
     fireEvent.keyDown(box(), { key: 'Enter' })
     await waitFor(() => expect(onSend).toHaveBeenCalledTimes(2))
     expect(onSend.mock.calls[1][0].clientMessageId).not.toBe(onSend.mock.calls[0][0].clientMessageId)
@@ -477,7 +478,7 @@ describe('MessageComposer', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Not sent: network down')
     expect(box()).toHaveValue('')
     expect(screen.getByRole('list', { name: 'Unsent messages' })).toHaveTextContent('in flight')
-    const about = document.querySelector('.kubecode-composer-about') as HTMLElement
+    const about = document.querySelector('[data-composer-about]') as HTMLElement
     expect(within(about).getByText('Quantization')).toBeInTheDocument()
   })
 

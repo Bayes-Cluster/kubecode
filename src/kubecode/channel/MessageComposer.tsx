@@ -6,6 +6,7 @@ import {
   PromptInputActionMenuItem,
   PromptInputActionMenuTrigger,
 } from '@/components/ai-elements/prompt-input'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { DropdownMenuGroup } from '@/components/ui/dropdown-menu'
 import { IconButton } from '@/components/workspace/IconButton'
@@ -273,15 +274,15 @@ export function MessageComposer({
   const manager = recipients.kind === 'manager' ? recipients.manager : null
   const notice = recipients.kind === 'unknown'
     ? recipients.status === 'loading'
-      ? <span className="kubecode-composer-hint">{t('kubecode.members.loading')}</span>
+      ? <AlertDescription>{t('kubecode.members.loading')}</AlertDescription>
       : (
-        <span className="kubecode-composer-warning">
-          {t('kubecode.members.loadFailed')}{' '}
-          <Button size="xs" variant="ghost" onClick={() => directory.reload()}>{t('kubecode.members.retryLoad')}</Button>
-        </span>
+        <AlertDescription className="flex flex-wrap items-center gap-2">
+          {t('kubecode.members.loadFailed')}
+          <Button size="xs" variant="outline" onClick={() => directory.reload()}>{t('kubecode.members.retryLoad')}</Button>
+        </AlertDescription>
       )
     : recipients.kind === 'manager' && !(manager && canReceive(manager))
-      ? <span className="kubecode-composer-warning">{t('kubecode.channel.noRecipient')}</span>
+      ? <AlertDescription>{t('kubecode.channel.noRecipient')}</AlertDescription>
       : null
   const taskLabel = draft.task ? labels({ kind: 'research', id: draft.task }) : null
 
@@ -301,7 +302,7 @@ export function MessageComposer({
         header={(draft.reply || taskLabel || draft.references.length > 0) ? (
           <>
             {draft.reply && (
-              <p className="kubecode-channel-replying">
+              <p className="m-0 flex min-w-0 items-center gap-2 text-xs text-muted-foreground [overflow-wrap:anywhere]">
                 <span>{t('kubecode.channel.replyingToExcerpt', { author: draft.reply.authorName, excerpt: draft.reply.excerpt })}</span>
                 <IconButton
                   icon={<Icon role="command" size="secondary" source={WORKSPACE_COMMAND_ICONS.close.Icon} />}
@@ -314,9 +315,9 @@ export function MessageComposer({
               </p>
             )}
             {(taskLabel || draft.references.length > 0) && (
-              <div className="kubecode-composer-about">
-                <span className="kubecode-composer-about-label">{t('kubecode.channel.about')}</span>
-                <ul aria-label={t('kubecode.channel.references')} ref={chips}>
+              <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs" data-composer-about="">
+                <span className="text-muted-foreground">{t('kubecode.channel.about')}</span>
+                <ul aria-label={t('kubecode.channel.references')} className="m-0 flex min-w-0 list-none flex-wrap gap-1 p-0" ref={chips}>
                   {taskLabel && (
                     <li>
                       <ReferenceChip
@@ -357,9 +358,9 @@ export function MessageComposer({
         mentions={mentionOptions(directory, t)}
         notices={(notice || (blocked && draft.body.trim() !== '') || gate) ? (
           <>
-            {notice && <p className="kubecode-composer-notice">{notice}</p>}
-            {blocked && draft.body.trim() !== '' && <p className="kubecode-composer-warning" role="status">{blocked}</p>}
-            {gate && <p className="kubecode-research-error" role="alert">{gate}</p>}
+            {notice && <Alert data-composer-notice="" role="status">{notice}</Alert>}
+            {blocked && draft.body.trim() !== '' && <Alert role="status"><AlertDescription>{blocked}</AlertDescription></Alert>}
+            {gate && <Alert variant="destructive"><AlertDescription>{gate}</AlertDescription></Alert>}
           </>
         ) : undefined}
         placeholder={placeholder}

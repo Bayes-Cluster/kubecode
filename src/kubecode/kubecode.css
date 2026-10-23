@@ -2699,38 +2699,6 @@
   gap: 8px;
   min-width: 0;
 }
-.kubecode-mention-menu {
-  background: var(--surface-popover);
-  border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  bottom: calc(100% + 4px);
-  box-shadow: 0 6px 18px rgb(0 0 0 / 12%);
-  left: 0;
-  list-style: none;
-  margin: 0;
-  max-height: 220px;
-  min-width: 220px;
-  overflow-y: auto;
-  padding: 4px;
-  position: absolute;
-  z-index: 20;
-}
-.kubecode-mention-menu li {
-  align-items: baseline;
-  border-radius: 4px;
-  cursor: pointer;
-  display: flex;
-  gap: 8px;
-  padding: 4px 8px;
-}
-.kubecode-mention-menu li[aria-selected='true'],
-.kubecode-mention-menu li:hover { background: var(--surface-button); }
-/* The chosen option is marked by more than its background. */
-.kubecode-mention-menu li[aria-selected='true'] { box-shadow: inset 2px 0 0 var(--primary); }
-@media (pointer: coarse) {
-  .kubecode-mention-menu li { min-height: 44px; }
-}
-.kubecode-mention-menu small { color: var(--text-secondary); margin-left: auto; }
 
 .kubecode-research-list,
 .kubecode-research-cards,
@@ -3082,52 +3050,12 @@
 
 .kubecode-channel-filter label { align-items: center; display: inline-flex; gap: var(--ws-space-2); min-width: 0; }
 
-.kubecode-channel-replying {
-  align-items: center;
-  background: var(--surface-subtle);
-  border-radius: var(--radius-md);
-  color: var(--text-secondary);
-  display: flex;
-  font-size: var(--kubecode-ui-font-small);
-  gap: 6px;
-  justify-content: space-between;
-  margin: 0;
-  padding: 2px 8px;
-}
 
-.kubecode-dm-turns {
-  border: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin: 0;
-  max-height: 220px;
-  overflow-y: auto;
-  padding: 0;
-}
 
-.kubecode-dm-turns label { align-items: flex-start; display: flex; gap: 8px; }
-.kubecode-dm-turns label span { overflow: hidden; text-overflow: ellipsis; }
 
-.kubecode-dm-field { display: flex; flex-direction: column; gap: 4px; }
 
-.kubecode-dm-preview {
-  background: var(--surface-subtle);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  padding: 8px;
-}
 
-.kubecode-dm-preview {
-  display: flex;
-  flex-direction: column;
-  gap: var(--ws-space-2);
-  min-width: 0;
-}
 
-.kubecode-dm-preview pre { margin: 0; max-height: 240px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
-.kubecode-dm-preview summary { color: var(--text-secondary); cursor: pointer; font: var(--ws-font-meta); }
-.kubecode-dm-share { max-height: calc(100dvh - 32px); overflow-y: auto; }
 
 .kubecode-channel-composer {
   display: flex;
@@ -3145,20 +3073,7 @@
   position: relative;
 }
 
-.kubecode-message {
-  border-radius: var(--radius-md);
-  display: flex;
-  flex-direction: column;
-  gap: var(--ws-space-1);
-  max-width: var(--ws-reading-width);
-  min-width: 0;
-  padding: var(--ws-space-2);
-}
 
-.kubecode-message[data-continued='true'] { padding-top: 0; }
-.kubecode-message:hover,
-.kubecode-message:focus-within { background: var(--surface-hover); }
-.kubecode-message[data-kind='system'] { color: var(--text-secondary); }
 
 .kubecode-message-header {
   align-items: center;
@@ -3178,51 +3093,14 @@
   width: 1px;
 }
 
-.kubecode-message-toolbar {
-  display: inline-flex;
-  gap: var(--ws-space-1);
-  margin-left: auto;
-  opacity: 0;
-}
 
-.kubecode-message:hover .kubecode-message-toolbar,
-.kubecode-message:focus-within .kubecode-message-toolbar,
-.kubecode-message-toolbar[data-coarse='true'] { opacity: 1; }
 
-.kubecode-message-content {
-  display: flex;
-  flex-direction: column;
-  gap: var(--ws-space-1);
-  min-width: 0;
-  padding-left: calc(var(--ws-avatar-md) + var(--ws-space-2));
-}
 
 .kubecode-message-body { min-width: 0; overflow-wrap: anywhere; }
 .kubecode-message-body .ai-markdown > :first-child { margin-top: 0; }
 .kubecode-message-body .ai-markdown > :last-child { margin-bottom: 0; }
 
-.kubecode-message-recipients {
-  align-items: center;
-  color: var(--text-secondary);
-  display: inline-flex;
-  flex-wrap: wrap;
-  font: var(--ws-font-meta);
-  gap: var(--ws-space-1);
-  margin: 0;
-  min-width: 0;
-}
-.kubecode-message-recipients-arrow { color: var(--text-tertiary, var(--text-secondary)); }
 
-.kubecode-message-references,
-.kubecode-composer-about ul {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--ws-space-1);
-  list-style: none;
-  margin: 0;
-  min-width: 0;
-  padding: 0;
-}
 
 .kubecode-message-delivery {
   align-items: center;
@@ -3234,58 +3112,7 @@
   margin: 0;
 }
 
-.kubecode-legacy-thread-link {
-  align-items: center;
-  align-self: flex-start;
-  background: transparent;
-  border: 0;
-  color: var(--text-secondary);
-  cursor: pointer;
-  display: inline-flex;
-  font: var(--ws-font-meta);
-  gap: var(--ws-space-1);
-  min-height: var(--ws-touch-target);
-  padding: 0;
-}
 
-.kubecode-legacy-thread-link:hover { color: var(--text-primary); }
-.kubecode-legacy-thread-note {
-  background: var(--surface-subtle);
-  border-radius: var(--radius-md);
-  color: var(--text-secondary);
-  font: var(--ws-font-meta);
-  margin: 0;
-  padding: var(--ws-space-2);
-}
-
-.kubecode-legacy-thread-topic { color: var(--text-secondary); overflow-wrap: anywhere; }
-.kubecode-legacy-thread-actions { display: flex; justify-content: flex-end; }
-
-.kubecode-activity-group {
-  color: var(--text-secondary);
-  font: var(--ws-font-meta);
-  padding: 0 var(--ws-space-2);
-}
-
-.kubecode-activity-group summary { cursor: pointer; min-height: var(--ws-touch-target); }
-.kubecode-activity-group ul { display: flex; flex-direction: column; gap: var(--ws-space-1); list-style: none; margin: 0; padding: 0 0 0 var(--ws-space-3); }
-.kubecode-activity-group li { display: flex; flex-wrap: wrap; gap: var(--ws-space-2); overflow-wrap: anywhere; }
-
-.kubecode-date-separator {
-  align-items: center;
-  color: var(--text-secondary);
-  display: flex;
-  font: var(--ws-font-meta);
-  gap: var(--ws-space-2);
-  margin: var(--ws-space-2) 0;
-}
-
-.kubecode-date-separator::before,
-.kubecode-date-separator::after {
-  border-top: 1px solid var(--border-subtle);
-  content: '';
-  flex: 1 1 auto;
-}
 
 .kubecode-inert-image {
   border: 1px dashed var(--border-subtle);
@@ -3294,22 +3121,9 @@
   padding: 0 var(--ws-space-1);
 }
 
-.kubecode-composer-about,
-.kubecode-composer-to {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  font: var(--ws-font-meta);
-  gap: var(--ws-space-2);
-  min-width: 0;
-}
 
-.kubecode-composer-about-label { color: var(--text-secondary); }
 
-.kubecode-composer-warning { color: var(--feedback-warning-text); font: var(--ws-font-meta); margin: 0; }
 .kubecode-composer-hint { color: var(--text-secondary); font: var(--ws-font-meta); margin: 0; }
-.kubecode-channel-outside { color: var(--text-secondary); font: var(--ws-font-meta); margin: 0; }
-.kubecode-mention-unavailable { color: var(--text-secondary); }
 
 .kubecode-member-provider {
   align-items: center;
@@ -3318,15 +3132,8 @@
   gap: var(--ws-space-1);
 }
 
-.kubecode-dm-turn { display: flex; flex-direction: column; max-width: var(--ws-reading-width); }
 
-@media (pointer: coarse) {
-  .kubecode-message-toolbar { opacity: 1; }
-}
 
-@media (max-width: 980px) {
-  .kubecode-message-content { padding-left: 0; }
-}
 
 /* -- Workspace navigation and the on-demand detail area (ADR 0224) ----------- */
 
@@ -3635,7 +3442,6 @@
 }
 
 .kubecode-task-field { display: flex; flex-direction: column; gap: 2px; }
-.kubecode-channel-proposal { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; }
 
 @media (max-width: 900px) {
   .kubecode-channel-workspace { flex-direction: column; overflow-y: auto; }
@@ -4295,12 +4101,6 @@
 .kubecode-elicitation-actions .kubecode-decision-button { height: auto; white-space: normal; }
 
 .kubecode-delivery-status { display: flex; flex-direction: column; gap: var(--ws-space-1); }
-.kubecode-outbox { display: flex; flex-direction: column; gap: var(--ws-space-1); list-style: none; margin: 0; padding: var(--ws-space-1) var(--ws-space-3) 0; }
-.kubecode-outbox-row { display: flex; flex-direction: column; gap: var(--ws-space-1); }
-.kubecode-outbox-text { color: var(--text-secondary); overflow-wrap: anywhere; white-space: pre-wrap; }
-.kubecode-outbox-row[data-state='sending'] .kubecode-outbox-text { opacity: 0.75; }
-.kubecode-outbox-failure { align-items: center; display: flex; flex-wrap: wrap; font: var(--ws-font-meta); gap: var(--ws-space-2); }
-.kubecode-outbox-failure .kubecode-research-error { color: var(--ws-danger-text); }
 .kubecode-delivery-failure {
   align-items: center;
   display: flex;
@@ -4331,7 +4131,6 @@
   .kubecode-delivery-failure .kubecode-decision-button,
   .kubecode-delivery-failure button,
   .kubecode-task-waiting button,
-  .kubecode-outbox-failure button,
   .kubecode-execution-row button { min-height: var(--ws-touch-target); }
 }
 
@@ -4724,22 +4523,11 @@
   border-radius: var(--ws-radius-md);
   padding: 0 var(--ws-space-1) 0 var(--ws-space-3);
 }
-.kubecode-conversation-dock .kubecode-outbox { padding: 0; }
-.kubecode-conversation-dock .kubecode-outbox-row {
-  background: var(--ws-surface-self);
-  border-radius: var(--ws-radius-md);
-  padding: var(--ws-space-2) var(--ws-space-3);
-}
-.kubecode-conversation-dock .kubecode-outbox-row[data-state='failed'] { box-shadow: inset 2px 0 0 var(--feedback-error-text); }
 .kubecode-conversation-dock .kubecode-channel-composer { gap: var(--ws-space-2); }
 
-.kubecode-composer-footer { display: flex; flex-direction: column; gap: var(--ws-space-1); }
 
 /* ADR 0239: a chat. The researcher's messages sit on the right as a tinted
    bubble with no avatar; members' messages sit on the left with theirs. */
-.kubecode-channel-messages .kubecode-message,
-.kubecode-dm-turn { max-width: none; }
-.kubecode-dm-turn { width: 100%; }
 
 .kubecode-conversation-dock {
   max-width: none;
@@ -4751,10 +4539,8 @@
 .kubecode-channel-messages { padding-block-end: var(--ws-space-4); scroll-padding-block-end: var(--ws-space-4); }
 /* A comfortable measure on a wide pane: a member's message about 90 characters, the researcher's 70. */
 
-.kubecode-composer-notice { margin: 0; }
 /* Empty, the card is one line over its tools (ADR 0240); it grows with the text up to a limit, then scrolls. */
 .kubecode-conversation-dock .kubecode-composer { gap: 2px; }
-.kubecode-conversation-dock .kubecode-composer-footer:empty { display: none; }
 
 @media (max-width: 767px) {
   .kubecode-channel-messages { padding-inline: var(--ws-space-3); }
@@ -5085,10 +4871,6 @@
   width: 2rem;
   z-index: 2;
 }
-.kubecode-date-separator { align-items: center; color: var(--text-secondary); display: flex; font: var(--ws-font-meta); gap: var(--ws-space-2); margin: var(--ws-space-2) 0; }
-.kubecode-date-separator::before,
-.kubecode-date-separator::after { content: none; }
-.kubecode-date-separator > .kubecode-date-separator-rule { flex: 1 1 auto; width: auto; }
 
 /* One message: an article around the official Message. Members on the left
    with their avatar, the researcher's own as a tinted bubble on the right. */
@@ -5120,7 +4902,6 @@
 .kubecode-message[data-from='self'] .kubecode-message-recipients > .kubecode-member-identity:last-child { flex: 0 1 auto; min-width: 0; }
 .kubecode-message[data-from='self'] .kubecode-message-recipients .kubecode-member-identity-text { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kubecode-message[data-from='self'] .kubecode-message-recipients .kubecode-member-identity-text > * + * { margin-inline-start: var(--ws-space-2); }
-.kubecode-message[data-from='self'] .kubecode-message-toolbar { margin-left: 0; margin-right: auto; order: -1; }
 .kubecode-message[data-from='self'] .kubecode-message-inner > :not(.kubecode-message-header) {
   background: var(--ws-surface-self);
   border-radius: var(--ws-radius-md);
@@ -5134,18 +4915,13 @@
 /* Cells keep words whole on a phone; the table scrolls inside its box instead (#229). */
 .kubecode-message-body :is(th, td) { overflow-wrap: normal; word-break: normal; }
 .kubecode-message-action { color: var(--text-secondary); }
-.kubecode-dm-turn { display: flex; flex-direction: column; width: 100%; }
 .kubecode-dm-waiting { align-items: center; color: var(--text-secondary); display: flex; font: var(--ws-font-meta); gap: var(--ws-space-2); margin: 0; }
 
 /* Identity: the official Avatar, toned by who someone is; the words say it. */
 .kubecode-conversation-avatar { flex: none; }
 .kubecode-member-identity[data-size='md'] > .kubecode-conversation-avatar { height: var(--ws-avatar-md); width: var(--ws-avatar-md); }
 .kubecode-member-identity[data-size='sm'] > .kubecode-conversation-avatar { height: var(--ws-avatar-sm); width: var(--ws-avatar-sm); }
-.kubecode-conversation-avatar > [data-slot='avatar-fallback'] { color: var(--text-primary); font: 600 11px/1 var(--font-sans, inherit); }
-.kubecode-conversation-avatar[data-role='manager'] > [data-slot='avatar-fallback'] { background: var(--accent-blue-light); box-shadow: inset 0 0 0 1px var(--accent-blue); }
-.kubecode-conversation-avatar[data-role='specialist'] > [data-slot='avatar-fallback'] { background: var(--accent-teal-light); box-shadow: inset 0 0 0 1px var(--accent-teal); }
 .kubecode-conversation-avatar[data-role='researcher'] > [data-slot='avatar-fallback'] { background: var(--accent-purple-light); box-shadow: inset 0 0 0 1px var(--accent-purple); }
-.kubecode-conversation-avatar[data-role='system'] > [data-slot='avatar-fallback'] { background: var(--surface-button); }
 .kubecode-identity-card { display: flex; flex-direction: column; gap: 2px; width: auto; max-width: 20rem; }
 .kubecode-identity-card-name { color: var(--text-primary); font: var(--ws-font-subtitle); }
 
@@ -5157,55 +4933,16 @@
 
 /* The composer: the official Prompt Input card, one line over its tools when empty (ADR 0240). */
 .kubecode-composer { display: flex; flex-direction: column; gap: 2px; position: relative; }
-.kubecode-prompt-input > [data-slot='input-group'] {
-  background: var(--ws-surface-composer);
-  border-color: transparent;
-  border-radius: var(--ws-radius-composer);
-  box-shadow: var(--ws-elevation-soft);
-}
-/* Reached by keyboard, the card shows the ring the soft elevation above would hide (#229). */
-.kubecode-prompt-input > [data-slot='input-group']:has(:focus-visible) {
-  border-color: var(--ring);
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 50%, transparent), var(--ws-elevation-soft);
-}
 .kubecode-composer-textarea {
   field-sizing: content;
-  font: var(--ws-font-reading);
   max-height: min(40dvh, 18rem);
   min-height: calc(1lh + 2 * var(--ws-space-2));
   overflow-y: auto;
-  padding: var(--ws-space-2) var(--ws-space-3) 0;
 }
-.kubecode-composer-row { padding: 0 var(--ws-space-2) var(--ws-space-2); }
 .kubecode-composer-controls { gap: var(--ws-space-1); }
 .kubecode-composer-context { align-items: flex-start; flex-direction: column; padding: var(--ws-space-2) var(--ws-space-3) 0; }
-.kubecode-composer-context .kubecode-channel-replying { margin: 0; }
-.kubecode-prompt-input .kubecode-composer-footer { align-self: stretch; display: flex; flex-direction: column; gap: var(--ws-space-1); padding: 0 var(--ws-space-3) var(--ws-space-2); }
-.kubecode-mention-menu {
-  background: var(--surface-popover);
-  border-radius: var(--ws-radius-md);
-  bottom: calc(100% + var(--ws-space-1));
-  box-shadow: var(--ws-elevation-soft);
-  left: 0;
-  max-height: 280px;
-  overflow: hidden;
-  padding: 0;
-  position: absolute;
-  right: 0;
-  z-index: 20;
-}
-.kubecode-mention-menu [cmdk-item] { gap: var(--ws-space-2); }
-.kubecode-mention-menu [cmdk-item] small { color: var(--text-secondary); margin-left: auto; }
-.kubecode-mention-menu [cmdk-item][data-selected='true'] { box-shadow: inset 2px 0 0 var(--primary); }
-@media (pointer: coarse) {
-  .kubecode-mention-menu [cmdk-item] { min-height: 44px; }
-}
 
 /* The unsent rows: each the researcher's message in its pending state, with its actions. */
-.kubecode-outbox-message { max-width: none; }
-.kubecode-outbox .kubecode-outbox-content { background: transparent; margin: 0; padding: 0; width: 100%; }
-.kubecode-outbox-status { align-items: center; color: var(--text-secondary); display: inline-flex; font: var(--ws-font-meta); gap: var(--ws-space-1); }
-.kubecode-outbox-actions { flex-wrap: wrap; }
 
 /* The running list in its popover: a Queue of Items, each two lines with one Stop (ADR 0238, 0240). */
 .kubecode-execution-queue { background: transparent; border: 0; box-shadow: none; gap: 0; padding: 0; }
