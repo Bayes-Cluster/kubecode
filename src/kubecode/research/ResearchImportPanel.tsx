@@ -16,7 +16,6 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Item, ItemGroup, ItemTitle } from '@/components/ui/item'
-import { Spinner } from '@/components/ui/spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
 import type { TranslationKey, Translator } from '@/lib/i18n'
@@ -38,6 +37,7 @@ import {
 } from './researchImport'
 import { ResearchSection } from './ResearchLayout'
 import { useAction } from './useAction'
+import { ReaderLoading, ReaderNotice } from '../resources/ReaderStates'
 
 const FIELD_LABELS: Record<BriefChange['field'], TranslationKey> = {
   question: 'kubecode.research.field.question',
@@ -170,12 +170,9 @@ export function ResearchImportPanel({
         </form>
       )}
       {importsStatus === 'error' && imports.length === 0 ? (
-        <Alert variant="destructive">
-          <AlertDescription>
-            <p>{t('kubecode.research.import.listFailed')}</p>
-            <Button size="xs" variant="outline" onClick={onChanged}>{t('kubecode.retry')}</Button>
-          </AlertDescription>
-        </Alert>
+        <ReaderNotice action={<Button size="xs" variant="outline" onClick={onChanged}>{t('kubecode.retry')}</Button>} failed>
+          {t('kubecode.research.import.listFailed')}
+        </ReaderNotice>
       ) : imports.length === 0 ? (
         <Empty className="items-start p-0 text-left">
           <EmptyDescription>{t('kubecode.research.import.empty')}</EmptyDescription>
@@ -282,11 +279,7 @@ function ImportReview({
 
   const ready = loaded && loaded.id === item.id ? loaded : null
   if (!ready) {
-    return (
-      <p className="m-0 flex items-center gap-2 text-xs text-muted-foreground" role="status">
-        <Spinner aria-hidden="true" role="presentation" /> {t('kubecode.loadingContext')}
-      </p>
-    )
+    return <ReaderLoading>{t('kubecode.loadingContext')}</ReaderLoading>
   }
   if ('failed' in ready) {
     return <Alert variant="destructive"><AlertDescription>{t('kubecode.research.import.loadFailed')}</AlertDescription></Alert>

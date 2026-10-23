@@ -3,8 +3,6 @@ import { Archive, CircleAlert, Info } from 'lucide-react'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia } from '@/components/ui/empty'
-import { Spinner } from '@/components/ui/spinner'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { IconButton } from '@/components/workspace/IconButton'
 import { StatusBadge } from '@/components/workspace/StatusBadge'
@@ -32,6 +30,7 @@ import { ResearchRoundsPanel } from './ResearchRoundsPanel'
 import { ResearchThreadsPanel } from './ResearchThreadsPanel'
 import { useAction } from './useAction'
 import { useResearchBundle, useResearchImports } from './useResearch'
+import { ReaderLoading, ReaderNotice } from '../resources/ReaderStates'
 
 export type ResearchWorkspaceProps = {
   agents: AgentDescriptor[]
@@ -133,23 +132,16 @@ export function ResearchWorkspace({
           {backControl}
           {closeControl}
         </header>
-        {status === 'loading' && (
-          <Empty className="p-6" role="status">
-            <EmptyHeader>
-              <EmptyMedia><Spinner aria-hidden="true" role="presentation" /></EmptyMedia>
-              <EmptyDescription>{t('kubecode.research.loading')}</EmptyDescription>
-            </EmptyHeader>
-          </Empty>
-        )}
+        {status === 'loading' && <ReaderLoading>{t('kubecode.research.loading')}</ReaderLoading>}
         {status === 'error' && (
-          <Alert className="mt-3" variant="destructive">
-            <AlertDescription>
-              <p>{errorCode === 'research_not_found' ? t('kubecode.research.error.notFound') : t('kubecode.research.loadFailed')}</p>
-              {errorCode !== 'research_not_found' && (
-                <Button size="sm" variant="outline" onClick={reload}>{t('kubecode.retry')}</Button>
-              )}
-            </AlertDescription>
-          </Alert>
+          <ReaderNotice
+            action={errorCode !== 'research_not_found' && (
+              <Button size="sm" variant="outline" onClick={reload}>{t('kubecode.retry')}</Button>
+            )}
+            failed
+          >
+            {errorCode === 'research_not_found' ? t('kubecode.research.error.notFound') : t('kubecode.research.loadFailed')}
+          </ReaderNotice>
         )}
       </section>
     )

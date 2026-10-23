@@ -41,6 +41,7 @@ import { draftFromLimits, limitsFromDraft, type EnvelopeDraft } from './executio
 import { AvailabilityBadge } from './SourceBadge'
 import { useAction } from './useAction'
 import { useResearchExecution } from './useResearch'
+import { ReaderLoading, ReaderNotice } from '../resources/ReaderStates'
 
 const STATE_LABELS: Record<ExperimentState, Parameters<Translator>[0]> = {
   reserved: 'kubecode.research.exec.state.reserved',
@@ -133,18 +134,11 @@ export function ResearchExecutionSection({
   if (!execution) {
     return (
       <div className={EXECUTION} aria-busy={status === 'loading'}>
-        {status === 'loading' && (
-          <p className="m-0 flex items-center gap-2 text-xs text-muted-foreground" role="status">
-            <Spinner aria-hidden="true" role="presentation" /> {t('kubecode.research.exec.loading')}
-          </p>
-        )}
+        {status === 'loading' && <ReaderLoading>{t('kubecode.research.exec.loading')}</ReaderLoading>}
         {status === 'error' && (
-          <Alert variant="destructive">
-            <AlertDescription>
-              <p>{t('kubecode.research.exec.loadFailed')}</p>
-              <Button size="xs" variant="outline" onClick={reload}>{t('kubecode.retry')}</Button>
-            </AlertDescription>
-          </Alert>
+          <ReaderNotice action={<Button size="xs" variant="outline" onClick={reload}>{t('kubecode.retry')}</Button>} failed>
+            {t('kubecode.research.exec.loadFailed')}
+          </ReaderNotice>
         )}
       </div>
     )
