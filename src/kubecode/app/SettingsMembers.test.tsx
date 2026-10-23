@@ -109,6 +109,19 @@ describe('Settings forms', () => {
     expect(screen.getByTestId('runtime-status-panel')).toHaveTextContent('kubecode.runtimeStatusLoading')
   })
 
+  it('lists sections above the content on a phone and beside it on a wide screen', () => {
+    const original = window.matchMedia
+    window.matchMedia = ((query: string) => ({
+      matches: false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    })) as unknown as typeof window.matchMedia
+    try {
+      dialog({ requestedSection: 'general' })
+      expect(screen.getByRole('tablist')).toHaveAttribute('aria-orientation', 'horizontal')
+    } finally {
+      window.matchMedia = original
+    }
+  })
+
   it('shows the terminal section as an empty state', () => {
     dialog({ requestedSection: 'terminal' })
     expect(screen.getByText('kubecode.settingsComingSoon').closest('[data-slot="empty"]')).not.toBeNull()

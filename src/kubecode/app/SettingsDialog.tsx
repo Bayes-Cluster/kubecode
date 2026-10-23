@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type ReactNode } from 'react'
+import { useEffect, useId, useState, useSyncExternalStore, type ReactNode } from 'react'
 import {
   Check,
   CircleAlert,
@@ -152,6 +152,7 @@ export function SettingsDialog({
   const [section, setSection] = useState<SettingsSection>(requestedSection)
   const [diagnosticsCopied, setDiagnosticsCopied] = useState(false)
   const ids = useId()
+  const wide = useWideLayout()
 
   const copyDiagnostics = async () => {
     const report = {
@@ -213,17 +214,17 @@ export function SettingsDialog({
           <DialogDescription>{t('kubecode.settingsDescription')}</DialogDescription>
         </DialogHeader>
         <Tabs
-          className="min-h-0 flex-1 gap-0 max-md:flex-col"
-          orientation="vertical"
+          className="min-h-0 flex-1 gap-0"
+          orientation={wide ? 'vertical' : 'horizontal'}
           value={section}
           onValueChange={(value) => setSection(value as SettingsSection)}
         >
           <TabsList
             aria-label={t('kubecode.settings')}
-            className="h-auto w-full shrink-0 justify-start overflow-x-auto rounded-none p-2 max-md:flex-row md:w-52 md:overflow-x-visible md:p-3"
+            className={wide ? 'h-auto w-52 shrink-0 justify-start self-stretch rounded-none p-3' : 'h-auto w-full shrink-0 justify-start overflow-x-auto rounded-none p-2 pr-12'}
           >
             {SETTINGS_SECTIONS.map((item) => (
-              <TabsTrigger className="flex-none md:w-full" key={item} value={item}>
+              <TabsTrigger className="flex-none" key={item} value={item}>
                 {sectionTitle(item, false)}
               </TabsTrigger>
             ))}
@@ -587,6 +588,21 @@ export function SettingsDialog({
   }
 }
 
+const WIDE_QUERY = '(min-width: 768px)'
+
+/** Settings list their sections beside the content on wide screens and above it on phones. */
+function useWideLayout(): boolean {
+  return useSyncExternalStore(
+    (onChange) => {
+      if (typeof window.matchMedia !== 'function') return () => undefined
+      const query = window.matchMedia(WIDE_QUERY)
+      query.addEventListener('change', onChange)
+      return () => query.removeEventListener('change', onChange)
+    },
+    () => typeof window.matchMedia !== 'function' || window.matchMedia(WIDE_QUERY).matches,
+  )
+}
+
 const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   'general', 'notifications', 'agents', 'members', 'wechat', 'terminal', 'editor',
 ]
@@ -612,7 +628,7 @@ function SettingField({
         <FieldLabel htmlFor={id}>{label}</FieldLabel>
         <FieldDescription id={descriptionId}>{description}</FieldDescription>
       </FieldContent>
-      {children({ id, 'aria-describedby': descriptionId })}
+      <div className="flex min-w-0 items-center">{children({ id, 'aria-describedby': descriptionId })}</div>
     </Field>
   )
 }
