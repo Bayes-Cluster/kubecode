@@ -159,6 +159,8 @@ describe('MessageItem', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Earlier thread · 3 replies' }))
     expect(on.openThread).toHaveBeenCalled()
     const row = document.querySelector('[data-delivery="failed"]')
+    // A failure is the official destructive Alert.
+    expect(row).toHaveAttribute('data-slot', 'alert')
     expect(row).toHaveTextContent('Not delivered')
     expect(row).toHaveTextContent('Writer needs setup.')
     const items = await openMore("More actions for You's message")
@@ -193,7 +195,10 @@ describe('MessageItem', () => {
   it('cites what it replies to and jumps there, even when it is not loaded', () => {
     const message = channelMessage(6, { reply_to: 'm1' })
     const { on } = item({ message, author: researcherView(t), task: null, cited: { author: memberView(analyst, t), excerpt: 'Ran it' } })
-    fireEvent.click(screen.getByRole('button', { name: 'In reply to Analyst: Ran it' }))
+    const citation = screen.getByRole('button', { name: 'In reply to Analyst: Ran it' })
+    // The official link Button, not a handcrafted control (#263).
+    expect(citation).toHaveAttribute('data-slot', 'button')
+    fireEvent.click(citation)
     expect(on.jump).toHaveBeenCalledWith('m1')
   })
 
