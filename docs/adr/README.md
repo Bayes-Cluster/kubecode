@@ -97,3 +97,4 @@ ADRs are immutable after acceptance; a later decision supersedes an earlier one.
 | [0251](0251-tasks-reviews-and-attention-on-official-components.md) | Tasks, reviews, Needs you and execution feedback on official components |
 | [0252](0252-file-git-terminal-and-research-utilities-on-official-components.md) | File, Git, terminal and research utilities on official components |
 | [0253](0253-session-and-team-execution-views-on-official-components.md) | Session and Team execution views on official components |
+| [0254](0254-route-audit-closes-the-official-component-migration.md) | Route audit closes the official-component migration (UI I) |

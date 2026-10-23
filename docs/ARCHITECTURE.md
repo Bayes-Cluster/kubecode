@@ -943,6 +943,16 @@ work board's filters are Select, Checkbox and a single `ToggleGroup` of
 attention conditions, and the inspector's forms are Field, Select and Input.
 None of these surfaces restyle official internals in `kubecode.css`.
 
+UI I (ADR 0254) audited every route after the slices. The CSS ownership
+baseline now lists only documented exceptions (overlay zoom, text selection
+on controls, the xterm viewport, reduced motion), the work board card is a
+`Card` with one button, inspector histories are `ItemGroup`s of `Item`s, and
+a reader inside a titled inspector panel does not repeat its header
+(`RecordPreview titledByHost`). `components.json` lists only `@ai-elements`
+so the shadcn CLI works, and `pnpm l10n:validate` also rejects sentences left
+in English. The programme's contracts and remaining exceptions are summarised
+in [HANDOFF.md](HANDOFF.md).
+
 After the slices, ADR 0246 removed the hand-rolled composer and recipient row,
 the official files nothing rendered (with the `sonner`, `next-themes` and
 `@shadcn/react` dependencies), dead `kubecode-*` CSS and unused locale keys.
