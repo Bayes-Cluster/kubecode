@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useId, type ReactNode } from 'react'
 
 import { cn } from '@/lib/utils'
 
@@ -17,18 +17,22 @@ export function ResearchSection({
   className,
   label,
   level = 3,
+  named = false,
 }: {
   actions?: ReactNode
   children: ReactNode
   className?: string
   label: ReactNode
   level?: 3 | 4
+  /** Names the section by its label, so it is a landmark region. */
+  named?: boolean
 }) {
   const Heading = level === 3 ? 'h3' : 'h4'
+  const headingId = useId()
   return (
-    <section className={cn('flex min-w-0 flex-col gap-2', className)}>
+    <section aria-labelledby={named ? headingId : undefined} className={cn('flex min-w-0 flex-col gap-2', className)}>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <Heading className="m-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</Heading>
+        <Heading id={headingId} className="m-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</Heading>
         {actions}
       </div>
       {children}
