@@ -293,6 +293,9 @@ describe('DmPane sharing to General (ADR 0223 §5, ADR 0229 §6)', () => {
       fireEvent.click(within(dialog).getByRole('checkbox', { name: /is 0.91 enough/ }))
       fireEvent.click(within(dialog).getByRole('button', { name: 'Preview' }))
       const card = await within(dialog).findByRole('region', { name: 'Preview' })
+      // The official Card's own surface, with no legacy redraw class (#257).
+      expect(card).toHaveAttribute('data-slot', 'card')
+      expect(card.className).not.toMatch(/kubecode-/)
       expect(within(card).getByRole('status')).toHaveTextContent('No one can receive this yet: the project manager needs setup.')
       expect(card).not.toHaveTextContent('This will reach')
       expect(within(card).queryByText('General · Project manager')).not.toBeInTheDocument()

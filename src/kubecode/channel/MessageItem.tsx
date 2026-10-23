@@ -134,8 +134,8 @@ export function MessageItem({
   )
   // Whom it reached sits in the author line: "Investigate → General" (#229).
   const recipientLine = recipients.kind !== 'none' && (
-    <span className="kubecode-message-recipients">
-      <span aria-hidden="true" className="kubecode-message-recipients-arrow">→</span>
+    <span className="kubecode-message-recipients inline-flex min-w-0 flex-wrap items-center gap-1 text-xs text-muted-foreground">
+      <span aria-hidden="true" className="kubecode-message-recipients-arrow text-muted-foreground">→</span>
       <span className="sr-only">
         {recipients.kind === 'members' && recipients.handedOff ? t('kubecode.channel.handedOff') : t('kubecode.channel.to')}
       </span>
@@ -188,7 +188,7 @@ export function MessageItem({
             {message.intent_claimed_by ? ` · ${t('kubecode.channel.intent.claimed')}` : ''}
           </Badge>
         )}
-        <MessageActions className="kubecode-message-toolbar" data-coarse={coarse}>
+        <MessageActions className="ml-auto opacity-0 group-hover/message:opacity-100 group-focus-within/message:opacity-100 data-[coarse=true]:opacity-100 pointer-coarse:opacity-100 motion-safe:transition-opacity group-data-[from=self]/message:order-first group-data-[from=self]/message:ml-0 group-data-[from=self]/message:mr-auto" data-coarse={coarse}>
           {!coarse && on.reply && (
             <MessageAction
               className="kubecode-message-action"
@@ -235,7 +235,7 @@ export function MessageItem({
             onOpen={on.openReference}
           />
         ) : taskChip && (
-          <ul aria-label={t('kubecode.channel.references')} className="kubecode-message-references">
+          <ul aria-label={t('kubecode.channel.references')} className="m-0 flex min-w-0 list-none flex-wrap gap-1 p-0">
             <li>{taskChip}</li>
           </ul>
         )}

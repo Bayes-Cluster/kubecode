@@ -63,11 +63,11 @@ function DmSharePreviewCard({ preview, research, t }: { preview: DmSharePreview;
   const [exact, setExact] = useState(false)
   const task = preview.task_id ? research.find((item) => item.id === preview.task_id) : undefined
   return (
-    <Card aria-label={t('kubecode.dm.sharePreview')} className="kubecode-dm-preview gap-3 py-3" role="region">
+    <Card aria-label={t('kubecode.dm.sharePreview')} className="min-w-0 gap-3 py-3" role="region">
       <CardHeader className="flex flex-wrap items-center gap-2 px-3">
         <Identity size="sm" view={researcherView(t)} />
-        <p className="kubecode-message-recipients">
-          <span className="kubecode-message-recipients-label">{t('kubecode.channel.to')}</span>
+        <p className="m-0 inline-flex min-w-0 flex-wrap items-center gap-1 text-xs text-muted-foreground">
+          <span>{t('kubecode.channel.to')}</span>
           {shown && <Identity size="sm" view={shown} />}
         </p>
         {preview.task_id && (
@@ -182,13 +182,13 @@ export function DmShareDialog({
 
   return (
     <Dialog open={open} onOpenChange={close}>
-      <DialogContent className="kubecode-dm-share">
+      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{t('kubecode.dm.shareTitle', { name: member.name })}</DialogTitle>
           <DialogDescription>{t('kubecode.dm.shareHelp')}</DialogDescription>
         </DialogHeader>
         <FieldGroup className="gap-4">
-          <FieldSet className="kubecode-dm-turns">
+          <FieldSet className="max-h-56 overflow-y-auto">
             <FieldLegend variant="label">{t('kubecode.dm.shareChoose')}</FieldLegend>
             <FieldDescription>{t('kubecode.dm.shareCount', { count: chosen.length, max: MAX_TURNS })}</FieldDescription>
             {turns.length === 0 && <FieldDescription>{t('kubecode.dm.empty')}</FieldDescription>}

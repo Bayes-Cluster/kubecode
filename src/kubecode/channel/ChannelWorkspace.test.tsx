@@ -342,7 +342,7 @@ describe('ChannelWorkspace replies (ADR 0229 §4)', () => {
     expect(screen.getAllByText('Replying to Analyst').some((element) => element.getAttribute('role') === 'status')).toBe(true)
     expect(toRow()).toBeNull()
     // The cited message's Task comes along, visibly.
-    expect(within(document.querySelector('.kubecode-composer-about') as HTMLElement).getByText('Pruning')).toBeInTheDocument()
+    expect(within(document.querySelector('[data-composer-about]') as HTMLElement).getByText('Pruning')).toBeInTheDocument()
     // Taking the mention out of the text sends the reply to the manager instead; the citation stays.
     fireEvent.change(box(), { target: { value: '' } })
     fireEvent.change(box(), { target: { value: 'yes, add it' } })
@@ -427,7 +427,7 @@ describe('ChannelWorkspace Tasks and references', () => {
     const onFilterChange = vi.fn()
     const v = view(s, { props: { filter: 'r1', onFilterChange } })
     await screen.findByText('about pruning')
-    expect(within(document.querySelector('.kubecode-composer-about') as HTMLElement).getByText('Pruning')).toBeInTheDocument()
+    expect(within(document.querySelector('[data-composer-about]') as HTMLElement).getByText('Pruning')).toBeInTheDocument()
     fireEvent.change(box(), { target: { value: 'one more thought' } })
     send()
     await waitFor(() => expect(s.posted).toHaveLength(1))

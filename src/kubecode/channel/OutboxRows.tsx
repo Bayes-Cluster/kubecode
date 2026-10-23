@@ -1,5 +1,5 @@
 import { Message, MessageAction, MessageActions, MessageContent } from '@/components/ai-elements/message'
-import { Badge } from '@/components/ui/badge'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Spinner } from '@/components/ui/spinner'
 import type { Translator } from '@/lib/i18n'
 
@@ -22,12 +22,12 @@ export function OutboxRows<P>({ items, onDiscard, onEdit, onSendAgain, t }: {
 }) {
   if (items.length === 0) return null
   return (
-    <ul aria-label={t('kubecode.outbox.label')} className="kubecode-outbox">
+    <ul aria-label={t('kubecode.outbox.label')} className="m-0 flex list-none flex-col gap-1 p-0">
       {items.map((item) => (
-        <li className="kubecode-outbox-row" data-client-message-id={item.id} data-state={item.state} key={item.id}>
-          <Message className="kubecode-outbox-message" data-state={item.state === 'sending' ? 'pending' : 'failed'} from="user">
-            <MessageContent className="kubecode-outbox-content">
-              <span className="kubecode-outbox-text">{excerptOf(item.text, 200)}</span>
+        <li className="flex flex-col gap-1" data-client-message-id={item.id} data-state={item.state} key={item.id}>
+          <Message className="max-w-none" data-state={item.state === 'sending' ? 'pending' : 'failed'} from="user">
+            <MessageContent>
+              <span className="whitespace-pre-wrap [overflow-wrap:anywhere]">{excerptOf(item.text, 200)}</span>
               {item.state === 'sending'
                 ? (
                   <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
@@ -36,13 +36,13 @@ export function OutboxRows<P>({ items, onDiscard, onEdit, onSendAgain, t }: {
                   </span>
                 )
                 : (
-                  <span className="kubecode-outbox-failure" role="alert">
-                    <Badge variant="destructive">{t('kubecode.outbox.notSent', { reason: item.failure ?? t('kubecode.error') })}</Badge>
-                  </span>
+                  <Alert variant="destructive">
+                    <AlertDescription>{t('kubecode.outbox.notSent', { reason: item.failure ?? t('kubecode.error') })}</AlertDescription>
+                  </Alert>
                 )}
             </MessageContent>
             {item.state !== 'sending' && (
-              <MessageActions className="kubecode-outbox-actions">
+              <MessageActions className="flex-wrap">
                 <MessageAction size="sm" variant="outline" onClick={() => onSendAgain(item)}>{t('kubecode.outbox.sendAgain')}</MessageAction>
                 {onEdit && <MessageAction size="sm" onClick={() => onEdit(item)}>{t('kubecode.outbox.edit')}</MessageAction>}
                 <MessageAction size="sm" onClick={() => onDiscard(item)}>{t('kubecode.outbox.discard')}</MessageAction>

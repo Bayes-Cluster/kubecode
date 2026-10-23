@@ -37,7 +37,7 @@ test.describe('in German', () => {
       const composer = page.locator('[data-focus-key="composer:general"]')
       await composer.fill('Hallo')
       await composer.press('Enter')
-      const alert = page.locator('.kubecode-outbox-failure')
+      const alert = page.locator('[data-client-message-id] [data-slot="alert"]')
       await expect(alert).toBeVisible()
       await expect(alert).not.toContainText('Failed to fetch')
     } finally {

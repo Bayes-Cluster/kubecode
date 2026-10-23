@@ -180,7 +180,7 @@ export function DmPane({
                 </Empty>
               )}
               {turns.map((turn) => (
-                <div className="kubecode-dm-turn" data-testid={`dm-turn-${turn.run_id}`} key={turn.run_id}>
+                <div className="flex w-full flex-col" data-testid={`dm-turn-${turn.run_id}`} key={turn.run_id}>
                   <ConversationMessage aria-label={you.name} from="self">
                     <span className="sr-only">{you.name}</span>
                     <MessageContent className="kubecode-message-content">
