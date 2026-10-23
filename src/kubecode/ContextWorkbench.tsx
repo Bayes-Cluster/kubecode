@@ -132,6 +132,8 @@ export function ContextWorkbench({
   const [error, setError] = useState<string | null>(null)
   const { state: diffState, open: requestDiff, close: closeDiff } = useGitDiff(api)
   const [commitMessage, setCommitMessage] = useState('')
+  const [committing, setCommitting] = useState(false)
+  const committingRef = useRef(false)
   const [discardPath, setDiscardPath] = useState<string | null>(null)
   const systemMessages = useSystemMessages()
   const processedWorkspaceEventRef = useRef(workspaceEvents.at(-1)?.id ?? 0)
@@ -335,7 +337,9 @@ export function ContextWorkbench({
   }
 
   const commit = async () => {
-    if (!projectId || !commitMessage.trim()) return
+    if (!projectId || !commitMessage.trim() || committingRef.current) return
+    committingRef.current = true
+    setCommitting(true)
     beginMutation('commit')
     try {
       applyMutationResult(await api.commitGit(projectId, commitMessage))
@@ -344,6 +348,9 @@ export function ContextWorkbench({
     } catch (cause) {
       cancelMutation('commit')
       reportError(cause)
+    } finally {
+      committingRef.current = false
+      setCommitting(false)
     }
   }
 
@@ -505,11 +512,11 @@ export function ContextWorkbench({
                       value={commitMessage}
                       onChange={(event) => setCommitMessage(event.target.value)}
                       onKeyDown={(event) => {
-                        if (event.key === 'Enter' && !event.nativeEvent.isComposing) void commit()
+                        if (event.key === 'Enter' && !event.repeat && !event.nativeEvent.isComposing) void commit()
                       }}
                     />
                     <InputGroupAddon align="inline-end">
-                      <InputGroupButton disabled={!commitMessage.trim()} size="sm" variant="default" onClick={() => void commit()}>
+                      <InputGroupButton disabled={committing || !commitMessage.trim()} size="sm" variant="default" onClick={() => void commit()}>
                         <GitCommitHorizontal data-icon="inline-start" /> {t('kubecode.commit')}
                       </InputGroupButton>
                     </InputGroupAddon>
