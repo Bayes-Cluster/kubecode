@@ -8,6 +8,16 @@ import {
   Trash2
 } from 'lucide-react'
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -20,14 +30,27 @@ import {
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Empty, EmptyDescription, EmptyHeader } from '@/components/ui/empty'
+import { Field, FieldLabel } from '@/components/ui/field'
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemGroup,
+  ItemTitle,
+} from '@/components/ui/item'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { StatusBadge, type StatusTone } from '@/components/workspace/StatusBadge'
 import type { Translator } from '@/lib/i18n'
 
 import type { KubecodeApi, TeamMember, TeamSnapshot, TeamTask, WorkBoardFilter, WorkspaceEvent } from '../api'
+import { TEAM_TASK_STATUS_ICONS, type TeamTaskStatusState } from '../icons/statusIcons'
 import { WorkBoard } from '../work/WorkBoard'
 
 export function TeamTasksView({
@@ -75,18 +98,18 @@ export function TeamTasksView({
           value={detailTab}
           onValueChange={(value) => setDetailTab(value as typeof detailTab)}
         >
-          <TabsList>
+          <TabsList className="max-w-full shrink-0 overflow-x-auto">
             <TabsTrigger value="tasks" onClick={() => setDetailTab('tasks')}>
-              <ListChecks  size={16}/> {t('kubecode.teamTasks')}
+              <ListChecks /> {t('kubecode.teamTasks')}
             </TabsTrigger>
             <TabsTrigger value="activity" onClick={() => setDetailTab('activity')}>
-              <Clock  size={16}/> {t('kubecode.teamActivity')}
+              <Clock /> {t('kubecode.teamActivity')}
             </TabsTrigger>
             <TabsTrigger value="dependencies" onClick={() => setDetailTab('dependencies')}>
-              <GitBranch  size={16}/> {t('kubecode.teamDependencies')}
+              <GitBranch /> {t('kubecode.teamDependencies')}
             </TabsTrigger>
           </TabsList>
-          <TabsContent value="tasks">
+          <TabsContent className="min-h-0 overflow-auto" value="tasks">
             <WorkBoard
               api={api}
               connectionState="live"
@@ -109,31 +132,47 @@ export function TeamTasksView({
               onOpenSession={onSelectMember}
             />
           </TabsContent>
-          <TabsContent value="activity">
-            <ol className="kubecode-team-activity-list">
-              {activity.map((activityItem) => (
-                <li key={activityItem.id}>
-                  <i data-kind={activityItem.kind} />
-                  <div><strong>{activityItem.summary}</strong><time>{activityItem.created_at}</time></div>
-                </li>
-              ))}
-              {activity.length === 0 && <li>{t('kubecode.teamNoActivity')}</li>}
-            </ol>
+          <TabsContent className="min-h-0 overflow-auto" value="activity">
+            {activity.length === 0 ? (
+              <Empty>
+                <EmptyHeader>
+                  <EmptyDescription>{t('kubecode.teamNoActivity')}</EmptyDescription>
+                </EmptyHeader>
+              </Empty>
+            ) : (
+              <ItemGroup className="kubecode-team-activity-list gap-1">
+                {activity.map((activityItem) => (
+                  <Item data-kind={activityItem.kind} key={activityItem.id} role="listitem" size="sm">
+                    <ItemContent>
+                      <ItemTitle>{activityItem.summary}</ItemTitle>
+                      <ItemDescription><time>{activityItem.created_at}</time></ItemDescription>
+                    </ItemContent>
+                  </Item>
+                ))}
+              </ItemGroup>
+            )}
           </TabsContent>
-          <TabsContent value="dependencies">
-            <div className="kubecode-team-dependency-list">
+          <TabsContent className="min-h-0 overflow-auto" value="dependencies">
+            <ItemGroup className="kubecode-team-dependency-list gap-1">
               {tasks.map((task) => (
-                <div key={task.id}>
-                  <strong>{task.title}</strong>
-                  {task.dependencies.length > 0
-                    ? task.dependencies.map((dependency) => {
-                      const parent = tasks.find((candidate) => candidate.id === dependency)
-                      return <span key={dependency}><ArrowRight  size={16}/> {parent?.title || dependency}</span>
-                    })
-                    : <span>{t('kubecode.teamNoDependencies')}</span>}
-                </div>
+                <Item key={task.id} role="listitem" size="sm" variant="outline">
+                  <ItemContent>
+                    <ItemTitle>{task.title}</ItemTitle>
+                    {task.dependencies.length > 0
+                      ? task.dependencies.map((dependency) => {
+                        const parent = tasks.find((candidate) => candidate.id === dependency)
+                        return (
+                          <ItemDescription className="flex items-center gap-1" key={dependency}>
+                            <ArrowRight aria-hidden="true" className="size-3.5 shrink-0" />
+                            {parent?.title || dependency}
+                          </ItemDescription>
+                        )
+                      })
+                      : <ItemDescription>{t('kubecode.teamNoDependencies')}</ItemDescription>}
+                  </ItemContent>
+                </Item>
               ))}
-            </div>
+            </ItemGroup>
           </TabsContent>
         </Tabs>
       </div>
@@ -210,54 +249,51 @@ function TaskInspector({
               <DialogTitle>{task.title}</DialogTitle>
               <DialogDescription>{t('kubecode.teamTaskDetails')}</DialogDescription>
             </DialogHeader>
-            <div className="kubecode-team-task-dialog-body">
-              <dl>
-                <div><dt>{t('kubecode.teamTaskStatus')}</dt><dd>{task.status}</dd></div>
-                <div>
-                  <dt>{t('kubecode.teamTaskAssignee')}</dt>
-                  <dd>{assignee?.name ?? t('kubecode.teamTaskUnassigned')}</dd>
-                </div>
-              </dl>
-              {task.description && (
-                <section>
-                  <strong>{t('kubecode.teamTaskDescription')}</strong>
-                  <p>{task.description}</p>
+            <div className="flex min-h-0 flex-col gap-4 overflow-y-auto">
+              <ItemGroup className="gap-1">
+                <Item size="sm" variant="muted">
+                  <ItemContent><ItemDescription>{t('kubecode.teamTaskStatus')}</ItemDescription></ItemContent>
+                  <ItemActions><TaskStatus status={task.status} t={t} /></ItemActions>
+                </Item>
+                <Item size="sm" variant="muted">
+                  <ItemContent><ItemDescription>{t('kubecode.teamTaskAssignee')}</ItemDescription></ItemContent>
+                  <ItemActions>{assignee?.name ?? t('kubecode.teamTaskUnassigned')}</ItemActions>
+                </Item>
+              </ItemGroup>
+              {([
+                ['kubecode.teamTaskDescription', task.description],
+                ['kubecode.teamTaskResult', task.result],
+                ['kubecode.teamTaskVerification', task.verification],
+              ] as const).map(([label, text]) => text && (
+                <section className="flex flex-col gap-1.5" key={label}>
+                  <h3 className="text-sm font-medium">{t(label)}</h3>
+                  <p className="select-text whitespace-pre-wrap break-words text-sm text-muted-foreground">{text}</p>
                 </section>
-              )}
-              {task.result && (
-                <section>
-                  <strong>{t('kubecode.teamTaskResult')}</strong>
-                  <p>{task.result}</p>
-                </section>
-              )}
-              {task.verification && (
-                <section>
-                  <strong>{t('kubecode.teamTaskVerification')}</strong>
-                  <p>{task.verification}</p>
-                </section>
-              )}
+              ))}
               {!task.assignee_member_id && task.status === 'pending' && teammates.length > 0 && (
-                <label>
-                  <span>{t('kubecode.teamTaskAssign')}</span>
+                <Field>
+                  <FieldLabel htmlFor="team-task-assign">{t('kubecode.teamTaskAssign')}</FieldLabel>
                   <Select
                     onValueChange={(memberId) => void act(
                       `assign:${task.id}`,
                       () => api.assignTeamTask(snapshot.team.id, task.id, memberId),
                     )}
                   >
-                    <SelectTrigger aria-label={t('kubecode.teamTaskAssign')}>
+                    <SelectTrigger aria-label={t('kubecode.teamTaskAssign')} id="team-task-assign">
                       <SelectValue placeholder={t('kubecode.teamTaskUnassigned')} />
                     </SelectTrigger>
                     <SelectContent>
-                      {teammates.map((member) => (
-                        <SelectItem key={member.id} value={member.id}>{member.name}</SelectItem>
-                      ))}
+                      <SelectGroup>
+                        {teammates.map((member) => (
+                          <SelectItem key={member.id} value={member.id}>{member.name}</SelectItem>
+                        ))}
+                      </SelectGroup>
                     </SelectContent>
                   </Select>
-                </label>
+                </Field>
               )}
             </div>
-            <DialogFooter className="kubecode-team-task-dialog-actions">
+            <DialogFooter className="flex-wrap">
               {assignee && (
                 <>
                   <Button
@@ -275,7 +311,7 @@ function TaskInspector({
                       variant="ghost"
                       onClick={() => setConfirmation('remove')}
                     >
-                      <Trash2  size={16}/> {t('kubecode.teamRemoveMember')}
+                      <Trash2 data-icon="inline-start" /> {t('kubecode.teamRemoveMember')}
                     </Button>
                   )}
                 </>
@@ -289,7 +325,7 @@ function TaskInspector({
                     () => api.retryTeamTask(snapshot.team.id, task.id),
                   )}
                 >
-                  <RefreshCw  size={16}/> {t('kubecode.teamTaskRetry')}
+                  <RefreshCw data-icon="inline-start" /> {t('kubecode.teamTaskRetry')}
                 </Button>
               )}
               {!['accepted', 'cancelled'].includes(task.status) && (
@@ -306,30 +342,28 @@ function TaskInspector({
           )}
         </DialogContent>
       </Dialog>
-      <Dialog
+      <AlertDialog
         open={confirmation !== null}
         onOpenChange={(open) => {
           if (!open) setConfirmation(null)
         }}
       >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
               {t(confirmation === 'remove'
                 ? 'kubecode.teamRemoveMemberTitle'
                 : 'kubecode.teamTaskCancelTitle')}
-            </DialogTitle>
-            <DialogDescription>
+            </AlertDialogTitle>
+            <AlertDialogDescription>
               {t(confirmation === 'remove'
                 ? 'kubecode.teamRemoveMemberDescription'
                 : 'kubecode.teamTaskCancelDescription')}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setConfirmation(null)}>
-              {t('kubecode.cancel')}
-            </Button>
-            <Button
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('kubecode.cancel')}</AlertDialogCancel>
+            <AlertDialogAction
               variant={confirmation === 'remove' ? 'destructive' : 'default'}
               onClick={() => {
                 if (!task) return
@@ -351,10 +385,34 @@ function TaskInspector({
               {t(confirmation === 'remove'
                 ? 'kubecode.teamRemoveMember'
                 : 'kubecode.teamTaskCancel')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   )
+}
+
+function TaskStatus({ status, t }: { status: string; t: Translator }) {
+  const entry = status in TEAM_TASK_STATUS_ICONS
+    ? TEAM_TASK_STATUS_ICONS[status as TeamTaskStatusState]
+    : null
+  if (!entry) return <StatusBadge>{status}</StatusBadge>
+  const StatusIcon = entry.Icon
+  return (
+    <StatusBadge tone={TASK_TONES[status as TeamTaskStatusState] ?? 'muted'}>
+      <StatusIcon aria-hidden="true" />
+      {t(entry.labelKey)}
+    </StatusBadge>
+  )
+}
+
+const TASK_TONES: Partial<Record<TeamTaskStatusState, StatusTone>> = {
+  accepted: 'ok',
+  blocked: 'warn',
+  changes_requested: 'warn',
+  done: 'ok',
+  in_progress: 'info',
+  plan_review: 'warn',
+  result_review: 'warn',
 }

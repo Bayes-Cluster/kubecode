@@ -22,9 +22,9 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 
 | Status | Rows |
 | --- | ---: |
-| migrated | 172 |
-| partial | 33 |
-| handcrafted | 26 |
+| migrated | 196 |
+| partial | 25 |
+| handcrafted | 13 |
 | specialist-engine | 4 |
 | exception | 5 |
 | not-applicable | 8 |
@@ -41,7 +41,7 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 | #258/#262 | 1 |
 | #259 | 48 |
 | #260 | 28 |
-| #261 | 34 |
+| #261 | 37 |
 | #262 | 35 |
 
 ## Shell
@@ -371,32 +371,32 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 ## Session
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
-| New Session dialog (agent/mode choice grid, fields, empty placeholders) | `src/kubecode/app/NewSessionDialog.tsx:174-278` | handcrafted role=group choice buttons, raw label wrappers, kubecode-empty-small | ToggleGroup, Field, Empty | WorkbenchShell, Session start | #261 | handcrafted | Listed in the #260 scope; handed to #261 because its baseline CSS and the Session-start flow belong to G |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Message turn (bubble, copy/edit/retry/branch) | `src/components/AiMessage.tsx:11-31,446` | AI Elements Message + Collapsible/Badge/Button | AI Elements Message | Session timeline | #261 | migrated | — |
-| User prompt inline editor | `src/components/AiMessage.tsx:131-160` | official Textarea/Button in handcrafted wrapper | Textarea + Button (or PromptInput) | AiMessage | #261 | partial | — |
+| New Session dialog (agent/mode choice grid, fields, empty placeholders) | `src/kubecode/app/NewSessionDialog.tsx:174-278` | ToggleGroup, RadioGroup choice cards, Field, Empty (same component as the New Session dialog row under Team) | ToggleGroup, Field, Empty | WorkbenchShell, Session start | #261 | migrated | Listed in the #260 scope; handed to #261. Migrated in ADR 0253 |
+| Message turn (bubble, copy/edit/retry/branch) | `src/components/AiMessage.tsx:11-31,446` | AI Elements Message/MessageActions; no CSS redraw of the prompt bubble | AI Elements Message | Session timeline | #261 | migrated | — |
+| User prompt inline editor | `src/components/AiMessage.tsx:131-160` | official Textarea + Buttons in a layout-only form | Textarea + Button (or PromptInput) | AiMessage | #261 | migrated | — |
 | Reasoning block | `src/components/AiMessage.tsx:17-21,222` | AI Elements Reasoning + Shimmer | AI Elements Reasoning | AiMessage | #261 | migrated | — |
-| Tool-use group header / segments / working indicator | `src/components/AiMessage.tsx:262,387,410` | handcrafted div/span + Spinner/Shimmer | AI Elements Tool / Shimmer, Spinner | AiMessage | #261 | partial | — |
+| Tool-use group header / segments / working indicator | `src/components/AiMessage.tsx:262,387,410` | official Collapsible + ghost Button + Badge + Spinner; Shimmer working line | AI Elements Tool / Shimmer, Spinner | AiMessage | #261 | migrated | Terminal/Stack Trace now published (2026-10-23); deferred in ADR 0253 (new ANSI dependency, no parsed frames) |
 | Markdown rendering | `src/kubecode/session/SessionMarkdown.tsx` | MessageResponse (Streamdown) | AI Elements MessageResponse | AiMessage | #261 | migrated | — |
-| Tool action card | `src/components/AiActionCard.tsx:3-10` | AI Elements Tool + CodeBlock | AI Elements Tool, CodeBlock | AiMessage | #261 | migrated | — |
-| Conversation scroller + scroll-to-bottom | `src/components/AiPanelChrome.tsx:9,487,552` | specialist engine react-virtuoso + handcrafted ArrowDown Button | AI Elements Conversation/ConversationScrollButton | SessionTimeline | #261 | specialist-engine | Virtualization of long transcripts; Conversation does not virtualize. Scroll button could use ConversationScrollButton |
-| Panel header / linked-context strip / empty hint | `src/components/AiPanelChrome.tsx:342-348,384,462-464` | handcrafted divs with inline styles | Item / Empty / Badge | AI panel | #261 | handcrafted | — |
-| Prompt input (body, tools, submit, stop) | `src/components/AiPanelChrome.tsx:10-19,626-740` | PromptInputBody/Tools/Submit + InputGroup; custom WikilinkChatInput; StopButton | AI Elements PromptInput/PromptInputTextarea | SessionComposer | #261 | partial | WikilinkChatInput is a contenteditable mention engine (specialist) |
-| Composer status/error lines | `src/components/AiPanelChrome.tsx:711-716` | handcrafted span | Field description / Alert | AiPanelComposer | #261 | handcrafted | — |
-| Composer wrapper, read-only revision banner, leader-review dock | `src/kubecode/session/SessionComposer.tsx:169-198` | handcrafted divs | Alert / Confirmation | SessionWorkspace | #261 | handcrafted | — |
-| Mode/model/config control menu | `src/kubecode/AgentControlMenu.tsx:102-200` | handcrafted popover role=dialog/menu | DropdownMenu (RadioGroup, Sub) or PromptInputSelect/ModelSelector | SessionComposer | #261 | handcrafted | — |
-| Slash command suggestions | `src/kubecode/AcpCommandMenu.tsx:23-42` | handcrafted listbox with Buttons | shadcn Command | SessionComposer | #261 | handcrafted | — |
-| Side question panel | `src/kubecode/SideQuestionPanel.tsx:22-88` | handcrafted collapsible header + list + Button | Collapsible / AI Elements Queue / Item | SessionComposer | #261 | handcrafted | Listed under #261 and #262 in the source inventory; #261 owns the Session composer |
-| System message notice | `src/kubecode/SystemMessageNotice.tsx:58-118` | handcrafted div role=status/alert + Button | shadcn Alert | SessionComposer | #261 | handcrafted | — |
-| Plan summary | `src/kubecode/session/SessionPlanSummary.tsx:4-35` | AI Elements Plan + small heading div | AI Elements Plan | SessionComposer | #261 | migrated | — |
+| Tool action card | `src/components/AiActionCard.tsx:3-10` | AI Elements Tool + CodeBlock; ai-action-card CSS removed | AI Elements Tool, CodeBlock | AiMessage | #261 | migrated | — |
+| Conversation scroller + scroll-to-bottom | `src/components/AiPanelChrome.tsx:9,487,552` | specialist engine react-virtuoso + handcrafted ArrowDown Button | AI Elements Conversation/ConversationScrollButton | SessionTimeline | #261 | specialist-engine | Virtualization of long transcripts (react-virtuoso); Conversation does not virtualize. Jump button is an official outline icon Button |
+| Panel header / linked-context strip / empty hint | `src/components/AiPanelChrome.tsx:342-348,384,462-464` | header and context strip deleted (unused); empty hint is shadcn Empty | Item / Empty / Badge | AI panel | #261 | migrated | ADR 0253 |
+| Prompt input (body, tools, submit, stop) | `src/components/AiPanelChrome.tsx:10-19,626-740` | PromptInputBody/Tools + InputGroup without restyling; StopButton | AI Elements PromptInput/PromptInputTextarea | SessionComposer | #261 | partial | WikilinkChatInput/ComposerContextInput is a contenteditable mention engine (specialist) |
+| Composer status/error lines | `src/components/AiPanelChrome.tsx:711-716` | FieldDescription / FieldError | Field description / Alert | AiPanelComposer | #261 | migrated | — |
+| Composer wrapper, read-only revision banner, leader-review dock | `src/kubecode/session/SessionComposer.tsx:169-198` | layout wrapper; Alert for read-only and leader review | Alert / Confirmation | SessionWorkspace | #261 | migrated | — |
+| Mode/model/config control menu | `src/kubecode/AgentControlMenu.tsx:102-200` | shadcn DropdownMenu (Sub + RadioGroup, CheckboxItem, disabled locked mode) | DropdownMenu (RadioGroup, Sub) or PromptInputSelect/ModelSelector | SessionComposer | #261 | migrated | ADR 0253 |
+| Slash command suggestions | `src/kubecode/AcpCommandMenu.tsx:23-42` | shadcn Command list mirroring the composer selection | shadcn Command | SessionComposer | #261 | migrated | ADR 0253 |
+| Side question panel | `src/kubecode/SideQuestionPanel.tsx:22-88` | Collapsible + Item list + Badge + Spinner | Collapsible / AI Elements Queue / Item | SessionComposer | #261 | migrated | — |
+| System message notice | `src/kubecode/SystemMessageNotice.tsx:58-118` | shadcn Alert (destructive for errors) + icon Buttons | shadcn Alert | SessionComposer | #261 | migrated | — |
+| Plan summary | `src/kubecode/session/SessionPlanSummary.tsx:4-35` | AI Elements Plan; no CSS redraw | AI Elements Plan | SessionComposer | #261 | migrated | — |
 | Prompt queue dock | `src/kubecode/session/PromptQueueDock.tsx:4-18,75` | AI Elements Queue + Input/Button | AI Elements Queue | SessionWorkspace | #261 | migrated | — |
-| Usage/context meter | `src/kubecode/session/UsageMeter.tsx:4-13,77` | AI Elements Context + Progress | AI Elements Context | SessionTitlebar | #261 | migrated | — |
-| Title, status dot, team view switch, overflow menu | `src/kubecode/session/SessionTitlebar.tsx:5-11,58-92` | DropdownMenu; handcrafted tablist and status dot | Tabs/ToggleGroup, Badge | SessionWorkspace | #261 | partial | — |
-| Subagent bubble | `src/kubecode/session/SubagentBubble.tsx:4-11,54` | AI Elements Task + Shimmer + Badge | AI Elements Task | SessionTimeline | #261 | migrated | — |
-| Timeline wrapper, recreated-context divider | `src/kubecode/session/SessionTimeline.tsx:53,78` | handcrafted div | Separator / AI Elements Checkpoint | SessionWorkspace | #261 | handcrafted | — |
-| Revision navigator | `src/kubecode/session/RevisionNavigator.tsx:20-30` | handcrafted div + Buttons | ButtonGroup / MessageBranch | SessionWorkspace | #261 | partial | — |
-| Empty state: agent readiness grid, start actions | `src/kubecode/session/SessionWorkspace.tsx:475-533` | handcrafted section/grid + Buttons | Empty + Item/Card | session route | #261 | handcrafted | — |
-| Rename/fork dialogs and header | `src/kubecode/session/SessionWorkspace.tsx:7-16,632` | official Dialog + Input; header handcrafted | shadcn Dialog | SessionWorkspace | #261 | migrated | — |
+| Usage/context meter | `src/kubecode/session/UsageMeter.tsx:4-13,77` | AI Elements Context + Progress; no indicator recolouring | AI Elements Context | SessionTitlebar | #261 | migrated | — |
+| Title, status dot, team view switch, overflow menu | `src/kubecode/session/SessionTitlebar.tsx:5-11,58-92` | DropdownMenu; single ToggleGroup for Chat/Team (a view switch with no tab panels); StatusBadge + decorative Spinner for run state | Tabs/ToggleGroup, Badge | SessionWorkspace | #261 | migrated | — |
+| Subagent bubble | `src/kubecode/session/SubagentBubble.tsx:4-11,54` | AI Elements Task + Shimmer + Badge; trigger styled with utilities only | AI Elements Task | SessionTimeline | #261 | migrated | Registry search 2026-10-23: no Subagent element |
+| Timeline wrapper, recreated-context divider | `src/kubecode/session/SessionTimeline.tsx:53,78` | layout wrapper; AI Elements Checkpoint for recreated context | Separator / AI Elements Checkpoint | SessionWorkspace | #261 | migrated | — |
+| Revision navigator | `src/kubecode/session/RevisionNavigator.tsx:20-30` | shadcn ButtonGroup + ButtonGroupText | ButtonGroup / MessageBranch | SessionWorkspace | #261 | migrated | — |
+| Empty state: agent readiness grid, start actions | `src/kubecode/session/SessionWorkspace.tsx:475-533` | shadcn Empty + Item per Agent + Buttons | Empty + Item/Card | session route | #261 | migrated | — |
+| Rename/fork dialogs and header | `src/kubecode/session/SessionWorkspace.tsx:7-16,632` | official Dialog + Input; the fallback `<header>` (used only when the shell gives no title bar slot) is a layout-only flex row holding the migrated SessionTitlebar | shadcn Dialog | SessionWorkspace | #261 | migrated | Header draws no control: `.kubecode-session-header` is flex/height/border layout only (contract §3 layout CSS); its contents are the Title bar row above |
 
 ## Team
 
@@ -404,13 +404,18 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Delete team dialog | `src/kubecode/DeleteTeamDialog.tsx:3-12` | official Dialog | Dialog (or AlertDialog) | SessionWorkspace | #261 | migrated | — |
 | Team workspace view + proposal dialog | `src/kubecode/TeamWorkspaceView.tsx:4-21,85` | official Dialog/Button | shadcn Dialog | SessionWorkspace | #261 | migrated | — |
-| Team member overview tree | `src/kubecode/TeamSessionOverview.tsx:26-65` | handcrafted tree divs + Button | Item / Sidebar menu / Avatar | SessionWorkspace | #261 | handcrafted | — |
-| Team setup form (goal, criteria, mode grid, budget) | `src/kubecode/team/TeamSetupView.tsx:114-170` | Textarea/Button official; labels, mode grid, budget handcrafted | Field, RadioGroup/ToggleGroup | TeamWorkspaceView | #261 | partial | — |
-| Team leader permission/native options | `src/kubecode/team/TeamPermissionView.tsx:39-68` | Switch official; layout handcrafted | Field + Switch | TeamSetupView | #261 | partial | — |
-| Lineup proposal card | `src/kubecode/team/TeamProposalView.tsx:13-61` | handcrafted section + spans, Button | Card + Badge | TeamWorkspaceView | #261 | handcrafted | — |
-| Control center header, badges, metrics, needs-attention | `src/kubecode/team/TeamStatusView.tsx:74-224` | handcrafted header/badges/tiles; Textarea/Button | Badge, Card, Item, Alert | TeamWorkspaceView | #261 | partial | — |
-| Tasks tabs, activity, dependencies, detail dialog, status select | `src/kubecode/team/TeamTasksView.tsx:11-31,72-234` | official Tabs/Dialog/Select/Button; handcrafted lists and dl | Tabs, Dialog, Select, Item | TeamWorkspaceView | #261 | partial | — |
-| Verification rounds list | `src/kubecode/team/TeamVerificationView.tsx:12-17` | handcrafted section/div | Item/Badge or AI Elements Task | TeamWorkspaceView | #261 | handcrafted | — |
+| Team member overview tree | `src/kubecode/TeamSessionOverview.tsx:26-65` | Item (button) + StatusBadge per member | Item / Sidebar menu / Avatar | SessionWorkspace | #261 | migrated | — |
+| Team setup form (goal, criteria, mode grid, budget) | `src/kubecode/team/TeamSetupView.tsx:114-170` | FieldGroup/Field, RadioGroup choice cards, ToggleGroup, Select, Alert | Field, RadioGroup/ToggleGroup | TeamWorkspaceView | #261 | migrated | — |
+| Team leader permission/native options | `src/kubecode/team/TeamPermissionView.tsx:39-68` | FieldSet + Field + Switch/Select | Field + Switch | TeamSetupView | #261 | migrated | — |
+| Lineup proposal card | `src/kubecode/team/TeamProposalView.tsx:13-61` | shadcn Card + Badge | Card + Badge | TeamWorkspaceView | #261 | migrated | — |
+| Control center header, badges, metrics, needs-attention | `src/kubecode/team/TeamStatusView.tsx:74-224` | StatusBadge, Badge, Item metrics, Item attention rows, Field input | Badge, Card, Item, Alert | TeamWorkspaceView | #261 | migrated | — |
+| Tasks tabs, activity, dependencies, detail dialog, status select | `src/kubecode/team/TeamTasksView.tsx:11-31,72-234` | Tabs, Item lists, Dialog + Item facts + StatusBadge, Select, AlertDialog | Tabs, Dialog, Select, Item | TeamWorkspaceView | #261 | migrated | — |
+| Verification rounds list | `src/kubecode/team/TeamVerificationView.tsx:12-17` | Item + translated StatusBadge | Item/Badge or AI Elements Task | TeamWorkspaceView | #261 | migrated | — |
+| Work board filters, attention chips, column headers | `src/kubecode/work/WorkBoard.tsx` | Select, Checkbox, single ToggleGroup, Badge counts; new Task form on Field/Input/Textarea | Select, Checkbox, ToggleGroup, Badge, Field | TeamTasksView, work route | #261 | migrated | Taken over from #259 (ADR 0253); no Kanban in the core registry, columns stay layout CSS |
+| Work inspector forms (questions, assign, review, close, priority) | `src/kubecode/work/WorkInspector.tsx` | Field, Select, Input, Textarea | Field, Select, Input | WorkBoard | #261 | migrated | Taken over from #259 (ADR 0253) |
+| New Session dialog (mode, kind, Agent, workspace, import list) | `src/kubecode/app/NewSessionDialog.tsx` | Dialog, ToggleGroup, RadioGroup choice cards, Field/Select/Input, Item list, Empty | Dialog, ToggleGroup, RadioGroup, Field, Item | session route | #261 | migrated | ADR 0253 |
+
+#261 reconciliation: the 33 original #261 rows are all kept (none deleted, merged or re-owned); three rows were added (Work board, Work inspector, New Session dialog), giving 36; the #260 hand-off row for the New Session dialog arrived from main and is kept, giving 37. 35 are migrated, Prompt input is partial and the Conversation scroller is specialist-engine. Row-by-row before/after status and screenshots: [ui-g-acceptance-evidence.md](ui-g-acceptance-evidence.md).
 
 ## Context workbench
 

@@ -148,8 +148,9 @@ describe('AgentSessionWorkspace', () => {
       workspaceEvents={[]}
     />)
 
-    expect(screen.getByText('Codex')).toBeInTheDocument()
-    expect(screen.getByText('OpenCode')).toBeInTheDocument()
+    expect(screen.getByTestId('agent-session-workspace').querySelector('[data-slot="empty"]')).not.toBeNull()
+    expect(screen.getByText('Codex').closest('[data-slot="item"]')).not.toBeNull()
+    expect(screen.getByText('OpenCode').closest('[data-slot="item"]')).toHaveTextContent('Unavailable')
     fireEvent.click(screen.getByRole('button', { name: 'Start an agent session' }))
     fireEvent.click(screen.getByRole('button', { name: 'Check again' }))
     expect(onNewSession).toHaveBeenCalledOnce()
@@ -186,10 +187,11 @@ describe('AgentSessionWorkspace', () => {
       workspaceEvents={[]}
     />)
 
-    expect(screen.getByRole('tab', { name: 'Team' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('radio', { name: 'Team' })).toHaveAttribute('aria-checked', 'true')
     expect(screen.queryByTestId('composer')).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Chat' }))
+    expect(screen.getByRole('radio', { name: 'Chat' })).toHaveAttribute('data-slot', 'toggle-group-item')
+    fireEvent.click(screen.getByRole('radio', { name: 'Chat' }))
     expect(await screen.findByTestId('composer')).toBeInTheDocument()
   })
 
@@ -1720,9 +1722,9 @@ describe('AgentSessionWorkspace', () => {
     const { rerender } = render(<AgentSessionWorkspace {...props} workspaceEvents={[]} />)
     expect(await screen.findByText('/review')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Agent settings' }))
-    fireEvent.click(screen.getByRole('button', { name: /Manual.*Agent mode/i }))
-    fireEvent.click(screen.getByRole('button', { name: /Accept Edits/ }))
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Agent settings' }), { key: 'Enter' })
+    fireEvent.keyDown(screen.getByRole('menuitem', { name: /Manual.*Agent mode/i }), { key: 'ArrowRight' })
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /Accept Edits/ }))
     await waitFor(() => expect(getSessionState).toHaveBeenCalledTimes(2))
 
     const update = {
@@ -2031,8 +2033,8 @@ describe('AgentSessionWorkspace', () => {
 
     const settings = await screen.findByRole('button', { name: 'Agent settings' })
     expect(settings).toBeEnabled()
-    fireEvent.click(settings)
-    expect(screen.getByRole('button', { name: /Manual.*Permission/i })).toBeEnabled()
+    fireEvent.keyDown(settings, { key: 'Enter' })
+    expect(screen.getByRole('menuitem', { name: /Manual.*Permission/i })).not.toHaveAttribute('data-disabled')
   })
 
   it('shows only distinct Agent-native controls with visible labels', async () => {
@@ -2114,12 +2116,12 @@ describe('AgentSessionWorkspace', () => {
     expect(settings).toHaveTextContent('Manual')
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
 
-    fireEvent.click(settings)
+    fireEvent.keyDown(settings, { key: 'Enter' })
     expect(screen.queryByText('Permission')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Default.*Model/i })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: /Manual.*Agent mode/i }))
+    expect(screen.getByRole('menuitem', { name: /Default.*Model/i })).toBeInTheDocument()
+    fireEvent.keyDown(screen.getByRole('menuitem', { name: /Manual.*Agent mode/i }), { key: 'ArrowRight' })
     expect(screen.getByText('Automatically accept file edits')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: /Accept Edits/ }))
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /Accept Edits/ }))
     await waitFor(() => {
       expect(api.setSessionMode).toHaveBeenCalledWith(conversation.id, 'acceptEdits')
       expect(screen.getByRole('button', { name: 'Agent settings' })).toHaveTextContent('Accept Edits')
@@ -2161,9 +2163,9 @@ describe('AgentSessionWorkspace', () => {
 
     const settings = await screen.findByRole('button', { name: 'Agent settings' })
     expect(settings).toHaveTextContent("Don't Ask")
-    fireEvent.click(settings)
-    fireEvent.click(screen.getByRole('button', { name: /Don't Ask.*Agent mode/i }))
-    fireEvent.click(screen.getByRole('button', { name: 'Plan Mode' }))
+    fireEvent.keyDown(settings, { key: 'Enter' })
+    fireEvent.keyDown(screen.getByRole('menuitem', { name: /Don't Ask.*Agent mode/i }), { key: 'ArrowRight' })
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Plan Mode' }))
 
     expect(await screen.findByText('ACP session could not reconnect')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Agent settings' })).toHaveTextContent("Don't Ask")
@@ -2204,9 +2206,9 @@ describe('AgentSessionWorkspace', () => {
 
     const settings = await screen.findByRole('button', { name: 'Agent settings' })
     expect(settings).toBeEnabled()
-    fireEvent.click(settings)
-    const mode = screen.getByRole('button', { name: /Agent.*Agent mode/i })
-    expect(mode).toBeDisabled()
+    fireEvent.keyDown(settings, { key: 'Enter' })
+    const mode = screen.getByRole('menuitem', { name: /Agent.*Agent mode/i })
+    expect(mode).toHaveAttribute('data-disabled')
     fireEvent.click(mode)
     expect(api.setSessionMode).not.toHaveBeenCalled()
   })
@@ -2778,7 +2780,7 @@ describe('AgentSessionWorkspace', () => {
     expect(await screen.findByText('Write file')).toBeInTheDocument()
     const status = container.querySelector('.kubecode-session-status')
     expect(status).toHaveTextContent('Permission required')
-    expect(status?.querySelector('[data-state]')).toHaveAttribute('data-state', 'stuck')
+    expect(status?.querySelector('[data-slot="badge"]')).toHaveAttribute('data-tone', 'warn')
     fireEvent.click(screen.getByRole('button', { name: 'Allow' }))
     await waitFor(() => {
       expect(api.resolvePermission).toHaveBeenCalledWith('permission-restored', 'allow')

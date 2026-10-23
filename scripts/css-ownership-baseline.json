@@ -51,97 +51,6 @@
     },
     {
       "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-new-session-dialog > [data-slot='dialog-header'] {",
-      "context": ".kubecode-new-session-dialog > [data-slot='dialog-header']",
-      "kind": "official-internal",
-      "owner": "#261"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-new-session-field [data-slot='select-trigger'],",
-      "context": ".kubecode-new-session-field [data-slot='select-trigger'], .kubecode-new-session-field input",
-      "kind": "official-internal",
-      "owner": "#261"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-team-settings [data-slot='select-trigger'] { width: 72px; }",
-      "context": ".kubecode-team-settings [data-slot='select-trigger']",
-      "kind": "official-internal",
-      "owner": "#261"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": "color: var(--text-secondary) !important;",
-      "context": ".kubecode-team-mode-badge",
-      "kind": "important",
-      "owner": "#261"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": "color: var(--feedback-warning-text) !important;",
-      "context": ".kubecode-team-mode-badge[data-mode='yolo']",
-      "kind": "important",
-      "owner": "#261"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-team-detail-tabs > [data-slot='tabs-list'] {",
-      "context": ".kubecode-team-detail-tabs > [data-slot='tabs-list']",
-      "kind": "official-internal",
-      "owner": "#261"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-team-detail-tabs > [data-slot='tabs-list'] {",
-      "context": ".kubecode-team-detail-tabs > [data-slot='tabs-list']",
-      "kind": "official-internal",
-      "owner": "#261"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-team-detail-tabs [data-slot='tabs-trigger'] { gap: 5px; }",
-      "context": ".kubecode-team-detail-tabs [data-slot='tabs-trigger']",
-      "kind": "official-internal",
-      "owner": "#261"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-team-detail-tabs > [data-slot='tabs-content'] {",
-      "context": ".kubecode-team-detail-tabs > [data-slot='tabs-content']",
-      "kind": "official-internal",
-      "owner": "#261"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-team-detail-tabs > [data-slot='tabs-content']::-webkit-scrollbar { display: none; }",
-      "context": ".kubecode-team-detail-tabs > [data-slot='tabs-content']::-webkit-scrollbar",
-      "kind": "official-internal",
-      "owner": "#261"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": "[data-slot='dialog-content'].kubecode-team-task-dialog {",
-      "context": "[data-slot='dialog-content'].kubecode-team-task-dialog",
-      "kind": "official-internal",
-      "owner": "#261"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": "[data-slot='dialog-content'].kubecode-team-task-dialog > [data-slot='dialog-header'] {",
-      "context": "[data-slot='dialog-content'].kubecode-team-task-dialog > [data-slot='dialog-header']",
-      "kind": "official-internal",
-      "owner": "#261"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": "padding: 22px 18px !important;",
-      "context": ".kubecode-session-timeline > div",
-      "kind": "important",
-      "owner": "#261"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
       "text": ".kubecode-context-tabbar [data-slot='tabs-trigger'] {",
       "context": ".kubecode-context-tabbar [data-slot='tabs-trigger']",
       "kind": "official-internal",
@@ -160,20 +69,6 @@
       "context": ".kubecode-terminal-view .xterm-viewport",
       "kind": "important",
       "owner": "#262 (specialist exception: xterm viewport)"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-session-composer > div { padding: 0 !important; }",
-      "context": ".kubecode-session-composer > div",
-      "kind": "important",
-      "owner": "#261"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": "padding: 22px 10px 12px !important;",
-      "context": ".kubecode-session-timeline > div",
-      "kind": "important",
-      "owner": "#261"
     },
     {
       "file": "src/kubecode/kubecode.css",
@@ -272,55 +167,6 @@
       "context": ".kubecode-research-check",
       "kind": "important",
       "owner": "#262"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": "padding: 8px 12px !important;",
-      "context": ".kubecode-session-prompt-content",
-      "kind": "important",
-      "owner": "#261"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": ".ai-action-card .ai-action-card-header [data-slot='badge'] { font-size: 10px; padding: 0 6px; }",
-      "context": ".ai-action-card .ai-action-card-header [data-slot='badge']",
-      "kind": "official-internal",
-      "owner": "#261"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-session-plan[data-slot='plan'] { gap: 0; padding: 0; }",
-      "context": ".kubecode-session-plan[data-slot='plan']",
-      "kind": "official-internal",
-      "owner": "#261"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-session-usage-bar[data-level='ok'] [data-slot='progress-indicator'] { background: var(--accent-green); }",
-      "context": ".kubecode-session-usage-bar[data-level='ok'] [data-slot='progress-indicator']",
-      "kind": "official-internal",
-      "owner": "#261"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-session-usage-bar[data-level='warning'] [data-slot='progress-indicator'] { background: var(--feedback-warning-border); }",
-      "context": ".kubecode-session-usage-bar[data-level='warning'] [data-slot='progress-indicator']",
-      "kind": "official-internal",
-      "owner": "#261"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-session-usage-bar[data-level='danger'] [data-slot='progress-indicator'] { background: var(--accent-red); }",
-      "context": ".kubecode-session-usage-bar[data-level='danger'] [data-slot='progress-indicator']",
-      "kind": "official-internal",
-      "owner": "#261"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-session-prompt-input[data-slot='input-group'] { background: var(--surface-app); }",
-      "context": ".kubecode-session-prompt-input[data-slot='input-group']",
-      "kind": "official-internal",
-      "owner": "#261"
     },
     {
       "file": "src/kubecode/kubecode.css",

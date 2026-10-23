@@ -3,7 +3,7 @@ import {
   Download,
   Plus,
   User,
-  Users
+  Users,
 } from 'lucide-react'
 import { trackEvent } from '@/lib/telemetry'
 
@@ -18,14 +18,36 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Empty, EmptyDescription, EmptyHeader } from '@/components/ui/empty'
+import {
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+  FieldLegend,
+  FieldSet,
+  FieldTitle,
+} from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import {
+  Item,
+  ItemContent,
+  ItemDescription,
+  ItemGroup,
+  ItemTitle,
+} from '@/components/ui/item'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Spinner } from '@/components/ui/spinner'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 
 import {
   ApiError,
@@ -170,112 +192,136 @@ export function NewSessionDialog({
           <DialogTitle>{t('kubecode.newSession')}</DialogTitle>
           <DialogDescription>{t('kubecode.newSessionDescription')}</DialogDescription>
         </DialogHeader>
-        <div className="kubecode-new-session-form">
-          <div className="kubecode-choice-grid kubecode-session-choice-grid" role="group">
-            <Button
-              aria-label={t('kubecode.startNewSession')}
-              aria-pressed={mode === 'new'}
-              data-active={mode === 'new'}
-              variant="outline"
-              onClick={() => setMode('new')}
-            >
-              <Plus  size={16}/>
-              <span>{t('kubecode.startNewSession')}</span>
-            </Button>
-            <Button
-              aria-label={t('kubecode.importAgentSession')}
-              aria-pressed={mode === 'import'}
-              data-active={mode === 'import'}
-              variant="outline"
-              onClick={() => setMode('import')}
-            >
-              <Download  size={16}/>
-              <span>{t('kubecode.importAgentSession')}</span>
-            </Button>
-          </div>
+        <FieldGroup className="kubecode-new-session-form">
+          <ToggleGroup
+            aria-label={t('kubecode.newSession')}
+            className="w-full"
+            type="single"
+            value={mode}
+            variant="outline"
+            onValueChange={(value) => {
+              if (value === 'new' || value === 'import') setMode(value)
+            }}
+          >
+            <ToggleGroupItem className="flex-1" value="new">
+              <Plus />
+              {t('kubecode.startNewSession')}
+            </ToggleGroupItem>
+            <ToggleGroupItem className="flex-1" value="import">
+              <Download />
+              {t('kubecode.importAgentSession')}
+            </ToggleGroupItem>
+          </ToggleGroup>
           {mode === 'new' && (
-            <div className="kubecode-new-session-field">
-              <span>{t('kubecode.sessionType')}</span>
-              <div className="kubecode-choice-grid kubecode-session-choice-grid" role="group" aria-label={t('kubecode.sessionType')}>
-                <Button
-                  aria-label={t('kubecode.session')}
-                  aria-pressed={sessionKind === 'session'}
-                  data-active={sessionKind === 'session'}
-                  variant="outline"
-                  onClick={() => setSessionKind('session')}
-                >
-                  <User  size={16}/>
-                  <span>{t('kubecode.session')}</span>
-                </Button>
-                <Button
-                  aria-label={t('kubecode.teamSession')}
-                  aria-pressed={sessionKind === 'team'}
-                  data-active={sessionKind === 'team'}
-                  variant="outline"
-                  onClick={() => setSessionKind('team')}
-                >
-                  <Users  size={16}/>
-                  <span>{t('kubecode.teamSession')}</span>
-                </Button>
-              </div>
-            </div>
+            <FieldSet>
+              <FieldLegend variant="label">{t('kubecode.sessionType')}</FieldLegend>
+              <ToggleGroup
+                aria-label={t('kubecode.sessionType')}
+                className="w-full"
+                type="single"
+                value={sessionKind}
+                variant="outline"
+                onValueChange={(value) => {
+                  if (value === 'session' || value === 'team') setSessionKind(value)
+                }}
+              >
+                <ToggleGroupItem className="flex-1" value="session">
+                  <User />
+                  {t('kubecode.session')}
+                </ToggleGroupItem>
+                <ToggleGroupItem className="flex-1" value="team">
+                  <Users />
+                  {t('kubecode.teamSession')}
+                </ToggleGroupItem>
+              </ToggleGroup>
+            </FieldSet>
           )}
-          <label className="kubecode-new-session-field">
-            <span>{t('kubecode.agent')}</span>
+          <Field>
+            <FieldLabel htmlFor="new-session-agent">{t('kubecode.agent')}</FieldLabel>
             <Select value={selectedAgentId} onValueChange={(value) => setAgentId(value as AgentId)}>
-              <SelectTrigger aria-label={t('kubecode.agent')}><SelectValue /></SelectTrigger>
+              <SelectTrigger aria-label={t('kubecode.agent')} className="w-full" id="new-session-agent">
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
-                {agents.map((agent) => (
-                  <SelectItem disabled={!agent.available} key={agent.id} value={agent.id}>
-                    <AiAgentIcon agent={agent.id} size={18} /> {agentName(agent.id)}
-                  </SelectItem>
-                ))}
+                <SelectGroup>
+                  {agents.map((agent) => (
+                    <SelectItem disabled={!agent.available} key={agent.id} value={agent.id}>
+                      <AiAgentIcon agent={agent.id} size={18} /> {agentName(agent.id)}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
               </SelectContent>
             </Select>
-          </label>
+          </Field>
           {mode === 'new' ? (
             <>
-              <label className="kubecode-new-session-field">
-                <span>{sessionKind === 'team' ? t('kubecode.teamName') : t('kubecode.sessionTitle')}</span>
+              <Field>
+                <FieldLabel htmlFor="new-session-title">
+                  {sessionKind === 'team' ? t('kubecode.teamName') : t('kubecode.sessionTitle')}
+                </FieldLabel>
                 <Input
-                  aria-label={sessionKind === 'team' ? t('kubecode.teamName') : t('kubecode.sessionTitle')}
+                  id="new-session-title"
                   placeholder={sessionKind === 'team' ? t('kubecode.teamName') : t('kubecode.optionalSessionTitle')}
                   value={title}
                   onChange={(event) => setTitle(event.target.value)}
                 />
-              </label>
+              </Field>
               {project?.workspaces_enabled && (
-                <div className="kubecode-new-session-field">
-                  <span>{t('kubecode.executionWorkspace')}</span>
-                  <div className="kubecode-choice-grid" role="group" aria-label={t('kubecode.executionWorkspace')}>
-                    <Button aria-pressed={executionMode === 'worktree'} data-active={executionMode === 'worktree'} variant="outline" onClick={() => setExecutionMode('worktree')}>
-                      <span>{t('kubecode.newWorkspace')}</span>
-                      <small>{t('kubecode.newWorkspaceDescription')}</small>
-                    </Button>
-                    <Button aria-pressed={executionMode === 'shared'} data-active={executionMode === 'shared'} variant="outline" onClick={() => setExecutionMode('shared')}>
-                      <span>{t('kubecode.projectRoot')}</span>
-                      <small>{t('kubecode.projectRootDescription')}</small>
-                    </Button>
-                  </div>
-                </div>
+                <FieldSet>
+                  <FieldLegend variant="label">{t('kubecode.executionWorkspace')}</FieldLegend>
+                  <RadioGroup
+                    aria-label={t('kubecode.executionWorkspace')}
+                    className="grid-cols-[repeat(auto-fit,minmax(12rem,1fr))]"
+                    value={executionMode}
+                    onValueChange={(value) => {
+                      if (value === 'worktree' || value === 'shared') setExecutionMode(value)
+                    }}
+                  >
+                    {([
+                      ['worktree', 'kubecode.newWorkspace', 'kubecode.newWorkspaceDescription'],
+                      ['shared', 'kubecode.projectRoot', 'kubecode.projectRootDescription'],
+                    ] as const).map(([value, title, description]) => (
+                      <FieldLabel htmlFor={`new-session-workspace-${value}`} key={value}>
+                        <Field orientation="horizontal">
+                          <FieldContent>
+                            <FieldTitle>{t(title)}</FieldTitle>
+                            <FieldDescription>{t(description)}</FieldDescription>
+                          </FieldContent>
+                          <RadioGroupItem id={`new-session-workspace-${value}`} value={value} />
+                        </Field>
+                      </FieldLabel>
+                    ))}
+                  </RadioGroup>
+                </FieldSet>
               )}
             </>
           ) : (
-            <div className="kubecode-provider-session-list">
+            <ItemGroup className="kubecode-provider-session-list gap-1">
               {providerSessions.map((session) => (
-                <Button
-                  data-active={session.session_id === providerSessionId}
+                <Item
+                  asChild
                   key={session.session_id}
-                  variant={session.session_id === providerSessionId ? 'secondary' : 'ghost'}
-                  onClick={() => setProviderSessionId(session.session_id)}
+                  size="sm"
+                  variant={session.session_id === providerSessionId ? 'muted' : 'outline'}
                 >
-                  <span>{session.title || t('kubecode.untitledSession')}</span>
-                  <code>{session.updated_at ?? session.session_id}</code>
-                </Button>
+                  <button
+                    aria-pressed={session.session_id === providerSessionId}
+                    data-active={session.session_id === providerSessionId}
+                    type="button"
+                    onClick={() => setProviderSessionId(session.session_id)}
+                  >
+                    <ItemContent>
+                      <ItemTitle>{session.title || t('kubecode.untitledSession')}</ItemTitle>
+                      <ItemDescription className="font-mono">{session.updated_at ?? session.session_id}</ItemDescription>
+                    </ItemContent>
+                  </button>
+                </Item>
               ))}
-              {loadingProviderSessions && <div className="kubecode-empty-small">{t('kubecode.loading')}</div>}
+              {loadingProviderSessions && (
+                <Empty><EmptyHeader><EmptyDescription>{t('kubecode.loading')}</EmptyDescription></EmptyHeader></Empty>
+              )}
               {!loadingProviderSessions && providerSessions.length === 0 && !providerError && (
-                <div className="kubecode-empty-small">{t('kubecode.noProviderSessions')}</div>
+                <Empty><EmptyHeader><EmptyDescription>{t('kubecode.noProviderSessions')}</EmptyDescription></EmptyHeader></Empty>
               )}
               {providerError && (
                 <SystemMessageNotice
@@ -286,10 +332,10 @@ export function NewSessionDialog({
                   onDismiss={() => setProviderError(null)}
                 />
               )}
-            </div>
+            </ItemGroup>
           )}
           {createError && (
-            <div className="kubecode-agent-startup-error">
+            <div className="flex flex-col gap-2">
               <SystemMessageNotice
                 detailsLabel={t('kubecode.details')}
                 dismissLabel={t('window.close')}
@@ -301,12 +347,12 @@ export function NewSessionDialog({
                 }}
               />
               {createFailure && (
-                <code className="kubecode-agent-startup-code">
+                <code className="text-xs text-muted-foreground">
                   {createFailure.code}
                   {createFailure.stage ? ` · ${createFailure.stage}` : ''}
                 </code>
               )}
-              <div>
+              <div className="flex flex-wrap gap-2">
                 <Button
                   disabled={creating}
                   size="sm"
@@ -334,8 +380,8 @@ export function NewSessionDialog({
               </div>
             </div>
           )}
-        </div>
-        <DialogFooter className="kubecode-new-session-footer">
+        </FieldGroup>
+        <DialogFooter>
           <DialogClose asChild><Button disabled={creating} variant="ghost">{t('kubecode.cancel')}</Button></DialogClose>
           <Button
             aria-busy={creating}
@@ -345,6 +391,7 @@ export function NewSessionDialog({
               || (mode === 'import' && !providerSessionId)}
             onClick={() => void create()}
           >
+            {creating && <Spinner data-icon="inline-start" />}
             {creating ? t('kubecode.loading') : mode === 'import' ? t('kubecode.import') : t('kubecode.create')}
           </Button>
         </DialogFooter>

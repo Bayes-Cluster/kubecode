@@ -1,16 +1,22 @@
-import {
-  Check,
-  ChevronDown,
-  ChevronRight,
-  Lock,
-  ToggleLeft,
-  ToggleRight
-} from 'lucide-react'
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
+import { ChevronDown, Lock } from 'lucide-react'
 
 import { AiAgentIcon } from '@/components/AiAgentIcon'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import type { Translator } from '@/lib/i18n'
 
 import type { AgentId } from './api'
@@ -32,6 +38,44 @@ function selectedOption(group: NativeSessionSelect): string {
     ?? group.currentValue
 }
 
+function SelectSubMenu({
+  group,
+  label,
+  onSelect,
+}: {
+  group: NativeSessionSelect
+  label: string
+  onSelect: (value: string) => void
+}) {
+  return (
+    <DropdownMenuSub>
+      <DropdownMenuSubTrigger>
+        <span className="flex min-w-0 flex-col">
+          <span className="truncate">{selectedOption(group)}</span>
+          <span className="truncate text-xs text-muted-foreground">{label}</span>
+        </span>
+      </DropdownMenuSubTrigger>
+      <DropdownMenuSubContent
+        className="max-h-(--radix-dropdown-menu-content-available-height) w-72 overflow-y-auto"
+      >
+        <DropdownMenuLabel>{label}</DropdownMenuLabel>
+        <DropdownMenuRadioGroup value={group.currentValue} onValueChange={onSelect}>
+          {group.options.map((option) => (
+            <DropdownMenuRadioItem key={option.id} value={option.id}>
+              <span className="flex min-w-0 flex-col">
+                <span>{option.name}</span>
+                {option.description && (
+                  <span className="text-xs text-muted-foreground">{option.description}</span>
+                )}
+              </span>
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuSubContent>
+    </DropdownMenuSub>
+  )
+}
+
 export function AgentControlMenu({
   agent,
   configs,
@@ -42,174 +86,64 @@ export function AgentControlMenu({
   onModeChange,
   t,
 }: AgentControlMenuProps) {
-  const [open, setOpen] = useState(false)
-  const [activeGroupId, setActiveGroupId] = useState<string | null>(null)
-  const [position, setPosition] = useState({ bottom: 8, maxHeight: 520, right: 8 })
-  const rootRef = useRef<HTMLDivElement>(null)
-  const menuRef = useRef<HTMLDivElement>(null)
-  const selectGroups = [mode, ...configs.filter((config) => config.type === 'select')]
-    .filter((group): group is NativeSessionSelect => Boolean(group))
-  const activeGroup = selectGroups.find((group) => group.id === activeGroupId) ?? null
+  if (!mode && configs.length === 0) return null
   const modeName = mode ? selectedOption(mode) : t('kubecode.agentSettings')
 
-  useEffect(() => {
-    if (!open) return
-    const closeOutside = (event: MouseEvent) => {
-      const target = event.target as Node
-      if (!rootRef.current?.contains(target) && !menuRef.current?.contains(target)) setOpen(false)
-    }
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false)
-    }
-    document.addEventListener('mousedown', closeOutside)
-    document.addEventListener('keydown', closeOnEscape)
-    return () => {
-      document.removeEventListener('mousedown', closeOutside)
-      document.removeEventListener('keydown', closeOnEscape)
-    }
-  }, [open])
-
-  useLayoutEffect(() => {
-    if (!open) return
-    const updatePosition = () => {
-      const trigger = rootRef.current?.getBoundingClientRect()
-      if (!trigger) return
-      setPosition({
-        bottom: Math.max(8, window.innerHeight - trigger.top + 10),
-        maxHeight: Math.max(96, Math.min(520, trigger.top - 18)),
-        right: Math.max(8, window.innerWidth - trigger.right),
-      })
-    }
-    updatePosition()
-    window.addEventListener('resize', updatePosition)
-    window.addEventListener('scroll', updatePosition, true)
-    return () => {
-      window.removeEventListener('resize', updatePosition)
-      window.removeEventListener('scroll', updatePosition, true)
-    }
-  }, [open])
-
-  if (!mode && configs.length === 0) return null
-
-  const select = (group: NativeSessionSelect, value: string) => {
-    if (group.kind === 'mode') onModeChange(value)
-    else onConfigChange(group.id, value)
-    setOpen(false)
-    setActiveGroupId(null)
-  }
-
   return (
-    <div className="relative min-w-8 max-w-44 shrink" ref={rootRef}>
-      <Button
-        aria-expanded={open}
-        aria-label={t('kubecode.agentSettings')}
-        className="h-8 w-full min-w-8 gap-1.5 rounded-full bg-muted px-2.5 font-normal text-muted-foreground hover:text-foreground"
-        onClick={() => {
-          setOpen((current) => !current)
-          setActiveGroupId(null)
-        }}
-        size="sm"
-        title={t('kubecode.agentSettings')}
-        type="button"
-        variant="ghost"
-      >
-        <AiAgentIcon agent={agent} size={14} />
-        <span className="min-w-0 truncate">{modeName}</span>
-        <ChevronDown className="shrink-0"  size={16}/>
-      </Button>
-      {open && createPortal(
-        <div
-          className="fixed z-[100]"
-          ref={menuRef}
-          style={{ bottom: position.bottom, right: position.right }}
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          aria-label={t('kubecode.agentSettings')}
+          className="min-w-8 max-w-44 shrink"
+          size="sm"
+          title={t('kubecode.agentSettings')}
+          type="button"
+          variant="secondary"
         >
-          <section
-            aria-label={t('kubecode.agentSettings')}
-            className="max-h-[min(520px,calc(100vh-80px))] w-72 overflow-y-auto rounded-lg border border-border bg-popover p-2 text-popover-foreground shadow-xl"
-            role="dialog"
-            style={{ maxHeight: position.maxHeight }}
-          >
-            {mode && (
-              <Button
-                className="h-auto w-full justify-between gap-3 rounded-md px-3 py-2.5 text-left font-normal"
-                disabled={modeDisabled}
-                onClick={() => setActiveGroupId(mode.id)}
-                title={modeDisabled ? modeDisabledReason : undefined}
-                type="button"
-                variant="ghost"
-              >
-                <span className="min-w-0">
-                  <strong className="block truncate font-normal">{selectedOption(mode)}</strong>
-                  <small className="block truncate text-xs text-muted-foreground">{t('kubecode.agentMode')}</small>
+          <AiAgentIcon agent={agent} size={14} />
+          <span className="min-w-0 truncate">{modeName}</span>
+          <ChevronDown data-icon="inline-end" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent aria-label={t('kubecode.agentSettings')} align="end" className="w-72" side="top">
+        {mode && (
+          <DropdownMenuGroup>
+            {modeDisabled ? (
+              <DropdownMenuItem disabled title={modeDisabledReason}>
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate">{selectedOption(mode)}</span>
+                  <span className="truncate text-xs text-muted-foreground">{t('kubecode.agentMode')}</span>
                 </span>
-                {modeDisabled ? <Lock className="shrink-0"  size={16}/> : <ChevronRight className="shrink-0"  size={16}/>}
-              </Button>
-            )}
-            {mode && configs.length > 0 && <div className="my-1 h-px bg-border" />}
-            {configs.map((config) => config.type === 'boolean' ? (
-              <Button
-                aria-pressed={config.currentValue}
-                className="h-auto w-full justify-between gap-3 rounded-md px-3 py-2.5 text-left font-normal"
-                key={config.id}
-                onClick={() => onConfigChange(config.id, !config.currentValue)}
-                type="button"
-                variant="ghost"
-              >
-                <span className="truncate">{config.name}</span>
-                {config.currentValue
-                  ? <ToggleRight className="shrink-0 text-primary" size={22} fill="currentColor" />
-                  : <ToggleLeft className="shrink-0 text-muted-foreground" size={22} />}
-              </Button>
+                <Lock />
+              </DropdownMenuItem>
             ) : (
-              <Button
-                className="h-auto w-full justify-between gap-3 rounded-md px-3 py-2.5 text-left font-normal"
+              <SelectSubMenu group={mode} label={t('kubecode.agentMode')} onSelect={onModeChange} />
+            )}
+          </DropdownMenuGroup>
+        )}
+        {mode && configs.length > 0 && <DropdownMenuSeparator />}
+        {configs.length > 0 && (
+          <DropdownMenuGroup>
+            {configs.map((config) => config.type === 'boolean' ? (
+              <DropdownMenuCheckboxItem
+                checked={config.currentValue}
                 key={config.id}
-                onClick={() => setActiveGroupId(config.id)}
-                type="button"
-                variant="ghost"
+                onCheckedChange={(checked) => onConfigChange(config.id, checked === true)}
+                onSelect={(event) => event.preventDefault()}
               >
-                <span className="min-w-0">
-                  <strong className="block truncate font-normal">{selectedOption(config)}</strong>
-                  <small className="block truncate text-xs text-muted-foreground">{config.name}</small>
-                </span>
-                <ChevronRight className="shrink-0"  size={16}/>
-              </Button>
+                {config.name}
+              </DropdownMenuCheckboxItem>
+            ) : (
+              <SelectSubMenu
+                group={config}
+                key={config.id}
+                label={config.name}
+                onSelect={(value) => onConfigChange(config.id, value)}
+              />
             ))}
-          </section>
-          {activeGroup && (
-            <section
-              aria-label={activeGroup.kind === 'mode' ? t('kubecode.agentMode') : activeGroup.name}
-              className="absolute bottom-0 right-[calc(100%+8px)] max-h-[min(520px,calc(100vh-80px))] w-72 overflow-y-auto rounded-lg border border-border bg-popover p-2 text-popover-foreground shadow-xl"
-              role="menu"
-              style={{ maxHeight: position.maxHeight }}
-            >
-              <div className="px-3 py-2 text-sm text-muted-foreground">
-                {activeGroup.kind === 'mode' ? t('kubecode.agentMode') : activeGroup.name}
-              </div>
-              {activeGroup.options.map((option) => (
-                <Button
-                  className="h-auto min-h-10 w-full justify-between gap-3 rounded-md px-3 py-2 text-left font-normal"
-                  key={option.id}
-                  onClick={() => select(activeGroup, option.id)}
-                  type="button"
-                  variant="ghost"
-                >
-                  <span className="min-w-0">
-                    <strong className="block font-normal">{option.name}</strong>
-                    {option.description && (
-                      <small className="block whitespace-normal text-xs text-muted-foreground">
-                        {option.description}
-                      </small>
-                    )}
-                  </span>
-                  {activeGroup.currentValue === option.id && <Check className="shrink-0"  size={16}/>}
-                </Button>
-              ))}
-            </section>
-          )}
-        </div>,
-        document.body,
-      )}
-    </div>
+          </DropdownMenuGroup>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }

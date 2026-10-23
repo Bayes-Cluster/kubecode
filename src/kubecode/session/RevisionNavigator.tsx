@@ -1,6 +1,8 @@
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight, History } from 'lucide-react'
 
+import { Checkpoint, CheckpointIcon } from '@/components/ai-elements/checkpoint'
 import { Button } from '@/components/ui/button'
+import { ButtonGroup, ButtonGroupText } from '@/components/ui/button-group'
 import type { Translator } from '@/lib/i18n'
 
 type RevisionNavigatorProps = {
@@ -16,30 +18,40 @@ export function RevisionNavigator({
   t,
   total,
 }: RevisionNavigatorProps) {
+  const position = t('kubecode.revisionPosition', {
+    current: activeIndex + 1,
+    total,
+  })
   return (
-    <div className="kubecode-revision-navigator">
+    <ButtonGroup aria-label={position} className="kubecode-revision-navigator">
       <Button
         aria-label={t('kubecode.previousRevision')}
         disabled={activeIndex <= 0}
-        size="icon-xs"
-        variant="ghost"
+        size="icon-sm"
+        variant="outline"
         onClick={() => onSelect(activeIndex - 1)}
       >
-        <ChevronLeft  size={16}/>
+        <ChevronLeft />
       </Button>
-      <span>{t('kubecode.revisionPosition', {
-        current: activeIndex + 1,
-        total,
-      })}</span>
+      <ButtonGroupText aria-hidden="true">{position}</ButtonGroupText>
       <Button
         aria-label={t('kubecode.nextRevision')}
         disabled={activeIndex >= total - 1}
-        size="icon-xs"
-        variant="ghost"
+        size="icon-sm"
+        variant="outline"
         onClick={() => onSelect(activeIndex + 1)}
       >
-        <ChevronRight  size={16}/>
+        <ChevronRight />
       </Button>
-    </div>
+    </ButtonGroup>
+  )
+}
+
+export function RecreatedContextCheckpoint({ label }: { label: string }) {
+  return (
+    <Checkpoint className="kubecode-recreated-context" role="note">
+      <CheckpointIcon><History aria-hidden="true" className="size-4 shrink-0" /></CheckpointIcon>
+      <span className="shrink-0 text-xs">{label}</span>
+    </Checkpoint>
   )
 }

@@ -1,6 +1,7 @@
 import { LockKeyhole, ShieldAlert } from 'lucide-react'
 
 import { AiPanelComposer } from '@/components/AiPanelChrome'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { type AppLocale, type Translator } from '@/lib/i18n'
 
@@ -166,12 +167,10 @@ export function SessionComposer({
         />
       )}
       {leaderReviewPending && (
-        <div aria-live="polite" className="kubecode-permission-dock kubecode-permission-leader-review">
-          <div className="kubecode-permission-heading">
-            <ShieldAlert size={17} />
-            <strong>{t('kubecode.waitingForLeaderPermission')}</strong>
-          </div>
-        </div>
+        <Alert aria-live="polite" data-testid="leader-review-pending" role="status">
+          <ShieldAlert />
+          <AlertTitle>{t('kubecode.waitingForLeaderPermission')}</AlertTitle>
+        </Alert>
       )}
       {pendingElicitation && (
         <ElicitationPrompt
@@ -193,12 +192,12 @@ export function SessionComposer({
       )}
       <div className="kubecode-session-composer">
         {hardReadOnly || viewRevisionId ? (
-          <div className="kubecode-read-only-session">
-            <LockKeyhole  size={16}/>
-            <span>{viewRevisionId
+          <Alert className="kubecode-read-only-session" role="status">
+            <LockKeyhole />
+            <AlertDescription>{viewRevisionId
               ? t('kubecode.revisionReadOnly')
-              : t('kubecode.readOnlySubagent')}</span>
-          </div>
+              : t('kubecode.readOnlySubagent')}</AlertDescription>
+          </Alert>
         ) : (
           <>
             {!directTeammateChatDisabled

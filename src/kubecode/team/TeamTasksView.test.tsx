@@ -100,6 +100,7 @@ describe('TeamTasksView', () => {
     expect(dialog).toHaveTextContent('Explore parser')
     expect(dialog).toHaveClass('kubecode-team-task-dialog')
     expect(dialog).not.toHaveClass('kubecode-team-inspector')
+    expect(within(dialog).getByText('kubecode.status.teamTask.pending')).toHaveAttribute('data-slot', 'badge')
     fireEvent.click(screen.getByRole('combobox', { name: 'kubecode.teamTaskAssign' }))
     fireEvent.click(await screen.findByRole('option', { name: 'Reviewer' }))
     await waitFor(() => expect(assignTeamTask).toHaveBeenCalledWith(
@@ -125,8 +126,8 @@ describe('TeamTasksView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'kubecode.teamTaskCancel' }))
     expect(cancelTeamTask).not.toHaveBeenCalled()
     expect(screen.getByText('kubecode.teamTaskCancelDescription')).toBeInTheDocument()
-    const confirmation = screen.getAllByRole('dialog').at(-1)
-    expect(confirmation).toBeDefined()
+    const confirmation = screen.getByRole('alertdialog')
+    expect(confirmation).toHaveAttribute('data-slot', 'alert-dialog-content')
     fireEvent.click(within(confirmation as HTMLElement).getByRole('button', {
       name: 'kubecode.teamTaskCancel',
     }))

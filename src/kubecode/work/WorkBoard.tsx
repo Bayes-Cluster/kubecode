@@ -1,7 +1,20 @@
 import { useMemo, useRef, useState } from 'react'
 
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import type { Translator } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
@@ -214,18 +227,20 @@ export function WorkBoard({
               void createTask()
             }}
           >
-            <label>
-              <span>{t('kubecode.research.field.title')}</span>
-              <input
-                className="kubecode-channel-select"
-                value={newTitle}
-                onChange={(event) => setNewTitle(event.target.value)}
-              />
-            </label>
-            <label>
-              <span>{t('kubecode.work.field.objective')}</span>
-              <Textarea rows={2} value={newDescription} onChange={(event) => setNewDescription(event.target.value)} />
-            </label>
+            <FieldGroup className="gap-3">
+              <Field>
+                <FieldLabel htmlFor="work-new-title">{t('kubecode.research.field.title')}</FieldLabel>
+                <Input
+                  id="work-new-title"
+                  value={newTitle}
+                  onChange={(event) => setNewTitle(event.target.value)}
+                />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="work-new-objective">{t('kubecode.work.field.objective')}</FieldLabel>
+                <Textarea id="work-new-objective" rows={2} value={newDescription} onChange={(event) => setNewDescription(event.target.value)} />
+              </Field>
+            </FieldGroup>
             <div className="kubecode-work-command-row">
               <Button disabled={creating || newTitle.trim() === ''} size="sm" type="submit">
                 {t('kubecode.work.createTask')}
@@ -264,18 +279,18 @@ export function WorkBoard({
             ]}
             allLabel={t('kubecode.work.filter.all')}
           />
-          <label className="kubecode-work-toggle">
-            <input
+          <Field className="w-auto" orientation="horizontal">
+            <Checkbox
               checked={Boolean(filter.include_closed)}
-              type="checkbox"
-              onChange={(event) => patch({ include_closed: event.target.checked })}
+              id="work-include-closed"
+              onCheckedChange={(checked) => patch({ include_closed: checked === true })}
             />
-            <span>{t('kubecode.work.filter.includeClosed')}</span>
-          </label>
+            <FieldLabel className="font-normal" htmlFor="work-include-closed">
+              {t('kubecode.work.filter.includeClosed')}
+            </FieldLabel>
+          </Field>
           {(effective.thread_id || effective.team_id || effective.round_id) && (
-            <span className="kubecode-work-scope">
-              {t('kubecode.work.filter.scoped')}
-            </span>
+            <Badge variant="outline">{t('kubecode.work.filter.scoped')}</Badge>
           )}
           {!filterIsEmpty(filter) && (
             <Button size="xs" variant="ghost" onClick={() => onFilterChange({})}>
@@ -286,18 +301,20 @@ export function WorkBoard({
 
         {attentionTotal > 0 && (
           <div className="kubecode-work-attention" role="status" aria-label={t('kubecode.work.attention')}>
-            {attention.map((condition) => (
-              <button
-                aria-pressed={filter.condition === condition}
-                className="kubecode-work-chip"
-                data-condition={condition}
-                key={condition}
-                type="button"
-                onClick={() => patch({ condition: filter.condition === condition ? undefined : condition })}
-              >
-                {t(CONDITION_LABELS[condition as Exclude<WorkCondition, 'none'>])} · {conditionCount(condition)}
-              </button>
-            ))}
+            <ToggleGroup
+              className="flex-wrap"
+              size="sm"
+              type="single"
+              value={filter.condition ?? ''}
+              variant="outline"
+              onValueChange={(value) => patch({ condition: (value || undefined) as WorkCondition | undefined })}
+            >
+              {attention.map((condition) => (
+                <ToggleGroupItem data-condition={condition} key={condition} value={condition}>
+                  {t(CONDITION_LABELS[condition as Exclude<WorkCondition, 'none'>])} · {conditionCount(condition)}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
           </div>
         )}
 
@@ -344,8 +361,8 @@ export function WorkBoard({
                 }}
               >
                 <header>
-                  <span><i />{t(STAGE_LABELS[stage])}</span>
-                  <small>{count}</small>
+                  <h3 className="text-sm font-medium">{t(STAGE_LABELS[stage])}</h3>
+                  <Badge className="tabular-nums" variant="secondary">{count}</Badge>
                 </header>
                 <div>
                   {cards.map((card) => (
@@ -385,8 +402,10 @@ export function WorkBoard({
             }}
           >
             <header>
-              <span>{t('kubecode.work.closedLane')}</span>
-              <small>{board?.closed_truncated ? `${closedCards.length}+` : closedCards.length}</small>
+              <h3 className="text-sm font-medium">{t('kubecode.work.closedLane')}</h3>
+              <Badge className="tabular-nums" variant="secondary">
+                {board?.closed_truncated ? `${closedCards.length}+` : closedCards.length}
+              </Badge>
             </header>
             <div>
               {closedCards.map((card) => (
@@ -437,6 +456,8 @@ export function WorkBoard({
   )
 }
 
+const ALL = '__all__'
+
 function FilterSelect({
   allLabel,
   label,
@@ -451,19 +472,21 @@ function FilterSelect({
   value: string
 }) {
   return (
-    <label className="kubecode-work-filter">
-      <span>{label}</span>
-      <select
-        aria-label={label}
-        className="kubecode-channel-select"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-      >
-        <option value="">{allLabel}</option>
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>{option.label}</option>
-        ))}
-      </select>
-    </label>
+    <Field className="kubecode-work-filter w-auto" orientation="horizontal">
+      <FieldLabel className="shrink-0 font-normal text-muted-foreground">{label}</FieldLabel>
+      <Select value={value || ALL} onValueChange={(next) => onChange(next === ALL ? '' : next)}>
+        <SelectTrigger aria-label={label} className="max-w-48" size="sm">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectGroup>
+            <SelectItem value={ALL}>{allLabel}</SelectItem>
+            {options.map((option) => (
+              <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+            ))}
+          </SelectGroup>
+        </SelectContent>
+      </Select>
+    </Field>
   )
 }

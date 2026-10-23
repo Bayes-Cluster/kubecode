@@ -19,6 +19,7 @@ import {
   ReasoningContent,
   ReasoningTrigger,
 } from '@/components/ai-elements/reasoning'
+import { Checkpoint } from '@/components/ai-elements/checkpoint'
 import { Shimmer } from '@/components/ai-elements/shimmer'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -35,7 +36,6 @@ import { translate, type AppLocale } from '../lib/i18n'
 import type { NoteReference } from '../utils/ai-context'
 import type { AiResponseBlock } from '../lib/aiAgentConversation'
 import { writeClipboardText } from '../utils/clipboardText'
-import { getTypeColor, getTypeLightColor } from '../utils/typeColors'
 
 export interface AiAction {
   tool: string
@@ -70,13 +70,9 @@ export interface AiMessageProps {
 
 function LocalMarker({ text }: { text: string }) {
   return (
-    <div
-      className="mx-auto text-center text-muted-foreground"
-      style={{ fontSize: 11, margin: '8px 0 16px', maxWidth: '85%' }}
-      data-testid="ai-local-marker"
-    >
-      {text}
-    </div>
+    <Checkpoint className="mb-4 mt-2" data-testid="ai-local-marker" role="note">
+      <span className="shrink-0 text-xs">{text}</span>
+    </Checkpoint>
   )
 }
 
@@ -84,28 +80,16 @@ function ReferencePill({ reference, onClick }: {
   reference: NoteReference
   onClick?: (path: string) => void
 }) {
-  const type = reference.type ?? null
-  const color = getTypeColor(type)
-  const lightColor = getTypeLightColor(type)
   return (
-    <Button type="button"
-      variant="ghost"
-      className="inline-flex h-auto items-center border-none cursor-pointer transition-opacity hover:opacity-80"
-      style={{
-        background: lightColor,
-        color,
-        borderRadius: 9999,
-        padding: '1px 8px',
-        fontSize: 11,
-        fontWeight: 500,
-        fontFamily: 'inherit',
-        lineHeight: 1.4,
-      }}
-      onClick={() => onClick?.(reference.path)}
-      data-testid="message-reference-pill"
-    >
-      {reference.title}
-    </Button>
+    <Badge asChild variant="secondary">
+      <button
+        data-testid="message-reference-pill"
+        type="button"
+        onClick={() => onClick?.(reference.path)}
+      >
+        {reference.title}
+      </button>
+    </Badge>
   )
 }
 
@@ -130,7 +114,7 @@ function UserBubble({ content, locale, messageId, onEdit, references, onOpenNote
     return (
       <div className="kubecode-session-prompt-editor flex flex-col items-end">
         <form
-          className="flex w-full max-w-[85%] flex-col gap-2 rounded-xl bg-state-hover p-2"
+          className="flex w-full max-w-[85%] flex-col gap-2"
           onSubmit={(event) => {
             event.preventDefault()
             submit()
@@ -139,7 +123,7 @@ function UserBubble({ content, locale, messageId, onEdit, references, onOpenNote
           <Textarea
             aria-label={translate(locale, 'ai.message.edit')}
             autoFocus
-            className="max-h-48 min-h-20 resize-y border-border bg-background px-3 py-2 text-[13px] leading-5"
+            className="max-h-48 min-h-20"
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {
@@ -173,7 +157,7 @@ function UserBubble({ content, locale, messageId, onEdit, references, onOpenNote
         )}
         {content}
       </MessageContent>
-      <MessageActions className="kubecode-session-message-actions" data-testid="ai-user-message-actions">
+      <MessageActions className="justify-end self-end" data-testid="ai-user-message-actions">
         <MessageAction
           aria-label={copyLabel}
           label={copyLabel}
@@ -218,7 +202,7 @@ function ReasoningBlock({ locale, text, done, open, onOpenChange }: {
       onOpenChange={onOpenChange}
     >
       <ReasoningTrigger data-testid="reasoning-toggle">
-        <Brain aria-hidden size={14} />
+        <Brain aria-hidden className="size-4" />
         {done ? <span>{label}</span> : <Shimmer as="span" duration={1}>{label}</Shimmer>}
         <ChevronDown aria-hidden className="kubecode-session-reasoning-caret" size={12} />
       </ReasoningTrigger>
@@ -261,7 +245,6 @@ function ToolUseBlock({
           <Terminal aria-hidden size={14} />
           <span>{translate(locale, 'ai.message.toolUse')}</span>
           <Badge
-            className="kubecode-session-tool-count"
             data-pending={pending || undefined}
             data-testid="tool-use-count"
             variant="secondary"
@@ -317,7 +300,7 @@ function ResponseActions({
   const copy = translate(locale, 'ai.message.copy')
 
   return (
-    <MessageActions className="kubecode-session-message-actions" data-testid="ai-message-actions">
+    <MessageActions data-testid="ai-message-actions">
       <MessageAction
         aria-label={regenerate}
         data-testid="ai-message-regenerate"

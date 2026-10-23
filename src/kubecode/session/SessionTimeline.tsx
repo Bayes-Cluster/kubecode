@@ -4,7 +4,7 @@ import type { AppLocale, Translator } from '@/lib/i18n'
 
 import type { AiAgentMessage } from '@/lib/aiAgentConversation'
 import type { ConversationRevision } from '../api'
-import { RevisionNavigator } from './RevisionNavigator'
+import { RecreatedContextCheckpoint, RevisionNavigator } from './RevisionNavigator'
 import { SubagentBubble } from './SubagentBubble'
 import type { SubagentEntry } from './conversationReducer'
 
@@ -75,7 +75,7 @@ export function SessionTimeline({
               </Button>
             )}
             {recreatedContext && !viewRevisionId && (
-              <div className="kubecode-recreated-context">{t('kubecode.recreatedContext')}</div>
+              <RecreatedContextCheckpoint label={t('kubecode.recreatedContext')} />
             )}
             {revisions.length > 0 && (
               <RevisionNavigator

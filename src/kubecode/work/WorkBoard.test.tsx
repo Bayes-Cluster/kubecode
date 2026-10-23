@@ -10,6 +10,14 @@ import { moveRequest, StartKeys } from './workModel'
 import { boardOf, detailOf, workApi, workCard } from './workFixtures'
 import { fileDocument } from '../tasks/taskFixtures'
 
+/** Picks an option on an official Select (a Radix combobox, rendered in a portal). */
+async function choose(scope: HTMLElement, name: string, option: string) {
+  const trigger = within(scope).getByRole('combobox', { name })
+  expect(trigger).toHaveAttribute('data-slot', 'select-trigger')
+  fireEvent.click(trigger)
+  fireEvent.click(await screen.findByRole('option', { name: option }))
+}
+
 const t = ((key: string, values?: Record<string, string | number>) => (
   values ? `${key}:${JSON.stringify(values)}` : key
 )) as never
@@ -110,7 +118,7 @@ describe('WorkBoard', () => {
     view(workApi({ workBoard: vi.fn().mockResolvedValue(boardOf(cards)) }))
     await screen.findByText('Plan it')
     expect(screen.getAllByTestId(/^work-column-/)).toHaveLength(6)
-    expect(within(screen.getByTestId('work-column-executing')).getByText('2', { selector: 'small' })).toBeInTheDocument()
+    expect(within(screen.getByTestId('work-column-executing')).getByText('2', { selector: '[data-slot="badge"]' })).toBeInTheDocument()
 
     const run = screen.getByTestId('work-card-run')
     expect(within(run).getByText('kubecode.work.attemptFailed')).toBeInTheDocument()
@@ -139,13 +147,21 @@ describe('WorkBoard', () => {
     const v = view(workApi({ workBoard }), { onFilterChange })
     await screen.findByText('One')
     expect(workBoard).toHaveBeenLastCalledWith('p1', {})
-    fireEvent.change(screen.getByLabelText('kubecode.work.field.research'), { target: { value: 'r1' } })
+    const researchFilter = screen.getByRole('combobox', { name: 'kubecode.work.field.research' })
+    expect(researchFilter).toHaveAttribute('data-slot', 'select-trigger')
+    fireEvent.click(researchFilter)
+    fireEvent.click(await screen.findByRole('option', { name: 'Pruning' }))
     expect(onFilterChange).toHaveBeenLastCalledWith({ research_id: 'r1' })
-    fireEvent.change(screen.getByLabelText('kubecode.work.field.agent'), { target: { value: 's2' } })
+    fireEvent.click(screen.getByRole('combobox', { name: 'kubecode.work.field.agent' }))
+    fireEvent.click(await screen.findByRole('option', { name: 'Analyst' }))
     expect(onFilterChange).toHaveBeenLastCalledWith({ conversation_id: 's2' })
-    fireEvent.click(within(screen.getByRole('status', { name: 'kubecode.work.attention' })).getByRole('button', { name: /kubecode.work.condition.waiting/ }))
+    const waiting = within(screen.getByRole('status', { name: 'kubecode.work.attention' })).getByRole('radio', { name: /kubecode.work.condition.waiting/ })
+    expect(waiting).toHaveAttribute('data-slot', 'toggle-group-item')
+    fireEvent.click(waiting)
     expect(onFilterChange).toHaveBeenLastCalledWith({ condition: 'waiting' })
-    fireEvent.click(screen.getByLabelText('kubecode.work.filter.includeClosed'))
+    const includeClosed = screen.getByRole('checkbox', { name: 'kubecode.work.filter.includeClosed' })
+    expect(includeClosed).toHaveAttribute('data-slot', 'checkbox')
+    fireEvent.click(includeClosed)
     expect(onFilterChange).toHaveBeenLastCalledWith({ include_closed: true })
 
     // The host applies a filter: the board asks for exactly that, and can be cleared.
@@ -280,7 +296,8 @@ describe('WorkBoard commands', () => {
     const { workCommand } = setup(card)
     fireEvent.click(await screen.findByTestId('work-card-w1'))
     const inspector = await screen.findByRole('complementary', { name: 'kubecode.work.inspector' })
-    fireEvent.change(await within(inspector).findByLabelText('kubecode.work.review.outcome'), { target: { value: 'refuted' } })
+    await within(inspector).findByRole('combobox', { name: 'kubecode.work.review.outcome' })
+    await choose(inspector, 'kubecode.work.review.outcome', 'kubecode.work.outcome.refuted')
     fireEvent.change(within(inspector).getByRole('textbox', { name: 'kubecode.work.review.reason' }), { target: { value: 'clean ablation' } })
     fireEvent.click(within(inspector).getByRole('button', { name: 'kubecode.work.command.accept' }))
     await waitFor(() => expect(workCommand).toHaveBeenCalledWith('p1', 'w1', 4, {
@@ -340,7 +357,7 @@ describe('WorkBoard commands', () => {
     expect(await screen.findByRole('combobox', { name: 'kubecode.work.command.chooseSession' })).toBeInTheDocument()
     // Review → Done never completes by itself: it opens the accept form.
     drag('rev', 'done')
-    expect(await screen.findByLabelText('kubecode.work.review.outcome')).toBeInTheDocument()
+    expect(await screen.findByRole('combobox', { name: 'kubecode.work.review.outcome' })).toBeInTheDocument()
     expect(workCommand).toHaveBeenCalledTimes(1)
     // A move that is not a command is refused with an explanation.
     drag('ready', 'done')
@@ -450,7 +467,7 @@ describe('WorkBoard review regressions', () => {
     expect(within(inspector).queryByRole('button', { name: 'kubecode.work.command.pause' })).not.toBeInTheDocument()
     fireEvent.click(within(inspector).getByRole('button', { name: 'kubecode.work.command.cancel' }))
     fireEvent.change(within(inspector).getByRole('textbox', { name: 'kubecode.work.review.reason' }), { target: { value: 'replaced' } })
-    fireEvent.change(within(inspector).getByLabelText('kubecode.work.command.chooseReplacement'), { target: { value: 'other' } })
+    await choose(inspector, 'kubecode.work.command.chooseReplacement', 'The replacement')
     fireEvent.click(within(inspector).getByRole('button', { name: 'kubecode.work.lifecycle.superseded' }))
     await waitFor(() => expect(workCommand).toHaveBeenCalledWith('p1', 'flag', 3, {
       command: 'close', lifecycle: 'superseded', reason: 'replaced', expected_revision: 1, superseded_by: 'other',
@@ -599,8 +616,25 @@ describe('WorkBoard analysis and evidence', () => {
     expect(send).toBeDisabled()
     expect(inspector).toHaveTextContent('kubecode.work.question.note')
     expect(inspector).toHaveTextContent('kubecode.work.question.answered:{"answer":"wiki"}')
-    fireEvent.change(within(inspector).getByLabelText('Spend more budget? — kubecode.work.question.choose'), { target: { value: 'yes' } })
+    await choose(inspector, 'Spend more budget? — kubecode.work.question.choose', 'yes')
     fireEvent.click(send)
+    await waitFor(() => expect(answerWorkDecision).toHaveBeenCalledWith('p1', 'w1', 'q1', 'yes'))
+  })
+
+  it('renders a question whose offered options include blank or duplicate strings', async () => {
+    const answerWorkDecision = vi.fn().mockResolvedValue({})
+    open(detailOf(analyzing, {
+      decision_requests: [{
+        id: 'q1', work_id: 'w1', question: 'Proceed?', options: ['', '  ', 'yes', 'yes'], impact: null,
+        asked_by: 's1', state: 'open', answer: null, created_at: '',
+      }],
+    }), { answerWorkDecision })
+    fireEvent.click(await screen.findByTestId('work-card-w1'))
+    const inspector = await screen.findByRole('complementary', { name: 'kubecode.work.inspector' })
+    fireEvent.click(within(inspector).getByRole('combobox', { name: 'Proceed? — kubecode.work.question.choose' }))
+    expect(await screen.findAllByRole('option')).toHaveLength(1)
+    fireEvent.click(screen.getByRole('option', { name: 'yes' }))
+    fireEvent.click(within(inspector).getByRole('button', { name: 'kubecode.work.question.answer' }))
     await waitFor(() => expect(answerWorkDecision).toHaveBeenCalledWith('p1', 'w1', 'q1', 'yes'))
   })
 })

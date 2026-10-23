@@ -109,7 +109,7 @@ describe('Kubecode workspace', () => {
         await screen.findByRole('button', { name: 'New session' })
         fireEvent.click(screen.getByRole('button', { name: 'New session' }))
         if (mode === 'import') {
-          fireEvent.click(screen.getByRole('button', { name: 'Import Agent session' }))
+          fireEvent.click(screen.getByRole('radio', { name: 'Import Agent session' }))
           await screen.findByText('Race session')
         } else {
           fireEvent.change(screen.getByRole('textbox', { name: 'Session title' }), {
@@ -1297,9 +1297,11 @@ describe('Kubecode workspace', () => {
     expect(await screen.findByRole('button', { name: 'Demo' })).toBeInTheDocument()
     expect(await screen.findByTestId('agent-session-workspace')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'New session' }))
-    expect(screen.getByRole('button', { name: 'Start new' })).toHaveAttribute('aria-pressed', 'true')
-    fireEvent.click(screen.getByRole('button', { name: 'Team' }))
-    expect(screen.getByRole('button', { name: 'Team' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('radio', { name: 'Start new' })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('radio', { name: 'Start new' })).toHaveAttribute('data-slot', 'toggle-group-item')
+    fireEvent.click(screen.getByRole('radio', { name: 'Team' }))
+    expect(screen.getByRole('radio', { name: 'Team' })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('textbox', { name: 'Team name' }).closest('[data-slot="field"]')).not.toBeNull()
     expect(screen.getByRole('textbox', { name: 'Team name' })).not.toBeRequired()
     expect(screen.getByRole('button', { name: 'Create' })).toBeEnabled()
     fireEvent.change(screen.getByRole('textbox', { name: 'Team name' }), {

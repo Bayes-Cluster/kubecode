@@ -31,8 +31,9 @@ describe('SystemMessageProvider', () => {
     const alert = screen.getByRole('alert')
     expect(alert).toHaveTextContent('Changes')
     expect(alert).toHaveTextContent('The complete diagnostic')
-    const content = alert.querySelector('.kubecode-system-message-content')
-    expect(content?.tagName).toBe('DIV')
+    expect(alert).toHaveAttribute('data-slot', 'alert')
+    expect(alert).toHaveAttribute('data-level', 'error')
+    expect(alert.querySelector('[data-slot="alert-description"]')).toHaveTextContent('The complete diagnostic')
 
     fireEvent.click(screen.getByRole('button', { name: 'Details', expanded: false }))
     expect(screen.getByRole('button', { name: 'Details', expanded: true })).toBeInTheDocument()

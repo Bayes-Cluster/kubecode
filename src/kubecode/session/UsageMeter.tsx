@@ -62,10 +62,8 @@ export function UsageMeter({ locale, t, usage }: UsageMeterProps) {
         <Button
           aria-expanded={open}
           aria-label={openLabel}
-          className="kubecode-session-usage-trigger"
           data-level={level}
           data-testid="usage-meter-trigger"
-         
           size="sm"
           title={openLabel}
           type="button"
@@ -73,7 +71,7 @@ export function UsageMeter({ locale, t, usage }: UsageMeterProps) {
           ref={triggerRef}
           onClick={() => setOpen((current) => !current)}
         >
-          <Gauge aria-hidden size={14} />
+          <Gauge aria-hidden data-icon="inline-start" />
           <span data-testid="usage-meter-value">
             {hasWindow ? `${percent}%` : formatNumber(used, locale, true)}
           </span>
@@ -81,9 +79,8 @@ export function UsageMeter({ locale, t, usage }: UsageMeterProps) {
       </ContextTrigger>
       <ContextContent
         align="end"
-        className="kubecode-session-usage"
+        className="w-64"
         data-testid="usage-meter-popover"
-       
         sideOffset={6}
         onEscapeKeyDown={() => setOpen(false)}
         // The trigger toggles; a press on it is not a dismissal.
@@ -100,7 +97,6 @@ export function UsageMeter({ locale, t, usage }: UsageMeterProps) {
               // shadcn's Progress paints the value without handing it to
               // the Radix root, so the value is named here for readers.
               aria-valuenow={percent as number}
-              className="kubecode-session-usage-bar"
               data-level={level}
               data-testid="usage-meter-bar"
               value={percent}
