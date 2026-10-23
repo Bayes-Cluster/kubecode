@@ -1278,17 +1278,6 @@
   justify-content: space-between;
 }
 .kubecode-work-inspector h3 { font-size: 16px; font-weight: 650; margin: 2px 0 6px; overflow-wrap: anywhere; }
-.kubecode-work-inspector h4 {
-  color: var(--text-secondary);
-  font-size: var(--kubecode-ui-font-tiny);
-  font-weight: 650;
-  letter-spacing: 0.04em;
-  margin: 0 0 4px;
-  text-transform: uppercase;
-}
-.kubecode-work-inspector ul,
-.kubecode-work-inspector ol { margin: 0; padding-left: 18px; }
-.kubecode-work-inspector li { font-size: var(--kubecode-ui-font-small); overflow-wrap: anywhere; }
 .kubecode-work-facts { display: grid; gap: 4px; margin: 0; }
 .kubecode-work-facts > div { align-items: center; display: flex; gap: 8px; }
 .kubecode-work-facts dt { color: var(--text-secondary); font-size: var(--kubecode-ui-font-small); min-width: 84px; }

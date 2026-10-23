@@ -1,9 +1,10 @@
 import { X } from 'lucide-react'
 import { IconButton } from '@/components/workspace/IconButton'
 import { StatusBadge } from '@/components/workspace/StatusBadge'
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState, type ReactNode } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { Item, ItemContent, ItemGroup } from '@/components/ui/item'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import {
@@ -271,42 +272,39 @@ export function WorkInspector({
       <Section title={t('kubecode.work.field.verification')} text={item.verification} />
 
       {detail.dependency_states.length > 0 && (
-        <section>
-          <h4>{t('kubecode.work.field.dependencies')}</h4>
-          <ul>
+        <WorkSection title={t('kubecode.work.field.dependencies')}>
+          <ItemGroup className="gap-1">
             {detail.dependency_states.map((dependency) => (
-              <li key={dependency.id}>
+              <Item key={dependency.id} role="listitem" size="sm" variant="muted"><ItemContent className="min-w-0 text-sm [overflow-wrap:anywhere]">
                 {dependency.title} · {t(STAGE_LABELS[dependency.stage])}
                 {dependency.acceptance === 'accepted' ? ` · ${t('kubecode.work.acceptance.accepted')}` : ''}
-              </li>
+              </ItemContent></Item>
             ))}
-          </ul>
-        </section>
+          </ItemGroup>
+        </WorkSection>
       )}
 
-      <section>
-        <h4>{t('kubecode.work.field.attempts')}</h4>
+      <WorkSection title={t('kubecode.work.field.attempts')}>
         {detail.attempts.length === 0 && <ReaderEmpty>{t('kubecode.work.noAttempts')}</ReaderEmpty>}
-        <ol>
+        <ItemGroup className="gap-1">
           {detail.attempts.map((attempt) => (
-            <li key={attempt.id} data-status={attempt.status}>
+            <Item key={attempt.id} data-status={attempt.status} role="listitem" size="sm" variant="muted"><ItemContent className="min-w-0 text-sm [overflow-wrap:anywhere]">
               {t(`kubecode.work.attemptStatus.${attempt.status}` as 'kubecode.work.attemptStatus.queued')}
               {attempt.error ? ` — ${attempt.error}` : ''}
               <time> {attempt.created_at}</time>
-            </li>
+            </ItemContent></Item>
           ))}
-        </ol>
-      </section>
+        </ItemGroup>
+      </WorkSection>
 
       {detail.experiments.length > 0 && (
-        <section>
-          <h4>{t('kubecode.work.field.experiments')}</h4>
-          <ul>
+        <WorkSection title={t('kubecode.work.field.experiments')}>
+          <ItemGroup className="gap-1">
             {detail.experiments.map((experiment) => {
               const name = experiment.label || experiment.id.slice(0, 8)
               const key = `experiment:${experiment.id}`
               return (
-                <li key={experiment.id}>
+                <Item key={experiment.id} role="listitem" size="sm" variant="muted"><ItemContent className="min-w-0 text-sm [overflow-wrap:anywhere]">
                   {name} · {experiment.state}
                   {experiment.exit_code != null ? ` · ${t('kubecode.work.exitCode', { code: experiment.exit_code })}` : ''}
                   {experiment.analysis === 'pending' ? ` · ${t('kubecode.work.analysisPending')}` : ''}
@@ -326,33 +324,31 @@ export function WorkInspector({
                       target={{ kind: 'experiment', id: experiment.id }}
                     />
                   )}
-                </li>
+                </ItemContent></Item>
               )
             })}
-          </ul>
-        </section>
+          </ItemGroup>
+        </WorkSection>
       )}
 
       {detail.decisions.length > 0 && (
-        <section>
-          <h4>{t('kubecode.work.field.decisions')}</h4>
-          <ul>
+        <WorkSection title={t('kubecode.work.field.decisions')}>
+          <ItemGroup className="gap-1">
             {detail.decisions.map((decision) => (
-              <li key={decision.id}>
+              <Item key={decision.id} role="listitem" size="sm" variant="muted"><ItemContent className="min-w-0 text-sm [overflow-wrap:anywhere]">
                 <strong>{t(`kubecode.work.decisionKind.${decision.kind}` as 'kubecode.work.decisionKind.retry')}</strong>
                 {` — ${decision.rationale}`}
-              </li>
+              </ItemContent></Item>
             ))}
-          </ul>
-        </section>
+          </ItemGroup>
+        </WorkSection>
       )}
 
       {detail.decision_requests.length > 0 && (
-        <section aria-label={t('kubecode.work.field.questions')}>
-          <h4>{t('kubecode.work.field.questions')}</h4>
-          <ul>
+        <WorkSection title={t('kubecode.work.field.questions')}>
+          <ItemGroup className="gap-1">
             {detail.decision_requests.map((request) => (
-              <li key={request.id} data-state={request.state}>
+              <Item key={request.id} data-state={request.state} role="listitem" size="sm" variant="muted"><ItemContent className="min-w-0 text-sm [overflow-wrap:anywhere]">
                 <p>{request.question}</p>
                 {request.impact && (
                   <small>{t('kubecode.work.question.impact', { impact: request.impact })}</small>
@@ -389,19 +385,18 @@ export function WorkInspector({
                     </Button>
                   </div>
                 )}
-              </li>
+              </ItemContent></Item>
             ))}
-          </ul>
+          </ItemGroup>
           <small className="kubecode-research-muted">{t('kubecode.work.question.note')}</small>
-        </section>
+        </WorkSection>
       )}
 
       {detail.results.length > 0 && (
-        <section>
-          <h4>{t('kubecode.work.field.evidence')}</h4>
-          <ul>
+        <WorkSection title={t('kubecode.work.field.evidence')}>
+          <ItemGroup className="gap-1">
             {detail.results.map((result) => (
-              <li key={result.id} data-stale={staleIds.has(result.id) || undefined}>
+              <Item key={result.id} data-stale={staleIds.has(result.id) || undefined} role="listitem" size="sm" variant="muted"><ItemContent className="min-w-0 text-sm [overflow-wrap:anywhere]">
                 {result.role} · {result.kind}: {result.ref_id}
                 {' '}
                 <InspectButton
@@ -424,15 +419,14 @@ export function WorkInspector({
                     {t(`kubecode.work.stale.${detail.stale_evidence.find((entry) => entry.result_id === result.id)?.status ?? 'changed'}` as 'kubecode.work.stale.changed')}
                   </StatusBadge>
                 )}
-              </li>
+              </ItemContent></Item>
             ))}
-          </ul>
-        </section>
+          </ItemGroup>
+        </WorkSection>
       )}
 
       {detail.stale_evidence.length > 0 && (
-        <section aria-label={t('kubecode.work.stale.title')}>
-          <h4>{t('kubecode.work.stale.title')}</h4>
+        <WorkSection title={t('kubecode.work.stale.title')}>
           {/* A Task's evidence is accepted only by the researcher, at a version they displayed, in its Results (ADR 0230 §4). */}
           <ReaderNotice live={false}>
             {detail.research?.task ? t('kubecode.work.stale.taskHint') : t('kubecode.work.stale.hint')}
@@ -450,38 +444,36 @@ export function WorkInspector({
               </Button>
             </div>
           ))}
-        </section>
+        </WorkSection>
       )}
 
       {detail.reviews.length > 0 && (
-        <section>
-          <h4>{t('kubecode.work.field.reviews')}</h4>
-          <ul>
+        <WorkSection title={t('kubecode.work.field.reviews')}>
+          <ItemGroup className="gap-1">
             {detail.reviews.map((review) => (
-              <li key={review.id}>
+              <Item key={review.id} role="listitem" size="sm" variant="muted"><ItemContent className="min-w-0 text-sm [overflow-wrap:anywhere]">
                 {review.accepted ? t('kubecode.work.acceptance.accepted') : t('kubecode.work.acceptance.rejected')}
                 {review.outcome !== 'unknown' ? ` · ${t(`kubecode.work.outcome.${review.outcome}` as 'kubecode.work.outcome.refuted')}` : ''}
                 {review.reason ? ` — ${review.reason}` : ''}
                 {' '}
                 <small>{t('kubecode.work.reviewInputs', { count: review.inputs.length })}</small>
-              </li>
+              </ItemContent></Item>
             ))}
-          </ul>
-        </section>
+          </ItemGroup>
+        </WorkSection>
       )}
 
       {detail.routes.length > 0 && (
-        <section>
-          <h4>{t('kubecode.work.field.deliveries')}</h4>
-          <ul>
+        <WorkSection title={t('kubecode.work.field.deliveries')}>
+          <ItemGroup className="gap-1">
             {detail.routes.map((route) => (
-              <li key={route.id} data-state={route.state}>
+              <Item key={route.id} data-state={route.state} role="listitem" size="sm" variant="muted"><ItemContent className="min-w-0 text-sm [overflow-wrap:anywhere]">
                 {route.kind} · {t(`kubecode.work.routeState.${route.state}` as 'kubecode.work.routeState.pending')}
                 {route.last_error ? ` — ${route.last_error}` : ''}
-              </li>
+              </ItemContent></Item>
             ))}
-          </ul>
-        </section>
+          </ItemGroup>
+        </WorkSection>
       )}
 
       {error && <ReaderNotice failed>{error}</ReaderNotice>}
@@ -683,13 +675,23 @@ function InspectButton({
   )
 }
 
+/** A titled part of the inspector: a named region whose content is official Items or text. */
+function WorkSection({ children, title }: { children: ReactNode; title: string }) {
+  const id = useId()
+  return (
+    <section aria-labelledby={id} className="flex min-w-0 flex-col gap-1">
+      <h4 className="text-xs font-semibold text-muted-foreground uppercase" id={id}>{title}</h4>
+      {children}
+    </section>
+  )
+}
+
 function Section({ text, title }: { text: string | null; title: string }) {
   if (!text) return null
   return (
-    <section>
-      <h4>{title}</h4>
+    <WorkSection title={title}>
       <p className="kubecode-work-text">{text}</p>
-    </section>
+    </WorkSection>
   )
 }
 

@@ -243,6 +243,10 @@ describe('WorkBoard', () => {
     expect(inspector).toHaveTextContent('baseline')
     expect(inspector).toHaveTextContent('kubecode.work.analysisPending')
     expect(inspector).toHaveTextContent('kubecode.work.routeState.delivered')
+    // Each history is a named group of official Items, not a raw list (#263).
+    const attempts = within(inspector).getByRole('region', { name: 'kubecode.work.field.attempts' })
+    expect(within(attempts).getByRole('list')).toHaveAttribute('data-slot', 'item-group')
+    expect(within(attempts).getByRole('listitem')).toHaveAttribute('data-slot', 'item')
     fireEvent.click(within(inspector).getByRole('button', { name: 'Pruning heads?' }))
     expect(onOpenThread).toHaveBeenCalledWith('t1')
   })
