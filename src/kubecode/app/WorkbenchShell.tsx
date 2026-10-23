@@ -212,7 +212,8 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   // Files and Git are a column beside Sessions; beside the research views they
   // open when asked for and are gone again when the view is left.
   const onSessionsSurface = !projectId || place.view === 'sessions'
-  const contextVisible = narrowLayout
+  // Files and Git have nothing to show before a Project is chosen.
+  const contextVisible = !projectId ? false : narrowLayout
     ? contextSheetOpen
     : onSessionsSurface ? contextOpen : researchToolsOpen
   const setContextVisible = useCallback((open: boolean | ((current: boolean) => boolean)) => {
@@ -1149,6 +1150,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
         setSessionDialog(true)
       }}
       onOpenSettings={() => {
+        closeNavigatorSheet()
         setSettingsSection('general')
         setSettingsOpen(true)
       }}

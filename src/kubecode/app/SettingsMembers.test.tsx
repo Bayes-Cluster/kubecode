@@ -118,11 +118,14 @@ describe('Settings forms', () => {
       dialog({ requestedSection: 'general' })
       const tablist = screen.getByRole('tablist')
       expect(tablist).toHaveAttribute('aria-orientation', 'horizontal')
-      // The close button sits in its own column beside the scrolling strip, never over it.
+      // A visible title row owns the close button; the scrolling strip sits below it, never under it.
       const closes = screen.getAllByRole('button', { name: /close/i })
       expect(closes).toHaveLength(1)
-      expect(closes[0].parentElement).toBe(tablist.parentElement)
-      expect(tablist).toHaveClass('min-w-0', 'flex-1')
+      const title = screen.getByRole('heading', { name: 'kubecode.settings' })
+      expect(title).not.toHaveClass('sr-only')
+      expect(closes[0].parentElement).toBe(title.parentElement)
+      expect(tablist.parentElement).not.toBe(title.parentElement)
+      expect(tablist).toHaveClass('w-full')
       expect(tablist).not.toHaveClass('pr-12')
     } finally {
       window.matchMedia = original

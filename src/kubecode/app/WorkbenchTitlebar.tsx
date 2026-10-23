@@ -232,7 +232,7 @@ export function WorkbenchTitlebar({
         <ToolToggle glyph={PanelLeft} label={t('kubecode.toggleNavigation')} pressed={sessionSidebarOpen} onClick={toggleNavigation} />
         <Separator className="mx-1 data-[orientation=vertical]:h-4" orientation="vertical" />
         <ToolToggle glyph={SquareTerminal} label={t('kubecode.toggleTerminal')} pressed={terminalOpen} onClick={toggleTerminal} />
-        <ToolToggle glyph={FolderGit2} label={t('kubecode.toggleContext')} pressed={contextOpen} onClick={toggleContext} />
+        <ToolToggle disabled={!project} glyph={FolderGit2} label={t('kubecode.toggleContext')} pressed={contextOpen} onClick={toggleContext} />
       </div>
     </header>
   )
@@ -313,7 +313,8 @@ const CONNECTION_BADGE: Record<WorkspaceConnectionState, 'success' | 'warning' |
 }
 
 /** A title-bar toggle for the navigation or an execution tool: one glyph, pressed while it is open. */
-function ToolToggle({ glyph: Glyph, label, onClick, pressed }: {
+function ToolToggle({ disabled, glyph: Glyph, label, onClick, pressed }: {
+  disabled?: boolean
   glyph: typeof PanelLeft
   label: string
   pressed: boolean
@@ -322,6 +323,7 @@ function ToolToggle({ glyph: Glyph, label, onClick, pressed }: {
   return (
     <Toggle
       aria-label={label}
+      disabled={disabled}
       onPressedChange={onClick}
       pressed={pressed}
       size="sm"

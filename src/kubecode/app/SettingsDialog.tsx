@@ -211,7 +211,7 @@ export function SettingsDialog({
   const sectionList = (
     <TabsList
       aria-label={t('kubecode.settings')}
-      className={wide ? 'h-auto w-52 shrink-0 justify-start self-stretch rounded-none p-3' : 'h-auto min-w-0 flex-1 justify-start overflow-x-auto rounded-none p-2'}
+      className={wide ? 'h-auto w-52 shrink-0 justify-start self-stretch rounded-none p-3' : 'h-auto w-full shrink-0 justify-start overflow-x-auto rounded-none p-2'}
     >
       {SETTINGS_SECTIONS.map((item) => (
         <TabsTrigger className="flex-none" key={item} value={item}>
@@ -224,9 +224,17 @@ export function SettingsDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent showCloseButton={wide} className="flex h-[min(620px,calc(100dvh-2rem))] w-[calc(100vw-2rem)] max-w-[980px] flex-col gap-0 overflow-hidden p-0 sm:max-w-[980px]">
-        <DialogHeader className="sr-only">
+        {/* On phones the title is visible and owns the close button, so the scrolling section strip below never runs under it. */}
+        <DialogHeader className={wide ? 'sr-only' : 'flex-row items-center justify-between gap-2 border-b px-4 py-2 text-left'}>
           <DialogTitle>{t('kubecode.settings')}</DialogTitle>
-          <DialogDescription>{t('kubecode.settingsDescription')}</DialogDescription>
+          <DialogDescription className="sr-only">{t('kubecode.settingsDescription')}</DialogDescription>
+          {!wide && (
+            <DialogClose asChild>
+              <Button aria-label={t('kubecode.vocab.command.close')} size="icon-sm" variant="ghost">
+                <X />
+              </Button>
+            </DialogClose>
+          )}
         </DialogHeader>
         <Tabs
           className="min-h-0 flex-1 gap-0"
@@ -234,17 +242,7 @@ export function SettingsDialog({
           value={section}
           onValueChange={(value) => setSection(value as SettingsSection)}
         >
-          {wide ? sectionList : (
-            // On phones the close button gets its own column so the scrolling strip never runs under it.
-            <div className="flex shrink-0 items-center gap-1 bg-muted pr-2">
-              {sectionList}
-              <DialogClose asChild>
-                <Button aria-label={t('kubecode.vocab.command.close')} size="icon-sm" variant="ghost">
-                  <X />
-                </Button>
-              </DialogClose>
-            </div>
-          )}
+          {sectionList}
           {SETTINGS_SECTIONS.map((item) => (
             <TabsContent className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4 md:p-8" key={item} value={item}>
               <div className="flex flex-col gap-6">
