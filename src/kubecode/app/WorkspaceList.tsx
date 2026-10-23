@@ -85,7 +85,7 @@ export function WorkspaceList({
           return (
             <SidebarMenuItem key={project.id}>
               <SidebarMenuButton
-                className="pointer-coarse:min-h-11"
+                className="pointer-coarse:min-h-(--ws-touch-target)"
                 aria-current={active ? 'true' : undefined}
                 data-session-status={status ?? undefined}
                 data-workspaces-enabled={project.workspaces_enabled}

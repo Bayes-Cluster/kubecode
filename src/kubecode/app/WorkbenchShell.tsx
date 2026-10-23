@@ -1258,7 +1258,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
           <Sheet open={sessionSidebarOpen} onOpenChange={setSessionSidebarOpen}>
             <SheetContent
               aria-describedby={undefined}
-              className="w-[min(86vw,420px)] gap-0 p-0 sm:max-w-none"
+              className="w-[min(86vw,420px)] gap-0 p-0 motion-reduce:data-[state=closed]:animate-none motion-reduce:data-[state=open]:animate-none sm:max-w-none"
               closeLabel={t('kubecode.closeSidePanels')}
               side="left"
               onCloseAutoFocus={returnFocusFromSheet}
@@ -1283,7 +1283,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
           <Sheet open={contextVisible} onOpenChange={setContextVisible}>
             <SheetContent
               aria-describedby={undefined}
-              className="w-auto gap-0 p-0 sm:max-w-none"
+              className="w-auto gap-0 p-0 motion-reduce:data-[state=closed]:animate-none motion-reduce:data-[state=open]:animate-none sm:max-w-none"
               closeLabel={t('kubecode.closeSidePanels')}
               side="right"
               onCloseAutoFocus={returnFocusFromSheet}

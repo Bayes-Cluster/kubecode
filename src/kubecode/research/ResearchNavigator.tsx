@@ -71,7 +71,7 @@ export function ResearchNavigator({
             {items.map((item) => (
               <SidebarMenuItem key={item.id}>
                 <SidebarMenuButton
-                  className="pointer-coarse:min-h-11"
+                  className="pointer-coarse:min-h-(--ws-touch-target)"
                   aria-current={item.id === activeResearchId ? 'true' : undefined}
                   isActive={item.id === activeResearchId}
                   onClick={() => onSelect(item.id)}
