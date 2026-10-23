@@ -13,3 +13,15 @@ export function mergeConversations(...groups: Conversation[][]): Conversation[] 
   }
   return [...merged.values()]
 }
+
+/**
+ * A list reload keeps the selected Session while the list still holds it, or
+ * while it is the member run opened from a Task that the list leaves out (#254).
+ */
+export function keepsSelection(
+  selected: string | null,
+  listed: readonly { id: string }[],
+  held: string | null | undefined,
+): boolean {
+  return selected !== null && (selected === held || listed.some((item) => item.id === selected))
+}

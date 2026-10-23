@@ -53,6 +53,12 @@ const lookAt = async () => {
 const backToTask = () => fireEvent.click(screen.getByRole('button', { name: 'Back to Pruning heads' }))
 
 describe('TaskResults', () => {
+  it('sizes Look at it like the version decision beside it (#254)', async () => {
+    mount(taskDetail({ evidence: [changed('b')] }))
+    const look = await screen.findByRole('button', { name: 'Look at it' })
+    expect(look).toHaveAttribute('data-size', acceptShown().getAttribute('data-size'))
+  })
+
   it('names cited evidence like every reference: a readable title and a short version, never an id or raw fingerprint', async () => {
     const pinned = '3f2c1a9e5b7d4c6a'
     mount(taskDetail({ evidence: [evidenceRow({

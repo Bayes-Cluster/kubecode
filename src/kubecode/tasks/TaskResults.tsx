@@ -502,7 +502,7 @@ function EvidenceRow({ busy, check, evidence, onAccept, settle }: {
       {changed && (
         <ItemActions className="flex-wrap items-start">
           {open && (
-            <Button data-focus-key={`evidence:${evidence.key}`} className="pointer-coarse:min-h-11" size="xs" variant="outline" onClick={open}>
+            <Button data-focus-key={`evidence:${evidence.key}`} className="pointer-coarse:min-h-11" size="sm" variant="outline" onClick={open}>
               {t('kubecode.task.lookAtIt')}
             </Button>
           )}

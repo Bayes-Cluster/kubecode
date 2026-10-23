@@ -1347,7 +1347,11 @@ direct teammate deletion before disconnecting its ACP actor. Teammates can only
 be deleted by their Leader through Team MCP, so a browser action cannot bypass
 Team ownership or leave a stale member. Project and global Session list responses project `team_id` and
 `team_role` directly from those durable records, so navigation does not depend
-on a separate Team snapshot request. Terminal, Session, and Team snapshots
+on a separate Team snapshot request. Session lists leave out Workspace
+members' Sessions; `GET /projects/{project_id}/sessions/{conversation_id}`
+returns one Session by id, including a member's run (marked `read_only`), so a
+Task's execution record opens it. Direct-message Sessions stay private and are
+not found there. Terminal, Session, and Team snapshots
 hydrate independently; the browser refreshes Team snapshots while a Project is
 active and immediately after the global SSE connection opens or reconnects.
 Team names are persisted in the Team record. Project navigation renders each

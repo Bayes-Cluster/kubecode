@@ -110,6 +110,7 @@ import { useProjectSelection } from './useProjectSelection'
 import { useWorkbenchPreferences } from './useWorkbenchPreferences'
 import { useWorkspaceBootstrap, type SessionsLoad } from './useWorkspaceBootstrap'
 import { useWeChatBinding } from './useWeChatBinding'
+import { useOutsideSession } from './useOutsideSession'
 import { useWorkspaceReconciliation } from './useWorkspaceReconciliation'
 import { togglePanel } from './panelToggles'
 import { WorkbenchTitlebar } from './WorkbenchTitlebar'
@@ -255,7 +256,22 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   // What had focus in General when it was last left, per Workspace.
   const leftFocusRef = useRef(new Map<string, ReadingPosition['focus']>())
   const project = projects.find((item) => item.id === projectId) ?? null
-  const conversation = conversations.find((item) => item.id === conversationId) ?? null
+  // A member's run a Task points at is not in the list; it is read by id (#254).
+  const outside = useOutsideSession(
+    api,
+    projectId,
+    place.view === 'sessions' ? place.conversation ?? null : null,
+    conversations,
+    conversationsLoadedFor?.projectId === projectId && conversationsLoadedFor.ok,
+  )
+  const heldSessionRef = useRef<string | null>(null)
+  useEffect(() => { heldSessionRef.current = outside.session?.id ?? null }, [outside.session])
+  const heldSession = useCallback(() => heldSessionRef.current, [])
+  const knownConversations = useMemo(
+    () => outside.session ? [...conversations, outside.session] : conversations,
+    [conversations, outside.session],
+  )
+  const conversation = knownConversations.find((item) => item.id === conversationId) ?? null
   const activeTeam = teams.find((team) => (
     team.members.some((member) => member.conversation_id === conversationId)
   )) ?? null
@@ -278,6 +294,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     setAllConversations,
     setConversations,
     setConversationId,
+    heldSession,
     setTeams,
     setTerminals,
     setTerminalsLoadedForProjectId,
@@ -358,6 +375,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     setTerminalsLoadedForProjectId,
     setConversations,
     setConversationId,
+    heldSession,
     setConversationsLoadedFor,
     setTeams,
     setError,
@@ -680,11 +698,12 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   // Session chosen there afterwards is what it remembers. Sessions that could
   // not be read say nothing about what exists, so nothing is forgotten then.
   const sessionsReady = conversationsLoadedFor !== null && conversationsLoadedFor.projectId === projectId
+    && !outside.pending
   const sessionsRead = sessionsReady && conversationsLoadedFor.ok
   const rememberedSession = place.view === 'sessions' ? place.conversation ?? null : null
   const sessionAwaited = rememberedSession !== null
     && rememberedSession !== conversationId
-    && (!sessionsReady || conversations.some((item) => item.id === rememberedSession))
+    && (!sessionsReady || knownConversations.some((item) => item.id === rememberedSession))
   useEffect(() => {
     if (!projectId || place.view !== 'sessions') {
       restoredSessionRef.current = null
@@ -696,21 +715,21 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     if (restoredSessionRef.current !== key) {
       restoredSessionRef.current = key
       if (wanted && wanted !== conversationId) {
-        if (conversations.some((item) => item.id === wanted)) showSessionIn(projectId, wanted)
+        if (knownConversations.some((item) => item.id === wanted)) showSessionIn(projectId, wanted)
         else if (sessionsRead) {
           dispatchLocation({
             type: 'reconcile',
             projectId,
-            facts: { conversationIds: new Set(conversations.map((item) => item.id)) },
+            facts: { conversationIds: new Set(knownConversations.map((item) => item.id)) },
           }, { history: 'replace' })
         }
         return
       }
     }
-    if (conversationId && conversationId !== wanted && conversations.some((item) => item.id === conversationId)) {
+    if (conversationId && conversationId !== wanted && knownConversations.some((item) => item.id === conversationId)) {
       dispatchLocation({ type: 'patchSessions', projectId, conversation: conversationId }, { history: 'replace' })
     }
-  }, [conversationId, conversations, dispatchLocation, place, projectId, sessionsRead, sessionsReady, showSessionIn])
+  }, [conversationId, knownConversations, dispatchLocation, place, projectId, sessionsRead, sessionsReady, showSessionIn])
 
   // A move may ask for something to be focused once it is on screen.
   useEffect(() => {

@@ -144,6 +144,40 @@ pub(super) async fn list_all_conversations(
     Ok(Json(conversation_summaries(&state, conversations)?))
 }
 
+/// One Session by id, even a Workspace member's that the list leaves out: a
+/// Task's execution record opens the run it points at. A member's Session is
+/// read-only here (the member drives it); a direct-message Session stays
+/// private and is not found.
+pub(super) async fn get_conversation(
+    State(state): State<AppState>,
+    Path((project_id, conversation_id)): Path<(String, String)>,
+) -> Result<impl IntoResponse, ApiError> {
+    state.workspace.project_path(&project_id)?;
+    let not_found =
+        || ApiError::AgentStore(StoreError::ConversationNotFound(conversation_id.clone()));
+    let mut conversation = state
+        .agent_runtime
+        .store()
+        .get_conversation(&conversation_id)
+        .map_err(|_| not_found())?;
+    let private = state.members.dm_session_ids().unwrap_or_default();
+    if conversation.project_id != project_id || private.contains(&conversation.id) {
+        return Err(not_found());
+    }
+    if state
+        .members
+        .member_session_ids()
+        .unwrap_or_default()
+        .contains(&conversation.id)
+    {
+        conversation.read_only = true;
+    }
+    summarize(&state, vec![conversation])?
+        .pop()
+        .map(Json)
+        .ok_or_else(not_found)
+}
+
 fn conversation_summaries(
     state: &AppState,
     conversations: Vec<Conversation>,
@@ -154,6 +188,13 @@ fn conversation_summaries(
         .into_iter()
         .filter(|conversation| !member_sessions.contains(&conversation.id))
         .collect();
+    summarize(state, conversations)
+}
+
+fn summarize(
+    state: &AppState,
+    conversations: Vec<Conversation>,
+) -> Result<Vec<ConversationSummary>, ApiError> {
     let project_ids = conversations
         .iter()
         .map(|conversation| conversation.project_id.clone())

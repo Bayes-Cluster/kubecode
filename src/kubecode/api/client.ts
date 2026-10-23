@@ -1071,6 +1071,11 @@ export class KubecodeApi {
     return this.request(`${this.projectPath(projectId)}/sessions`)
   }
 
+  /** One Session by id, including a Workspace member's run that the list leaves out (read-only). */
+  getSession(projectId: string, conversationId: string): Promise<Conversation> {
+    return this.request(`${this.projectPath(projectId)}/sessions/${encodeURIComponent(conversationId)}`)
+  }
+
   listSessions(): Promise<Conversation[]> {
     return this.request('/sessions')
   }

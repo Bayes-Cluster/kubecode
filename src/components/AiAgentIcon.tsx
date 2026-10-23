@@ -28,6 +28,9 @@ const AI_AGENT_ICON_SOURCES: Record<AiAgentId, string> = {
   hermes: './ai-agent-icons/hermes.svg',
 }
 
+/** Logos drawn in a single near-black ink; inverted in dark theme so they stay visible. */
+const DARK_INK_AGENTS: ReadonlySet<AiAgentId> = new Set(['codex', 'opencode'])
+
 export function AiAgentIcon({
   agent,
   className,
@@ -47,6 +50,7 @@ export function AiAgentIcon({
       <img
         src={AI_AGENT_ICON_SOURCES[agent]}
         alt=""
+        className={DARK_INK_AGENTS.has(agent) ? 'dark:invert' : undefined}
         draggable={false}
         width={size}
         height={size}

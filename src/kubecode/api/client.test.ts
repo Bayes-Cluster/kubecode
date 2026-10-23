@@ -833,6 +833,7 @@ describe('Kubecode API client', () => {
     await api.listAgents()
     await api.listConversations('project-1')
     await api.listProviderSessions('project/1', 'codex')
+    await api.getSession('project-1', 's/1')
 
     expect(fetch).toHaveBeenNthCalledWith(1, '/api/v1/agents', expect.any(Object))
     expect(fetch).toHaveBeenNthCalledWith(
@@ -843,6 +844,11 @@ describe('Kubecode API client', () => {
     expect(fetch).toHaveBeenNthCalledWith(
       3,
       '/api/v1/projects/project%2F1/agents/codex/sessions',
+      expect.any(Object),
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      4,
+      '/api/v1/projects/project-1/sessions/s%2F1',
       expect.any(Object),
     )
   })
