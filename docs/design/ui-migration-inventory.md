@@ -445,8 +445,8 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| New file/folder EntryDialog | `src/kubecode/ContextWorkbench.tsx:870-1000,588-595` | official Dialog + PathPicker; create error is Alert destructive | Dialog + Field | ContextWorkbench | #262 | partial | PathPicker on Command is #260 (unmerged); this dialog consumes it unchanged |
-| Quick open with ProjectFilePicker/PathPicker | `src/kubecode/ContextWorkbench.tsx:600-624; src/kubecode/ProjectFilePicker.tsx:29` | Dialog + PathPicker; excluded-files toggle is the official Toggle | CommandDialog/Command | ContextWorkbench, ComposerAddMenu, ProjectDialog | #262 | partial | PathPicker on Command is #260 (unmerged); ProjectFilePicker consumes it unchanged |
+| New file/folder EntryDialog | `src/kubecode/ContextWorkbench.tsx:870-1000,588-595` | official Dialog + PathPicker on Command; create error is Alert destructive | Dialog + Field + Command | ContextWorkbench | #262 | migrated | PathPicker on Command is a byte-identical copy of #260's file. ADR 0252 |
+| Quick open with ProjectFilePicker/PathPicker | `src/kubecode/ContextWorkbench.tsx:600-624; src/kubecode/ProjectFilePicker.tsx:29` | Dialog + PathPicker on Command; excluded-files toggle is the official Toggle | CommandDialog/Command | ContextWorkbench, ComposerAddMenu, ProjectDialog | #262 | migrated | PathPicker on Command is a byte-identical copy of #260's file. ADR 0252 |
 
 ## Editor
 
