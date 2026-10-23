@@ -1246,11 +1246,15 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
         titlebarTargetRef={setTitlebarTarget}
       />
 
-      {/* The official Sidebar context: one open state, the navigation's, and its Cmd/Ctrl+B shortcut. */}
+      {/* The official Sidebar context: one open state, the navigation's, toggled by the title-bar button.
+          No Cmd/Ctrl+B (it belongs to the terminal, composer and IME) and no host-wide cookie:
+          the open state lives in the per-Workspace layout. */}
       <SidebarProvider
         className="kubecode-workspace min-h-0"
         data-narrow={narrowLayout}
+        keyboardShortcut={false}
         open={sessionSidebarOpen}
+        persistState={false}
         ref={workspaceRef}
         onOpenChange={setSessionSidebarOpen}
       >

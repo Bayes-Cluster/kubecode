@@ -42,9 +42,15 @@ label; while it holds what is on screen or a search, closing it is ignored.
 The Session search is an `InputGroup` with a `Kbd` hint.
 
 `SidebarProvider` wraps the workspace and owns the navigation's open state as a
-controlled prop (`open`/`onOpenChange` are the shell's existing state), so the
-official Cmd/Ctrl+B shortcut toggles the same navigation as the title-bar
-toggle. There is still one open state and one location model.
+controlled prop (`open`/`onOpenChange` are the shell's existing state), toggled
+by the title-bar button. The vendored provider gains two opt-outs, both passed
+as `false` by the shell: `keyboardShortcut` (the official Cmd/Ctrl+B belongs to
+the terminal's tmux prefix, readline back-char, the composer and IME
+composition, and its mobile branch toggles an `openMobile` state below 768 px
+that the shell's 980 px Sheet never reads) and `persistState` (the official
+`sidebar_state` cookie is written at `path=/`, outside the base path, and
+duplicates the per-Workspace layout store). There is still one open state and
+one location model.
 
 The phone layout keeps its own 980-pixel breakpoint, so the navigator and the
 Files and Git panel open in official `Sheet`s (left and right) rather than in
@@ -139,10 +145,10 @@ prevents it. Real sizes are checked in the browser smoke run.
 
 ## Consequences
 
-- Cmd/Ctrl+B toggles the navigation anywhere in the page, including over the
-  terminal and editors. That is the official Sidebar behaviour; a terminal
-  user who relies on Ctrl+B (for example a tmux prefix) loses it while the
-  page has focus. A future ADR may ask the registry for an opt-out.
+- There is no Cmd/Ctrl+B navigation shortcut; Ctrl+B reaches the terminal and
+  editors unchanged. The two provider props are a local change to the vendored
+  `sidebar.tsx`, re-applied if the component is re-added from the registry.
+- No `sidebar_state` cookie is written.
 - `components.json` lists `@shadcn` among its `registries`; the CLI at
   `shadcn@4.22.1` rejects that reserved name ("Invalid configuration"). The
   components here were added with that key removed for the run; slice A owns

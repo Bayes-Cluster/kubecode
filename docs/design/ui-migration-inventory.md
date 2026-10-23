@@ -138,7 +138,7 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Shortcuts: Cmd/Ctrl+K palette, focus navigator search, Escape closes overlays | `src/kubecode/app/WorkbenchShell.tsx:760-811` | document keydown listeners for Cmd/Ctrl+K (session search) and Cmd/Ctrl+Shift+P (palette); Escape is owned by Sheet/Dialog; Kbd hint in the search; Cmd/Ctrl+B from SidebarProvider | Kbd (installed) for hints; CommandShortcut | global | #256 | exception | ADR 0248: no registry component registers application-wide shortcuts except the Sidebar's Cmd/Ctrl+B; the two listeners only open the palette and focus the search |
+| Shortcuts: Cmd/Ctrl+K palette, focus navigator search, Escape closes overlays | `src/kubecode/app/WorkbenchShell.tsx:760-811` | document keydown listeners for Cmd/Ctrl+K (session search) and Cmd/Ctrl+Shift+P (palette); Escape is owned by Sheet/Dialog; Kbd hint in the search; SidebarProvider's Cmd/Ctrl+B turned off | Kbd (installed) for hints; CommandShortcut | global | #256 | exception | ADR 0248: no registry component registers application-wide shortcuts (the Sidebar's Cmd/Ctrl+B is turned off so Ctrl+B stays with the terminal and composer); the two listeners only open the palette and focus the search, and the navigation has one toggle, the title-bar button |
 
 ## Global search
 

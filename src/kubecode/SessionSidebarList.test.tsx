@@ -76,7 +76,13 @@ describe('session sidebar list', () => {
     const selected = screen.getByRole('button', { name: 'Needs permission' })
     expect(selected).toHaveAttribute('data-slot', 'sidebar-menu-button')
     expect(selected).toHaveAttribute('data-active', 'true')
-    expect(screen.getAllByRole('status', { name: 'Permission required' })).toHaveLength(1)
+    // Run state is announced as row text, not as one live region per row.
+    expect(screen.queryAllByRole('status')).toHaveLength(0)
+    expect(screen.getAllByText('Permission required')).toHaveLength(1)
+    // Row actions stay visible on touch tablets, where there is no hover.
+    for (const action of screen.getAllByRole('button', { name: /Actions for|actions/i })) {
+      expect(action.className).not.toContain('md:opacity-0')
+    }
     fireEvent.click(screen.getByRole('button', { name: 'Documentation' }))
     expect(onSelect).toHaveBeenCalledWith('project-1', 'session-2')
   })
