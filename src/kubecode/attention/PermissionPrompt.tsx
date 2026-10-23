@@ -12,7 +12,7 @@ import type { Translator } from '@/lib/i18n'
 import type { PendingOption } from '../api'
 import { permissionChoiceLabel } from '../session/sessionModel'
 import { isGone } from './attentionContext'
-import { PromptDecision } from './PromptDecision'
+import { PromptDecision, PromptOutcome } from './PromptDecision'
 
 export type PermissionPromptProps = {
   requestId: string
@@ -84,9 +84,9 @@ export function PermissionPrompt({ deadlineMs, heading, onGone, onResolve, optio
         {deadlineMs !== null && <PermissionCountdown deadlineMs={deadlineMs} t={t} />}
       </ConfirmationTitle>
       <ConfirmationRequest>
-        <code className="kubecode-permission-command">{tool}</code>
+        <code className="block max-h-32 overflow-auto rounded-md bg-muted px-2 py-1 font-mono text-xs break-all whitespace-pre-wrap">{tool}</code>
       </ConfirmationRequest>
-      <ConfirmationActions className="kubecode-permission-actions">
+      <ConfirmationActions className="flex-wrap justify-start self-stretch">
         {options.map((option, index) => (
           <PromptDecision
             busy={busy === option.id || resolving}
@@ -99,9 +99,7 @@ export function PermissionPrompt({ deadlineMs, heading, onGone, onResolve, optio
           </PromptDecision>
         ))}
       </ConfirmationActions>
-      {resolving && <p className="kubecode-research-muted" role="status">{t('kubecode.attention.resolving')}</p>}
-      {outcome === 'failed' && <p className="kubecode-research-error" role="alert">{t('kubecode.attention.resolveFailed')}</p>}
-      {outcome === 'gone' && <p className="kubecode-research-muted" role="status">{t('kubecode.attention.answeredElsewhere')}</p>}
+      <PromptOutcome outcome={outcome} resolving={resolving} t={t} />
     </Confirmation>
   )
 }

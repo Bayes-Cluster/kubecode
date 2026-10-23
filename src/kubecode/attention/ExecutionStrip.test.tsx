@@ -234,6 +234,7 @@ describe('ExecutionStrip', () => {
     const value = store(snapshot({ failures: [failure()] }))
     strip(value)
     expect(screen.getByText("Analyst's last turn failed")).toBeInTheDocument()
+    expect(screen.getByText("Analyst's last turn failed").closest('[data-slot="alert"]')).not.toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
     expect(screen.queryByText("Analyst's last turn failed")).not.toBeInTheDocument()
   })

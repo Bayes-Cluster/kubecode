@@ -70,6 +70,9 @@ describe('ComposerProjectWorkPicker', () => {
       query: '', kinds: undefined, limit: 20,
     })
     const input = screen.getByRole('combobox', { name: 'Search Project work' })
+    // The official Command (cmdk) owns the combobox, listbox and option semantics.
+    expect(options[0]).toHaveAttribute('data-slot', 'command-item')
+    expect(input).toHaveAttribute('data-slot', 'command-input')
     expect(options[0]).toHaveAttribute('aria-selected', 'true')
     fireEvent.keyDown(input, { key: 'ArrowDown' })
     expect(options[1]).toHaveAttribute('aria-selected', 'true')
@@ -301,5 +304,13 @@ describe('ComposerProjectWorkPicker', () => {
     setup([item('research', 'r1', 'Pruning', { ref: { kind: 'research', id: 'r1', revision: '4' } })])
     const option = await screen.findByRole('option')
     expect(option).toHaveTextContent('Revision 4')
+  })
+  it('keeps Enter on its own buttons from choosing the active row', async () => {
+    const { onSelect } = setup([item('research', 'r1', 'Pruning')])
+    await screen.findAllByRole('option')
+    const group = screen.getByRole('group', { name: 'Filter Project work' })
+    fireEvent.keyDown(within(group).getByRole('button', { name: 'Research' }), { key: 'Enter' })
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Preview selected' }), { key: 'Enter' })
+    expect(onSelect).not.toHaveBeenCalled()
   })
 })

@@ -9,6 +9,7 @@ import {
   type ReactNode,
   type Ref,
 } from 'react'
+import { Popover as PopoverPrimitive } from 'radix-ui'
 
 import {
   PromptInput,
@@ -24,9 +25,9 @@ import {
   PromptInputTextarea,
   PromptInputTools,
 } from '@/components/ai-elements/prompt-input'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Popover, PopoverContent } from '@/components/ui/popover'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { initialsOf } from '@/components/workspace/memberInitials'
+import { MemberAvatar } from '@/components/workspace/MemberIdentity'
 import { filterMentions, insertMention, mentionQueryAt, type MentionOption } from '@/components/workspace/mentions'
 import { Icon } from '@/kubecode/icons'
 import { WORKSPACE_COMMAND_ICONS } from '@/kubecode/icons/workspaceIcons'
@@ -129,14 +130,15 @@ export function ConversationComposer({
   const reason = !ready && sendDisabledReason ? sendDisabledReason : null
 
   // cmdk names its list and options itself: once they are drawn, the text box points at them.
-  const menu = useRef<HTMLDivElement>(null)
+  // The list mounts in a portal after the text box: holding its node in state re-runs the link below once it is there.
+  const [menu, setMenu] = useState<HTMLDivElement | null>(null)
   useLayoutEffect(() => {
     const box = area.current
     if (!box) return
-    const list = menuOpen ? menu.current?.querySelector<HTMLElement>('[cmdk-list]')?.id : undefined
+    const list = menuOpen ? menu?.querySelector<HTMLElement>('[cmdk-list]')?.id : undefined
     // The highlighted option by its value (set as it is drawn), not by cmdk's selection, which follows a step later.
     const value = menuOpen ? candidates[highlighted]?.id : undefined
-    const option = value ? menu.current?.querySelector<HTMLElement>(`[cmdk-item][data-value="${CSS.escape(value)}"]`)?.id : undefined
+    const option = value ? menu?.querySelector<HTMLElement>(`[cmdk-item][data-value="${CSS.escape(value)}"]`)?.id : undefined
     if (list) box.setAttribute('aria-controls', list)
     else box.removeAttribute('aria-controls')
     if (option) box.setAttribute('aria-activedescendant', option)
@@ -225,9 +227,25 @@ export function ConversationComposer({
   return (
     // The Prompt Input's buttons name themselves in tooltips.
     <TooltipProvider>
+    <Popover
+      open={menuOpen}
+      onOpenChange={(next) => {
+        // Escape or a press outside the list closes it until the researcher types on.
+        if (!next) setDismissed(typing?.start ?? null)
+      }}
+    >
+    <PopoverPrimitive.Anchor asChild>
     <div className={cn('kubecode-composer', className)}>
       {menuOpen && (
-        <div className="kubecode-mention-menu" ref={menu}>
+        <PopoverContent
+          align="start"
+          className="w-(--radix-popover-trigger-width) p-0"
+          ref={setMenu}
+          side="top"
+          // Focus stays in the text box: the list is driven from there.
+          onCloseAutoFocus={(event) => event.preventDefault()}
+          onOpenAutoFocus={(event) => event.preventDefault()}
+        >
           <PromptInputCommand
             label={mentionLabel ?? label}
             shouldFilter={false}
@@ -241,6 +259,7 @@ export function ConversationComposer({
               <PromptInputCommandGroup>
                 {candidates.map((option) => (
                   <PromptInputCommandItem
+                    className="pointer-coarse:min-h-11"
                     key={option.id}
                     value={option.id}
                     // Keep focus in the text box while choosing.
@@ -253,7 +272,7 @@ export function ConversationComposer({
               </PromptInputCommandGroup>
             </PromptInputCommandList>
           </PromptInputCommand>
-        </div>
+        </PopoverContent>
       )}
       {/* The form never submits on its own: Enter and the send button go through `submit`. */}
       <PromptInput className="kubecode-prompt-input" uploadLabel={attachLabel} onSubmit={() => submit()}>
@@ -316,9 +335,11 @@ export function ConversationComposer({
             <Icon role="command" source={WORKSPACE_COMMAND_ICONS.send.Icon} />
           </PromptInputSubmit>
         </PromptInputFooter>
-        {notices && <div className="kubecode-composer-footer">{notices}</div>}
+        {notices && <div className="flex flex-col gap-1 self-stretch px-3 pb-2">{notices}</div>}
       </PromptInput>
     </div>
+    </PopoverPrimitive.Anchor>
+    </Popover>
     </TooltipProvider>
   )
 }
@@ -330,19 +351,17 @@ function MentionRow({ option }: { option: MentionOption }) {
       <>
         <strong>@{option.handle}</strong>
         <span>{option.label}</span>
-        {option.detail && <small>{option.detail}</small>}
+        {option.detail && <small className="ms-auto text-muted-foreground">{option.detail}</small>}
       </>
     )
   }
   return (
     <>
-      <Avatar aria-hidden="true" className="kubecode-conversation-avatar" data-role={option.identity.role} size="sm">
-        <AvatarFallback>{initialsOf(option.label)}</AvatarFallback>
-      </Avatar>
+      <MemberAvatar name={option.label} role={option.identity.role} size="sm" />
       <span>{option.label}</span>
       <strong>@{option.handle}</strong>
-      {option.identity.roleLabel && <small>{option.identity.roleLabel}</small>}
-      {option.identity.unavailable && <small className="kubecode-mention-unavailable">{option.identity.unavailable}</small>}
+      {option.identity.roleLabel && <small className="ms-auto text-muted-foreground">{option.identity.roleLabel}</small>}
+      {option.identity.unavailable && <small className="text-muted-foreground">{option.identity.unavailable}</small>}
     </>
   )
 }

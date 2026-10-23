@@ -1,5 +1,6 @@
 import { StatusBadge } from '@/components/workspace/StatusBadge'
 import type { Translator } from '@/lib/i18n'
+import { cn } from '@/lib/utils'
 
 import type { TaskCard } from '../api'
 import { conditionTone, requiredActionOf } from './taskLifecycle'
@@ -31,7 +32,7 @@ export function TaskStatusBadges({ archived = false, compact = false, draft = fa
   const action = task ? requiredActionOf(task) : null
   const outcome = task?.stage === 'done' ? outcomeLabel(t, task.outcome) : null
   return (
-    <span className="kubecode-task-badges">
+    <span className="flex flex-wrap items-center gap-1">
       {draft && <StatusBadge tone="muted">{t('kubecode.task.draftBadge')}</StatusBadge>}
       {task && !compact && (
         <StatusBadge tone={task.stage === 'done' ? 'ok' : 'info'}>{stageLabel(t, task.stage)}</StatusBadge>
@@ -43,7 +44,7 @@ export function TaskStatusBadges({ archived = false, compact = false, draft = fa
         </StatusBadge>
       )}
       {task && condition && <StatusBadge tone={conditionTone(task.condition)}>{condition}</StatusBadge>}
-      {reason && <span className="kubecode-task-condition-reason" data-compact={compact || undefined}>{reason}</span>}
+      {reason && <span className={cn('text-xs text-muted-foreground [overflow-wrap:anywhere]', compact && 'basis-full')}>{reason}</span>}
       {task && task.revision > task.approved_revision && (
         <StatusBadge tone="warn">{t('kubecode.task.briefChanged')}</StatusBadge>
       )}

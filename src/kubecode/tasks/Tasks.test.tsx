@@ -203,10 +203,35 @@ describe('TaskBoardView', () => {
   it('loads, and retries a board that failed', () => {
     const loading = view({ status: 'loading' })
     expect(screen.getByRole('status')).toHaveTextContent('Loading Tasks…')
+    expect(screen.getByRole('status').querySelector('[data-slot="spinner"], svg')).not.toBeNull()
     loading.unmount()
     const { onReload } = view({ status: 'error' })
+    expect(screen.getByRole('alert')).toHaveAttribute('data-slot', 'alert')
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
     expect(onReload).toHaveBeenCalled()
+  })
+})
+
+describe('TaskBoardView on official components (#259)', () => {
+  it('lists proposals and archived Tasks as official Item rows, and says an empty column or filter with Empty', () => {
+    view({
+      board: board([card({ id: 'r1', title: 'Quiet' })], [{ id: 'r9', title: 'Old sweep', stage: 'done', outcome: 'supported', updated_at: '' }]),
+      drafts: [draft()],
+    })
+    fireEvent.click(screen.getByText('Archived (1)'))
+    expect(screen.getByRole('button', { name: /Old sweep/ })).toHaveAttribute('data-slot', 'item')
+    fireEvent.click(screen.getByText(/Proposals/))
+    expect(screen.getByRole('button', { name: /Quantize/ })).toHaveAttribute('data-slot', 'item')
+    const review = screen.getAllByRole('region').find((region) => region.getAttribute('data-stage') === 'review') as HTMLElement
+    expect(within(review).getByText('Nothing here.').closest('[data-slot="empty"]')).not.toBeNull()
+    fireEvent.click(screen.getByRole('switch'))
+    expect(screen.getByText('Nothing on the board needs you right now.').closest('[data-slot="empty"]')).not.toBeNull()
+  })
+
+  it('names its Needs-you filter with a Field label, so the words toggle it too', () => {
+    view({ board: board([card({ id: 'r1' })]) })
+    fireEvent.click(screen.getByText('Needs you only'))
+    expect(screen.getByRole('switch', { name: 'Needs you only' })).toBeChecked()
   })
 })
 

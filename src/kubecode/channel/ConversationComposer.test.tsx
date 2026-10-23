@@ -47,7 +47,8 @@ describe('ConversationComposer (official Prompt Input, ADR 0242)', () => {
   it('is the official Prompt Input: a form around the text box, its tools and the send button', () => {
     render(<Harness initial="hello" tools={<button type="button">Tool</button>} />)
     const form = box().closest('form')
-    expect(form).toHaveClass('kubecode-prompt-input')
+    // The official Prompt Input card, not a restyled one (#257).
+    expect(form?.querySelector('[data-slot="input-group"]')).not.toBeNull()
     expect(form?.querySelector('[data-slot="input-group"]')).toContainElement(box())
     expect(screen.getByRole('button', { name: 'Tool' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Send' })).toHaveAttribute('type', 'button')

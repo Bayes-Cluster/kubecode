@@ -33,6 +33,8 @@ describe('OutboxRows', () => {
     expect(within(rows[0]).queryByRole('button')).not.toBeInTheDocument()
     expect(rows[1].querySelector('[data-state="failed"]')).not.toBeNull()
     expect(within(rows[1]).getByRole('alert')).toHaveTextContent('Not sent: network down')
+    // The failure is the official Alert, not a handcrafted status span (#257).
+    expect(within(rows[1]).getByRole('alert')).toHaveAttribute('data-slot', 'alert')
     fireEvent.click(within(rows[1]).getByRole('button', { name: 'Send again' }))
     fireEvent.click(within(rows[1]).getByRole('button', { name: 'Edit' }))
     fireEvent.click(within(rows[1]).getByRole('button', { name: 'Discard' }))

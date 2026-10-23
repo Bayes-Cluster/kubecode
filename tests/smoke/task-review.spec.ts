@@ -133,12 +133,12 @@ test('@smoke a Task is reviewed at the version that was shown, sent back through
     // 5. Archiving is apart from accepting, and refused with a reason while a review is open.
     await task.getByRole('button', { name: 'More actions for this Task' }).click()
     await page.getByRole('menuitem', { name: 'Archive Task' }).click()
-    const blocked = page.getByRole('dialog', { name: 'This Task can\'t be archived now' })
+    const blocked = page.getByRole('alertdialog', { name: 'This Task can\'t be archived now' })
     await expect(blocked.getByText('Decide its review first: accept the results or send them back.')).toBeVisible()
     await blocked.getByRole('button', { name: 'Cancel' }).click()
 
     // 6. A read that failed never counts as a look: the version cannot be accepted.
-    await expect(review.getByRole('button', { name: /results\.csv/ })).toContainText('Changed since cited')
+    await expect(review.getByRole('button', { name: /results\.csv/ })).toHaveAccessibleName(/Changed since cited/)
     const accept = review.getByRole('button', { name: 'Accept the version you saw' })
     await expect(accept).toBeDisabled()
     await review.getByRole('button', { name: 'Look at it' }).click()
@@ -157,6 +157,11 @@ test('@smoke a Task is reviewed at the version that was shown, sent back through
     await expect(accept).toBeEnabled()
     await accept.click()
     await expect(review.getByText('Changed since cited')).toHaveCount(0)
+    // Arrow keys move and select within the outcome RadioGroup (held like a real key).
+    await review.getByRole('radio', { name: 'Supports the hypothesis' }).click()
+    await page.keyboard.press('ArrowDown', { delay: 50 })
+    await expect(review.getByRole('radio', { name: 'Valid negative result' })).toBeChecked()
+    await expect(review.getByRole('radio', { name: 'Valid negative result' })).toBeFocused()
     await review.getByRole('radio', { name: 'Inconclusive' }).check()
     await review.getByRole('button', { name: 'Accept results' }).click()
     await expect(task.getByText(/^Accepted as Inconclusive\. The General Agent was told in General\./)).toBeVisible()
@@ -179,7 +184,7 @@ test('@smoke a Task is reviewed at the version that was shown, sent back through
     await card.click()
     await task.getByRole('button', { name: 'More actions for this Task' }).click()
     await page.getByRole('menuitem', { name: 'Archive Task' }).click()
-    const confirm = page.getByRole('dialog', { name: `Archive “${seed.taskTitle}”?` })
+    const confirm = page.getByRole('alertdialog', { name: `Archive “${seed.taskTitle}”?` })
     await confirm.getByRole('button', { name: 'Archive', exact: true }).click()
     await expect(card).toHaveCount(0)
     await expect(task.getByText('Archived. It is off the board; restore it to continue.')).toBeVisible()

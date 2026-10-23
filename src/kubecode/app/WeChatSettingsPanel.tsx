@@ -2,21 +2,35 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   CircleAlert,
   CircleCheck,
-  LoaderCircle,
   QrCode,
   RotateCw,
   Unplug,
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import {
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+  FieldLegend,
+  FieldSeparator,
+  FieldSet,
+  FieldTitle,
+} from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -27,6 +41,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Item, ItemContent, ItemDescription, ItemMedia } from '@/components/ui/item'
+import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 import type { Translator } from '@/lib/i18n'
 import { trackEvent } from '@/lib/telemetry'
@@ -198,22 +214,22 @@ export function WeChatSettingsPanel({
 
   if (!view) {
     return (
-      <div className="kubecode-settings-group" data-testid="wechat-settings-panel">
-        <div className="kubecode-setting-row">
-          <div>
-            <strong>{t('kubecode.wechat.connection')}</strong>
+      <FieldGroup data-testid="wechat-settings-panel">
+        <Field orientation="responsive">
+          <FieldContent>
+            <FieldTitle>{t('kubecode.wechat.connection')}</FieldTitle>
             {loadFailed
-              ? <span role="alert">{t('kubecode.wechat.errorLoad')}</span>
-              : <span role="status">{t('kubecode.wechat.loading')}</span>}
-          </div>
+              ? <FieldError>{t('kubecode.wechat.errorLoad')}</FieldError>
+              : <FieldDescription role="status">{t('kubecode.wechat.loading')}</FieldDescription>}
+          </FieldContent>
           {loadFailed && (
             <Button size="sm" variant="outline" onClick={() => void refresh()}>
-              <RotateCw size={16} />
+              <RotateCw data-icon="inline-start" />
               {t('kubecode.refresh')}
             </Button>
           )}
-        </div>
-      </div>
+        </Field>
+      </FieldGroup>
     )
   }
 
@@ -226,123 +242,120 @@ export function WeChatSettingsPanel({
     || view.status === 'disconnected'
   const canReconnect = view.linked
     && (view.status === 'backing_off' || view.status === 'error' || view.status === 'disconnected')
-  const StatusIcon = tone === 'ok' ? CircleCheck : tone === 'problem' ? CircleAlert : tone === 'pending' ? LoaderCircle : QrCode
+  const StatusIcon = tone === 'ok' ? CircleCheck : tone === 'problem' ? CircleAlert : tone === 'pending' ? Spinner : QrCode
 
   return (
-    <>
-      <div className="kubecode-settings-group" data-testid="wechat-settings-panel">
-        <div className="kubecode-setting-row">
-          <div>
-            <strong>{t('kubecode.wechat.connection')}</strong>
-            <span>{t('kubecode.wechat.connectionDescription')}</span>
-          </div>
-        </div>
-        <div className="kubecode-setting-row kubecode-wechat-status" data-tone={tone}>
-          <div aria-live="polite" role="status">
-            <strong>
-              <StatusIcon
-                aria-hidden="true"
-                className={tone === 'pending' ? 'animate-spin' : undefined}
-                size={16}
-              />
-              {t(`kubecode.wechat.status.${view.status}`)}
-            </strong>
-            <span>{t(`kubecode.wechat.statusDescription.${view.status}`)}</span>
+    <FieldGroup>
+      <FieldSet data-testid="wechat-settings-panel">
+        <FieldLegend>{t('kubecode.wechat.connection')}</FieldLegend>
+        <FieldDescription>{t('kubecode.wechat.connectionDescription')}</FieldDescription>
+        <Alert aria-live="polite" data-tone={tone} role="status" variant={tone === 'problem' ? 'destructive' : 'default'}>
+          <StatusIcon aria-hidden="true" />
+          <AlertTitle>{t(`kubecode.wechat.status.${view.status}`)}</AlertTitle>
+          <AlertDescription>
+            <p>{t(`kubecode.wechat.statusDescription.${view.status}`)}</p>
             {view.linked && view.displayName && (
-              <span>{t('kubecode.wechat.account', { name: view.displayName })}</span>
+              <p>{t('kubecode.wechat.account', { name: view.displayName })}</p>
             )}
-          </div>
-          <div className="kubecode-wechat-actions">
-            {canConnect && !loginInProgress && (
-              <Button disabled={busy !== null} size="sm" onClick={() => void connect()}>
-                <QrCode size={16} />
-                {view.linked ? t('kubecode.wechat.newQr') : t('kubecode.wechat.connect')}
-              </Button>
-            )}
-            {loginInProgress && (
-              <Button
-                disabled={busy !== null}
-                size="sm"
-                variant="outline"
-                onClick={() => void run('cancel', () => api.ilinkCancelLogin())}
-              >
-                {t('kubecode.wechat.cancelLogin')}
-              </Button>
-            )}
-            {canReconnect && (
-              <Button
-                disabled={busy !== null}
-                size="sm"
-                variant="outline"
-                onClick={() => void run('reconnect', () => api.ilinkReconnect())}
-              >
-                <RotateCw className={busy === 'reconnect' ? 'animate-spin' : undefined} size={16} />
-                {t('kubecode.wechat.reconnect')}
-              </Button>
-            )}
-            {view.linked && (
-              <Button
-                disabled={busy !== null}
-                size="sm"
-                variant="ghost"
-                onClick={() => setConfirmDisconnect(true)}
-              >
-                <Unplug size={16} />
-                {t('kubecode.wechat.disconnect')}
-              </Button>
-            )}
-          </div>
+          </AlertDescription>
+        </Alert>
+        <div className="flex flex-wrap gap-2">
+          {canConnect && !loginInProgress && (
+            <Button disabled={busy !== null} size="sm" onClick={() => void connect()}>
+              <QrCode data-icon="inline-start" />
+              {view.linked ? t('kubecode.wechat.newQr') : t('kubecode.wechat.connect')}
+            </Button>
+          )}
+          {loginInProgress && (
+            <Button
+              disabled={busy !== null}
+              size="sm"
+              variant="outline"
+              onClick={() => void run('cancel', () => api.ilinkCancelLogin())}
+            >
+              {t('kubecode.wechat.cancelLogin')}
+            </Button>
+          )}
+          {canReconnect && (
+            <Button
+              disabled={busy !== null}
+              size="sm"
+              variant="outline"
+              onClick={() => void run('reconnect', () => api.ilinkReconnect())}
+            >
+              {busy === 'reconnect'
+                ? <Spinner aria-hidden="true" data-icon="inline-start" />
+                : <RotateCw data-icon="inline-start" />}
+              {t('kubecode.wechat.reconnect')}
+            </Button>
+          )}
+          {view.linked && (
+            <Button
+              disabled={busy !== null}
+              size="sm"
+              variant="ghost"
+              onClick={() => setConfirmDisconnect(true)}
+            >
+              <Unplug data-icon="inline-start" />
+              {t('kubecode.wechat.disconnect')}
+            </Button>
+          )}
         </div>
         {actionError && (
-          <div className="kubecode-setting-row kubecode-wechat-error">
-            <span role="alert">{t(actionError)}</span>
-          </div>
+          <Alert variant="destructive">
+            <CircleAlert aria-hidden="true" />
+            <AlertDescription>{t(actionError)}</AlertDescription>
+          </Alert>
         )}
         {loginInProgress && qr && (
-          <figure className="kubecode-wechat-qr">
-            <img alt={t('kubecode.wechat.qrAlt')} height={200} src={qr.svg} width={200} />
-            <figcaption>
-              <span>{t('kubecode.wechat.qrInstructions')}</span>
+          <Item variant="outline">
+            <ItemMedia>
+              <img alt={t('kubecode.wechat.qrAlt')} className="size-48 rounded-md bg-white p-2" height={200} src={qr.svg} width={200} />
+            </ItemMedia>
+            <ItemContent>
+              <ItemDescription className="line-clamp-none">{t('kubecode.wechat.qrInstructions')}</ItemDescription>
               {view.loginExpiresInMs !== null && (
-                <span>{t('kubecode.wechat.qrExpires', {
+                <ItemDescription>{t('kubecode.wechat.qrExpires', {
                   minutes: Math.max(1, Math.ceil(view.loginExpiresInMs / 60000)),
-                })}</span>
+                })}</ItemDescription>
               )}
-            </figcaption>
-          </figure>
+            </ItemContent>
+          </Item>
         )}
         {view.status === 'verification_required' && (
           <form
-            className="kubecode-setting-row kubecode-wechat-verify"
             onSubmit={(event) => {
               event.preventDefault()
               verify()
             }}
           >
-            <div>
-              <label htmlFor="kubecode-wechat-code"><strong>{t('kubecode.wechat.verificationCode')}</strong></label>
-              <span>{t('kubecode.wechat.verificationCodeDescription')}</span>
-            </div>
-            <div className="kubecode-wechat-actions">
-              <Input
-                autoComplete="one-time-code"
-                className="kubecode-wechat-code"
-                id="kubecode-wechat-code"
-                inputMode="numeric"
-                maxLength={12}
-                value={code}
-                onChange={(event) => setCode(event.target.value)}
-              />
-              <Button disabled={busy !== null || !code.trim()} size="sm" type="submit">
-                {t('kubecode.wechat.verify')}
-              </Button>
-            </div>
+            <Field>
+              <FieldLabel htmlFor="kubecode-wechat-code">{t('kubecode.wechat.verificationCode')}</FieldLabel>
+              <FieldDescription id="kubecode-wechat-code-description">
+                {t('kubecode.wechat.verificationCodeDescription')}
+              </FieldDescription>
+              <div className="flex flex-wrap gap-2">
+                <Input
+                  aria-describedby="kubecode-wechat-code-description"
+                  autoComplete="one-time-code"
+                  className="w-full sm:w-40"
+                  id="kubecode-wechat-code"
+                  inputMode="numeric"
+                  maxLength={12}
+                  value={code}
+                  onChange={(event) => setCode(event.target.value)}
+                />
+                <Button disabled={busy !== null || !code.trim()} size="sm" type="submit">
+                  {t('kubecode.wechat.verify')}
+                </Button>
+              </div>
+            </Field>
           </form>
         )}
-      </div>
+      </FieldSet>
       {view.linked && binding && (
         <>
-          <h3 className="kubecode-settings-section-heading">{t('kubecode.wechat.activeSession')}</h3>
+          <FieldSeparator />
           <ActiveSessionSelector
             binding={binding}
             conversations={conversations}
@@ -353,33 +366,28 @@ export function WeChatSettingsPanel({
       )}
       {view.linked && (
         <>
-          <h3 className="kubecode-settings-section-heading">{t('kubecode.wechat.quickPrompts')}</h3>
+          <FieldSeparator />
           <QuickPromptsEditor api={api} t={t} />
         </>
       )}
-      <Dialog open={confirmDisconnect} onOpenChange={setConfirmDisconnect}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t('kubecode.wechat.disconnectTitle')}</DialogTitle>
-            <DialogDescription>{t('kubecode.wechat.disconnectDescription')}</DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmDisconnect(false)}>
-              {t('kubecode.cancel')}
-            </Button>
-            <Button
+      <AlertDialog open={confirmDisconnect} onOpenChange={setConfirmDisconnect}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('kubecode.wechat.disconnectTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>{t('kubecode.wechat.disconnectDescription')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('kubecode.cancel')}</AlertDialogCancel>
+            <AlertDialogAction
               variant="destructive"
-              onClick={() => {
-                setConfirmDisconnect(false)
-                void run('disconnect', () => api.ilinkDisconnect())
-              }}
+              onClick={() => void run('disconnect', () => api.ilinkDisconnect())}
             >
               {t('kubecode.wechat.disconnectConfirm')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </FieldGroup>
   )
 }
 
@@ -408,69 +416,75 @@ function ActiveSessionSelector({
   const bound = binding.boundConversationId
   const title = (conversation: Conversation) => conversation.title || t('kubecode.untitledSession')
   return (
-    <div className="kubecode-settings-group" data-testid="wechat-active-session">
-      <div className="kubecode-setting-row">
-        <div>
-          <strong>{t('kubecode.wechat.activeSession')}</strong>
-          <span>{t('kubecode.wechat.activeSessionDescription')}</span>
-          {binding.clearedReason && !bound && (
-            <span role="status">{t(`kubecode.wechat.bindingCleared.${binding.clearedReason}`)}</span>
-          )}
-          {binding.rejected && (
-            <span role="alert">{t(`kubecode.wechat.bindingRejected.${binding.rejected}`)}</span>
-          )}
-        </div>
-        <div className="kubecode-wechat-actions">
-          <Select
+    <Field data-testid="wechat-active-session" orientation="responsive">
+      <FieldContent>
+        <FieldLabel htmlFor="kubecode-wechat-active-session">{t('kubecode.wechat.activeSession')}</FieldLabel>
+        <FieldDescription id="kubecode-wechat-active-session-description">
+          {t('kubecode.wechat.activeSessionDescription')}
+        </FieldDescription>
+        {binding.clearedReason && !bound && (
+          <FieldDescription role="status">{t(`kubecode.wechat.bindingCleared.${binding.clearedReason}`)}</FieldDescription>
+        )}
+        {binding.rejected && (
+          <FieldError>{t(`kubecode.wechat.bindingRejected.${binding.rejected}`)}</FieldError>
+        )}
+      </FieldContent>
+      <div className="flex flex-wrap items-center gap-2">
+        <Select
+          disabled={binding.pending}
+          value={bound ?? NO_SESSION}
+          onValueChange={(value) => {
+            if (value === NO_SESSION) return
+            trackEvent('kubecode_wechat_session_binding_changed', { action: 'bind', source: 'settings' })
+            void binding.bind(value)
+          }}
+        >
+          <SelectTrigger
+            aria-describedby="kubecode-wechat-active-session-description"
+            className="w-full sm:w-64"
+            id="kubecode-wechat-active-session"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectItem disabled value={NO_SESSION}>{t('kubecode.wechat.noActiveSession')}</SelectItem>
+            </SelectGroup>
+            {groups.map(({ project, sessions }) => (
+              <SelectGroup key={project.id}>
+                <SelectLabel>{project.name}</SelectLabel>
+                {sessions.map((conversation) => {
+                  const reason = wechatUnbindableReason(conversation)
+                  return (
+                    <SelectItem disabled={Boolean(reason)} key={conversation.id} value={conversation.id}>
+                      {reason
+                        ? t('kubecode.wechat.sessionUnavailable', {
+                          title: title(conversation),
+                          reason: t(`kubecode.wechat.unbindable.${reason}`),
+                        })
+                        : title(conversation)}
+                    </SelectItem>
+                  )
+                })}
+              </SelectGroup>
+            ))}
+          </SelectContent>
+        </Select>
+        {bound && (
+          <Button
             disabled={binding.pending}
-            value={bound ?? NO_SESSION}
-            onValueChange={(value) => {
-              if (value === NO_SESSION) return
-              trackEvent('kubecode_wechat_session_binding_changed', { action: 'bind', source: 'settings' })
-              void binding.bind(value)
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              trackEvent('kubecode_wechat_session_binding_changed', { action: 'unbind', source: 'settings' })
+              void binding.unbind()
             }}
           >
-            <SelectTrigger aria-label={t('kubecode.wechat.activeSession')} className="w-64">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem disabled value={NO_SESSION}>{t('kubecode.wechat.noActiveSession')}</SelectItem>
-              {groups.map(({ project, sessions }) => (
-                <SelectGroup key={project.id}>
-                  <SelectLabel>{project.name}</SelectLabel>
-                  {sessions.map((conversation) => {
-                    const reason = wechatUnbindableReason(conversation)
-                    return (
-                      <SelectItem disabled={Boolean(reason)} key={conversation.id} value={conversation.id}>
-                        {reason
-                          ? t('kubecode.wechat.sessionUnavailable', {
-                            title: title(conversation),
-                            reason: t(`kubecode.wechat.unbindable.${reason}`),
-                          })
-                          : title(conversation)}
-                      </SelectItem>
-                    )
-                  })}
-                </SelectGroup>
-              ))}
-            </SelectContent>
-          </Select>
-          {bound && (
-            <Button
-              disabled={binding.pending}
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                trackEvent('kubecode_wechat_session_binding_changed', { action: 'unbind', source: 'settings' })
-                void binding.unbind()
-              }}
-            >
-              {t('kubecode.wechat.unbind')}
-            </Button>
-          )}
-        </div>
+            {t('kubecode.wechat.unbind')}
+          </Button>
+        )}
       </div>
-    </div>
+    </Field>
   )
 }
 
@@ -496,7 +510,7 @@ function QuickPromptsEditor({ api, t }: { api: KubecodeApi; t: Translator }) {
 
   if (!prompts) {
     return failed
-      ? <div className="kubecode-settings-group"><div className="kubecode-setting-row"><span role="alert">{t('kubecode.wechat.errorGeneric')}</span></div></div>
+      ? <FieldError>{t('kubecode.wechat.errorGeneric')}</FieldError>
       : null
   }
   const used = new Set(prompts.prompts.map((prompt) => prompt.slot))
@@ -519,56 +533,54 @@ function QuickPromptsEditor({ api, t }: { api: KubecodeApi; t: Translator }) {
   }
 
   return (
-    <div className="kubecode-settings-group" data-testid="wechat-quick-prompts">
-      <div className="kubecode-setting-row">
-        <div>
-          <strong>{t('kubecode.wechat.quickPrompts')}</strong>
-          <span>{t('kubecode.wechat.quickPromptsDescription')}</span>
-          {failed && <span role="alert">{t('kubecode.wechat.errorGeneric')}</span>}
-        </div>
-      </div>
-      {slots.map((slot) => {
-        const saved = prompts.prompts.find((prompt) => prompt.slot === slot)?.content ?? ''
-        const draft = drafts[slot] ?? ''
-        const label = t('kubecode.wechat.quickPromptSlot', { slot })
-        return (
-          <div className="kubecode-setting-row kubecode-wechat-quick-prompt" key={slot}>
-            <Textarea
-              aria-label={label}
-              maxLength={prompts.max_chars}
-              placeholder={saved ? undefined : t('kubecode.wechat.quickPromptPlaceholder')}
-              rows={2}
-              value={draft}
-              onChange={(event) => setDrafts((current) => ({ ...current, [slot]: event.target.value }))}
-            />
-            <div className="kubecode-wechat-actions">
-              <Button
-                disabled={draft.trim() === saved}
-                size="sm"
-                variant="outline"
-                onClick={() => void save(slot)}
-              >
-                {saved ? t('kubecode.save') : t('kubecode.wechat.addQuickPrompt')}
-              </Button>
-              {saved && (
+    <FieldSet data-testid="wechat-quick-prompts">
+      <FieldLegend>{t('kubecode.wechat.quickPrompts')}</FieldLegend>
+      <FieldDescription>{t('kubecode.wechat.quickPromptsDescription')}</FieldDescription>
+      {failed && <FieldError>{t('kubecode.wechat.errorGeneric')}</FieldError>}
+      <FieldGroup className="gap-4">
+        {slots.map((slot) => {
+          const saved = prompts.prompts.find((prompt) => prompt.slot === slot)?.content ?? ''
+          const draft = drafts[slot] ?? ''
+          const label = t('kubecode.wechat.quickPromptSlot', { slot })
+          return (
+            <Field key={slot}>
+              <Textarea
+                aria-label={label}
+                maxLength={prompts.max_chars}
+                placeholder={saved ? undefined : t('kubecode.wechat.quickPromptPlaceholder')}
+                rows={2}
+                value={draft}
+                onChange={(event) => setDrafts((current) => ({ ...current, [slot]: event.target.value }))}
+              />
+              <div className="flex flex-wrap gap-2">
                 <Button
-                  aria-label={t('kubecode.wechat.removeQuickPrompt', { slot })}
+                  disabled={draft.trim() === saved}
                   size="sm"
-                  variant="ghost"
-                  onClick={() => {
-                    void api.ilinkRemoveQuickPrompt(slot).then(() => {
-                      trackEvent('kubecode_wechat_quick_prompt_changed', { action: 'remove' })
-                      load()
-                    }).catch(() => setFailed(true))
-                  }}
+                  variant="outline"
+                  onClick={() => void save(slot)}
                 >
-                  {t('common.remove')}
+                  {saved ? t('kubecode.save') : t('kubecode.wechat.addQuickPrompt')}
                 </Button>
-              )}
-            </div>
-          </div>
-        )
-      })}
-    </div>
+                {saved && (
+                  <Button
+                    aria-label={t('kubecode.wechat.removeQuickPrompt', { slot })}
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      void api.ilinkRemoveQuickPrompt(slot).then(() => {
+                        trackEvent('kubecode_wechat_quick_prompt_changed', { action: 'remove' })
+                        load()
+                      }).catch(() => setFailed(true))
+                    }}
+                  >
+                    {t('common.remove')}
+                  </Button>
+                )}
+              </div>
+            </Field>
+          )
+        })}
+      </FieldGroup>
+    </FieldSet>
   )
 }

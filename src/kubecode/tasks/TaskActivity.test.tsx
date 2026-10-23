@@ -100,7 +100,7 @@ describe('TaskActivity', () => {
 
   it('says when nothing has happened', async () => {
     mount(taskDetail({ timeline: [] }))
-    expect(await screen.findByText('Nothing has happened yet.')).toBeInTheDocument()
+    expect((await screen.findByText('Nothing has happened yet.')).closest('[data-slot="empty"]')).not.toBeNull()
   })
 
   it('shows what was said about the Task in General lately, one line each', async () => {
@@ -128,6 +128,7 @@ describe('TaskActivity', () => {
     mount(taskDetail(), null, { listChannelMessages })
     const recent = await screen.findByRole('region', { name: 'Recently in General about this Task' })
     expect(await within(recent).findByRole('alert')).toHaveTextContent('What was said in General about this Task could not be loaded.')
+    expect(within(recent).getByRole('alert')).toHaveAttribute('data-slot', 'alert')
     expect(within(recent).queryByText('Nothing about this Task in General yet.')).not.toBeInTheDocument()
     fireEvent.click(within(recent).getByRole('button', { name: 'Retry' }))
     expect(await within(recent).findByRole('button', { name: /The sweep is half done\./ })).toBeInTheDocument()
@@ -143,7 +144,11 @@ describe('TaskActivity', () => {
       }],
     }), bundle)
     expect(screen.queryByText(/rounds panel/)).not.toBeInTheDocument()
-    fireEvent.click(screen.getByText('Execution records'))
+    const execution = screen.getByRole('button', { name: 'Execution records' })
+    expect(execution).toHaveAttribute('aria-expanded', 'false')
+    expect(execution.closest('[data-slot="collapsible"]')).not.toBeNull()
+    fireEvent.click(execution)
+    expect(execution).toHaveAttribute('aria-expanded', 'true')
     expect(await screen.findByText('rounds panel, starts rounds: false')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Open session: Pruning sweep' }))
     expect(navigation.openSession).toHaveBeenCalledWith('s7')

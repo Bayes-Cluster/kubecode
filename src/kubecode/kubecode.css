@@ -107,8 +107,7 @@
 .kubecode-session-status,
 .kubecode-session-title,
 .kubecode-context-tabbar,
-.kubecode-editor-toolbar,
-.kubecode-mode-switch {
+.kubecode-editor-toolbar {
   align-items: center;
   display: flex;
 }
@@ -122,42 +121,6 @@
   min-height: 0;
   min-width: 0;
   position: relative;
-}
-
-.kubecode-disable-workspaces-dialog {
-  max-width: 640px;
-}
-
-.kubecode-workspace-migration-list {
-  display: grid;
-  gap: 8px;
-  max-height: min(52vh, 440px);
-  overflow: auto;
-}
-
-.kubecode-workspace-migration-item {
-  align-items: center;
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  display: grid;
-  gap: 12px;
-  grid-template-columns: minmax(0, 1fr) 190px;
-  padding: 10px 12px;
-}
-
-.kubecode-workspace-migration-item > div {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
-
-.kubecode-workspace-migration-item span,
-.kubecode-workspace-migration-item code {
-  color: var(--text-muted);
-  font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .kubecode-undo-turn {
@@ -312,117 +275,6 @@
 }
 
 .kubecode-command-suggestions { margin-bottom: 5px; }
-
-.kubecode-permission-command {
-  background: var(--surface-app);
-  border: 1px solid var(--border-subtle);
-  border-radius: 7px;
-  color: var(--text-secondary);
-  font-size: 13px;
-  line-height: 1.5;
-  max-height: 92px;
-  overflow: auto;
-  overflow-wrap: anywhere;
-  padding: 8px 9px;
-  white-space: pre-wrap;
-}
-
-.kubecode-permission-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  justify-content: flex-end;
-  min-width: 0;
-}
-
-.kubecode-permission-actions > button {
-  flex: 0 1 auto;
-  height: auto;
-  max-width: min(100%, 160px);
-  min-height: 32px;
-  min-width: 72px;
-  overflow: hidden;
-  overflow-wrap: anywhere;
-  text-overflow: ellipsis;
-  white-space: normal;
-}
-
-.kubecode-elicitation-dock {
-  background: var(--surface-app);
-  border: 1px solid var(--border-strong);
-  border-radius: 12px;
-  box-shadow: 0 8px 24px color-mix(in srgb, var(--text-primary) 7%, transparent);
-  display: grid;
-  gap: 0;
-  margin: 0 auto 8px;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  max-height: min(520px, 62vh);
-  max-width: 760px;
-  overflow: hidden;
-  padding: 0;
-  width: calc(100% - 20px);
-}
-
-.kubecode-elicitation-heading {
-  border-bottom: 1px solid var(--border-subtle);
-  display: grid;
-  gap: 5px;
-  padding: 13px 15px 12px;
-}
-
-.kubecode-elicitation-heading > strong { font-size: 14px; }
-.kubecode-elicitation-heading > span {
-  color: var(--text-secondary);
-  font-size: 14px;
-  line-height: 1.5;
-}
-
-.kubecode-elicitation-fields {
-  display: grid;
-  gap: 9px;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
-  overflow-y: auto;
-  padding: 13px 15px;
-}
-
-.kubecode-elicitation-field {
-  background: var(--surface-sidebar);
-  border: 1px solid var(--border-subtle);
-  border-radius: 9px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-  padding: 9px 10px 10px;
-}
-
-.kubecode-elicitation-field > small {
-  color: var(--text-secondary);
-  font-size: 12px;
-  line-height: 1.4;
-}
-
-.kubecode-elicitation-field > span {
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.kubecode-elicitation-field > input,
-.kubecode-elicitation-field > button {
-  margin-top: auto;
-  width: 100%;
-}
-
-.kubecode-elicitation-field > [role='switch'] { margin-top: 5px; }
-
-.kubecode-elicitation-actions {
-  background: var(--surface-sidebar);
-  border-top: 1px solid var(--border-subtle);
-  display: flex;
-  gap: 7px;
-  justify-content: flex-end;
-  padding: 10px 15px;
-}
 
 .kubecode-session-empty {
   align-items: center;
@@ -927,184 +779,7 @@
   transform: translateX(-50%);
 }
 
-.kubecode-settings-dialog {
-  box-sizing: border-box;
-  display: grid;
-  gap: 0;
-  grid-template-columns: 200px minmax(0, 1fr);
-  height: min(620px, 82vh);
-  max-width: 980px;
-  overflow: hidden;
-  padding: 0;
-  width: min(980px, 88vw);
-  font-family: var(--kubecode-ui-font, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
-}
-
-.kubecode-settings-nav {
-  background: var(--surface-sidebar);
-  border-right: 1px solid var(--border-subtle);
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 24px 12px;
-}
-.kubecode-settings-nav > strong { margin: 0 8px 12px; }
-.kubecode-settings-nav button { justify-content: flex-start; }
-
-.kubecode-settings-content { overflow-y: auto; padding: 28px 40px 40px; }
-.kubecode-settings-content h2 { font-size: 20px; margin: 0 0 24px; }
-.kubecode-settings-section-heading { font-size: 15px; margin: 28px 0 10px; }
-.kubecode-settings-group {
-  background: color-mix(in srgb, var(--surface-sidebar) 72%, var(--surface-app));
-  border: 1px solid var(--border-subtle);
-  border-radius: 12px;
-  overflow: hidden;
-}
-.kubecode-setting-row {
-  align-items: center;
-  background: transparent;
-  border-bottom: 1px solid var(--border-subtle);
-  display: flex;
-  justify-content: space-between;
-  min-height: 72px;
-  padding: 12px 16px;
-}
-.kubecode-setting-row:last-child { border-bottom: 0; }
-.kubecode-setting-row > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.kubecode-setting-row strong { align-items: center; display: flex; gap: 6px; }
-.kubecode-setting-row span { color: var(--text-secondary); font-size: 13px; overflow: hidden; text-overflow: ellipsis; }
-.kubecode-setting-row > span[data-available='true'] { color: var(--accent-green); }
-.kubecode-setting-row > span[data-available='false'] { color: var(--feedback-error-text); }
-.kubecode-setting-row .kubecode-notification-test-result[data-status='sent'] { color: var(--accent-green); }
-.kubecode-setting-row .kubecode-notification-test-result:not([data-status='sent']) { color: var(--feedback-error-text); }
-.kubecode-font-input { flex: 0 1 46%; max-width: 360px; min-width: 180px; }
-.kubecode-font-input-mono { font-family: var(--kubecode-code-font, ui-monospace, SFMono-Regular, Menlo, monospace); }
-.kubecode-theme-swatch {
-  background: var(--theme-preview);
-  border: 1px solid color-mix(in srgb, var(--border-strong) 72%, transparent);
-  border-radius: 4px;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, #fff 10%, transparent);
-  flex: 0 0 auto;
-  height: 14px;
-  width: 22px;
-}
-.kubecode-setting-row > .kubecode-notification-controls {
-  align-items: center;
-  flex-direction: row;
-  flex-shrink: 0;
-  gap: 10px;
-}
-.kubecode-settings-placeholder { color: var(--text-secondary); padding: 32px 0; }
-.kubecode-runtime-counts {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  margin: 0;
-}
-.kubecode-runtime-counts > div { padding: 14px 16px; }
-.kubecode-runtime-counts > div + div { border-left: 1px solid var(--border-subtle); }
-.kubecode-runtime-counts dt { color: var(--text-secondary); font-size: 12px; }
-.kubecode-runtime-counts dd { font-size: 20px; font-weight: 600; margin: 4px 0 0; }
 .kubecode-session-wechat-marker { color: var(--accent-green); flex-shrink: 0; }
-.kubecode-wechat-actions {
-  align-items: center;
-  display: flex;
-  flex-shrink: 0;
-  flex-wrap: wrap;
-  gap: 6px;
-  justify-content: flex-end;
-}
-.kubecode-wechat-status[data-tone='ok'] strong { color: var(--accent-green); }
-.kubecode-wechat-status[data-tone='problem'] strong { color: var(--feedback-error-text); }
-.kubecode-wechat-error span { color: var(--feedback-error-text); font-size: 13px; }
-.kubecode-wechat-qr {
-  align-items: center;
-  border-bottom: 1px solid var(--border-subtle);
-  display: flex;
-  gap: 16px;
-  margin: 0;
-  padding: 16px;
-}
-.kubecode-wechat-qr img {
-  background: #fff;
-  border-radius: 6px;
-  flex: 0 0 auto;
-  height: 200px;
-  padding: 8px;
-  width: 200px;
-}
-.kubecode-wechat-qr figcaption {
-  color: var(--text-secondary);
-  display: flex;
-  flex-direction: column;
-  font-size: 13px;
-  gap: 6px;
-  min-width: 0;
-}
-.kubecode-wechat-code { max-width: 160px; }
-.kubecode-wechat-quick-prompt { align-items: flex-start; gap: 12px; }
-.kubecode-wechat-quick-prompt textarea { flex: 1 1 auto; min-width: 0; }
-.kubecode-agent-doctor-actions {
-  align-items: center;
-  flex-direction: row !important;
-  flex-shrink: 0;
-  gap: 6px !important;
-}
-.kubecode-agent-diagnostic {
-  border-bottom: 1px solid var(--border-subtle);
-}
-.kubecode-agent-diagnostic:last-child { border-bottom: 0; }
-.kubecode-agent-diagnostic summary {
-  align-items: center;
-  cursor: pointer;
-  display: flex;
-  justify-content: space-between;
-  min-height: 64px;
-  padding: 10px 16px;
-}
-.kubecode-agent-diagnostic summary::marker { color: var(--text-secondary); }
-.kubecode-agent-diagnostic summary > span {
-  align-items: center;
-  display: flex;
-  gap: 7px;
-}
-.kubecode-agent-diagnostic summary > span[data-available='true'] { color: var(--accent-green); }
-.kubecode-agent-diagnostic summary > span[data-available='false'] { color: var(--feedback-error-text); }
-.kubecode-agent-diagnostic-body {
-  background: color-mix(in srgb, var(--surface-app) 54%, transparent);
-  border-top: 1px solid var(--border-subtle);
-  display: grid;
-  gap: 10px;
-  padding: 12px 16px 14px 36px;
-}
-.kubecode-agent-diagnostic-row {
-  align-items: flex-start;
-  display: flex;
-  gap: 9px;
-}
-.kubecode-agent-diagnostic-row > span {
-  display: flex;
-  margin-top: 2px;
-}
-.kubecode-agent-diagnostic-row > span[data-status='ready'] { color: var(--accent-green); }
-.kubecode-agent-diagnostic-row > span:not([data-status='ready']) { color: var(--feedback-error-text); }
-.kubecode-agent-diagnostic-row svg { height: 15px; width: 15px; }
-.kubecode-agent-diagnostic-row > div {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-.kubecode-agent-diagnostic-row small,
-.kubecode-agent-diagnostic-body > small,
-.kubecode-agent-auth-note {
-  color: var(--text-secondary);
-  font-size: 12px;
-}
-.kubecode-agent-diagnostic-row code {
-  color: var(--feedback-error-text);
-  font-size: 11px;
-  overflow-wrap: anywhere;
-  white-space: normal;
-}
 
 .kubecode-empty-small {
   align-items: center;
@@ -1137,16 +812,7 @@
 
 @media (max-width: 980px) {
   .kubecode-topbar { grid-template-columns: auto minmax(180px, 1fr) auto; }
-  .kubecode-settings-dialog { grid-template-columns: 164px minmax(0, 1fr); }
-  .kubecode-settings-content { padding: 24px; }
-  .kubecode-setting-row { align-items: stretch; flex-direction: column; gap: 12px; }
-  .kubecode-runtime-counts { grid-template-columns: 1fr; }
-  .kubecode-runtime-counts > div + div { border-left: 0; border-top: 1px solid var(--border-subtle); }
-  .kubecode-wechat-actions { justify-content: flex-start; }
-  .kubecode-wechat-qr { align-items: flex-start; flex-direction: column; }
-  .kubecode-wechat-code { max-width: none; width: 100%; }
-  .kubecode-font-input,
-  .kubecode-setting-row [data-slot='select-trigger'] { max-width: none; width: 100%; }
+
 }
 
 /* ============================================================
@@ -1246,20 +912,6 @@
 .kubecode-composer-placeholder {
   font-size: var(--kubecode-ui-font-size, 14px);
 }
-.kubecode-elicitation-dock {
-  border-radius: 9px;
-  box-shadow: none;
-  margin: 0 0 6px;
-  max-width: none;
-  width: 100%;
-}
-.kubecode-permission-command {
-  background: transparent;
-  border: 0;
-  max-height: 60px;
-  padding: 0;
-}
-.kubecode-elicitation-dock { max-height: min(420px, 55vh); }
 
 .kubecode-context-tabbar {
   background: var(--surface-sidebar);
@@ -1400,93 +1052,7 @@
 }
 .kubecode-path-picker-heading [data-slot='dialog-title'] { font-size: 15px; }
 .kubecode-path-picker-heading [data-slot='dialog-description'] { font-size: 12px; }
-.kubecode-path-picker {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  min-height: 0;
-}
-.kubecode-path-picker-input {
-  background: transparent;
-  border: 0;
-  border-bottom: 1px solid var(--border-subtle);
-  border-radius: 0;
-  box-shadow: none;
-  flex: 0 0 48px;
-  font-family: var(--kubecode-code-font, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 14px;
-  height: 48px;
-  padding: 0 18px;
-}
-.kubecode-path-picker-input:focus-visible {
-  border-bottom-color: var(--border-strong);
-  box-shadow: none;
-  outline: none;
-}
-.kubecode-path-picker-results {
-  flex: 1 1 auto;
-  max-height: min(420px, 48vh);
-  min-height: 96px;
-  overflow: auto;
-  padding: 6px;
-}
-.kubecode-path-picker-row {
-  align-items: center;
-  background: transparent;
-  border: 0;
-  border-radius: 6px;
-  color: var(--text-primary);
-  cursor: pointer;
-  display: flex;
-  font: inherit;
-  gap: 10px;
-  min-height: 38px;
-  padding: 6px 10px;
-  text-align: left;
-  width: 100%;
-}
-.kubecode-path-picker-row:hover,
-.kubecode-path-picker-row[data-active='true'] {
-  background: var(--state-hover);
-}
-.kubecode-path-picker-row:focus-visible {
-  box-shadow: 0 0 0 1px var(--state-focus-ring) inset;
-  outline: none;
-}
-.kubecode-path-picker-row:disabled {
-  cursor: default;
-  opacity: 0.48;
-}
-.kubecode-path-picker-row > svg {
-  flex: 0 0 auto;
-  height: 18px;
-  width: 18px;
-}
-.kubecode-path-picker-row-copy {
-  display: grid;
-  flex: 1 1 auto;
-  gap: 1px;
-  min-width: 0;
-}
-.kubecode-path-picker-row-copy strong,
-.kubecode-path-picker-row-copy small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.kubecode-path-picker-row-copy strong { font-size: 13px; font-weight: 500; }
-.kubecode-path-picker-row-copy small {
-  color: var(--text-muted);
-  font-family: var(--kubecode-code-font, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 11px;
-  font-weight: 400;
-}
-.kubecode-path-picker-row-action { opacity: 0.5; }
-.kubecode-path-picker-empty {
-  color: var(--text-muted);
-  font-size: 13px;
-  padding: 18px 12px;
-}
+
 .kubecode-path-picker-footer {
   align-items: center;
   border-top: 1px solid var(--border-subtle);
@@ -1506,31 +1072,19 @@
   padding: 8px 12px;
   text-align: left;
 }
-.kubecode-project-path-dialog .kubecode-mode-switch {
-  border-bottom: 1px solid var(--border-subtle);
-  gap: 4px;
-  padding: 7px 10px;
-}
-.kubecode-project-path-dialog .kubecode-mode-switch button {
-  border: 0;
-  box-shadow: none;
-  height: 28px;
-}
 
 /* Agent Chat remains scrollable, but its timeline and Composer never expose chrome. */
 .kubecode-message-history,
 .kubecode-composer-editor,
 .kubecode-virtual-message-history,
-.kubecode-virtual-message-history [data-virtuoso-scroller='true'],
-.kubecode-path-picker-results {
+.kubecode-virtual-message-history [data-virtuoso-scroller='true'] {
   scrollbar-color: transparent transparent !important;
   scrollbar-width: none !important;
 }
 .kubecode-message-history::-webkit-scrollbar,
 .kubecode-composer-editor::-webkit-scrollbar,
 .kubecode-virtual-message-history::-webkit-scrollbar,
-.kubecode-virtual-message-history [data-virtuoso-scroller='true']::-webkit-scrollbar,
-.kubecode-path-picker-results::-webkit-scrollbar {
+.kubecode-virtual-message-history [data-virtuoso-scroller='true']::-webkit-scrollbar {
   display: none !important;
   height: 0 !important;
   width: 0 !important;
@@ -1555,25 +1109,7 @@
   /* The Workspace search stays as one icon (ADR 0231): leading, search, actions. */
   .kubecode-topbar { grid-template-columns: minmax(0, 1fr) auto auto; }
   .kubecode-titlebar-session-slot { max-width: calc(100vw - 190px); }
-  [data-slot='dialog-content'].kubecode-settings-dialog {
-    grid-template-columns: minmax(0, 1fr);
-    height: calc(100vh - 24px);
-    left: 12px;
-    max-width: none;
-    right: 12px;
-    translate: 0 -50%;
-    width: auto;
-  }
-  .kubecode-settings-nav {
-    border-bottom: 1px solid var(--border-subtle);
-    border-right: 0;
-    flex-direction: row;
-    overflow-x: auto;
-    padding: 10px 12px;
-  }
-  .kubecode-settings-nav > strong { display: none; }
-  .kubecode-settings-nav button { flex: 0 0 auto; }
-  .kubecode-settings-content { min-width: 0; padding: 20px 16px; }
+
 }
 
 /* Research workbench (ADR 0212) */
@@ -1769,38 +1305,6 @@
   gap: 8px;
   min-width: 0;
 }
-.kubecode-mention-menu {
-  background: var(--surface-popover);
-  border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  bottom: calc(100% + 4px);
-  box-shadow: 0 6px 18px rgb(0 0 0 / 12%);
-  left: 0;
-  list-style: none;
-  margin: 0;
-  max-height: 220px;
-  min-width: 220px;
-  overflow-y: auto;
-  padding: 4px;
-  position: absolute;
-  z-index: 20;
-}
-.kubecode-mention-menu li {
-  align-items: baseline;
-  border-radius: 4px;
-  cursor: pointer;
-  display: flex;
-  gap: 8px;
-  padding: 4px 8px;
-}
-.kubecode-mention-menu li[aria-selected='true'],
-.kubecode-mention-menu li:hover { background: var(--surface-button); }
-/* The chosen option is marked by more than its background. */
-.kubecode-mention-menu li[aria-selected='true'] { box-shadow: inset 2px 0 0 var(--primary); }
-@media (pointer: coarse) {
-  .kubecode-mention-menu li { min-height: 44px; }
-}
-.kubecode-mention-menu small { color: var(--text-secondary); margin-left: auto; }
 
 .kubecode-research-list,
 .kubecode-research-cards,
@@ -2152,52 +1656,12 @@
 
 .kubecode-channel-filter label { align-items: center; display: inline-flex; gap: var(--ws-space-2); min-width: 0; }
 
-.kubecode-channel-replying {
-  align-items: center;
-  background: var(--surface-subtle);
-  border-radius: var(--radius-md);
-  color: var(--text-secondary);
-  display: flex;
-  font-size: var(--kubecode-ui-font-small);
-  gap: 6px;
-  justify-content: space-between;
-  margin: 0;
-  padding: 2px 8px;
-}
 
-.kubecode-dm-turns {
-  border: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin: 0;
-  max-height: 220px;
-  overflow-y: auto;
-  padding: 0;
-}
 
-.kubecode-dm-turns label { align-items: flex-start; display: flex; gap: 8px; }
-.kubecode-dm-turns label span { overflow: hidden; text-overflow: ellipsis; }
 
-.kubecode-dm-field { display: flex; flex-direction: column; gap: 4px; }
 
-.kubecode-dm-preview {
-  background: var(--surface-subtle);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  padding: 8px;
-}
 
-.kubecode-dm-preview {
-  display: flex;
-  flex-direction: column;
-  gap: var(--ws-space-2);
-  min-width: 0;
-}
 
-.kubecode-dm-preview pre { margin: 0; max-height: 240px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
-.kubecode-dm-preview summary { color: var(--text-secondary); cursor: pointer; font: var(--ws-font-meta); }
-.kubecode-dm-share { max-height: calc(100dvh - 32px); overflow-y: auto; }
 
 .kubecode-channel-composer {
   display: flex;
@@ -2215,20 +1679,7 @@
   position: relative;
 }
 
-.kubecode-message {
-  border-radius: var(--radius-md);
-  display: flex;
-  flex-direction: column;
-  gap: var(--ws-space-1);
-  max-width: var(--ws-reading-width);
-  min-width: 0;
-  padding: var(--ws-space-2);
-}
 
-.kubecode-message[data-continued='true'] { padding-top: 0; }
-.kubecode-message:hover,
-.kubecode-message:focus-within { background: var(--surface-hover); }
-.kubecode-message[data-kind='system'] { color: var(--text-secondary); }
 
 .kubecode-message-header {
   align-items: center;
@@ -2248,51 +1699,14 @@
   width: 1px;
 }
 
-.kubecode-message-toolbar {
-  display: inline-flex;
-  gap: var(--ws-space-1);
-  margin-left: auto;
-  opacity: 0;
-}
 
-.kubecode-message:hover .kubecode-message-toolbar,
-.kubecode-message:focus-within .kubecode-message-toolbar,
-.kubecode-message-toolbar[data-coarse='true'] { opacity: 1; }
 
-.kubecode-message-content {
-  display: flex;
-  flex-direction: column;
-  gap: var(--ws-space-1);
-  min-width: 0;
-  padding-left: calc(var(--ws-avatar-md) + var(--ws-space-2));
-}
 
 .kubecode-message-body { min-width: 0; overflow-wrap: anywhere; }
 .kubecode-message-body .ai-markdown > :first-child { margin-top: 0; }
 .kubecode-message-body .ai-markdown > :last-child { margin-bottom: 0; }
 
-.kubecode-message-recipients {
-  align-items: center;
-  color: var(--text-secondary);
-  display: inline-flex;
-  flex-wrap: wrap;
-  font: var(--ws-font-meta);
-  gap: var(--ws-space-1);
-  margin: 0;
-  min-width: 0;
-}
-.kubecode-message-recipients-arrow { color: var(--text-tertiary, var(--text-secondary)); }
 
-.kubecode-message-references,
-.kubecode-composer-about ul {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--ws-space-1);
-  list-style: none;
-  margin: 0;
-  min-width: 0;
-  padding: 0;
-}
 
 .kubecode-message-delivery {
   align-items: center;
@@ -2304,58 +1718,7 @@
   margin: 0;
 }
 
-.kubecode-legacy-thread-link {
-  align-items: center;
-  align-self: flex-start;
-  background: transparent;
-  border: 0;
-  color: var(--text-secondary);
-  cursor: pointer;
-  display: inline-flex;
-  font: var(--ws-font-meta);
-  gap: var(--ws-space-1);
-  min-height: var(--ws-touch-target);
-  padding: 0;
-}
 
-.kubecode-legacy-thread-link:hover { color: var(--text-primary); }
-.kubecode-legacy-thread-note {
-  background: var(--surface-subtle);
-  border-radius: var(--radius-md);
-  color: var(--text-secondary);
-  font: var(--ws-font-meta);
-  margin: 0;
-  padding: var(--ws-space-2);
-}
-
-.kubecode-legacy-thread-topic { color: var(--text-secondary); overflow-wrap: anywhere; }
-.kubecode-legacy-thread-actions { display: flex; justify-content: flex-end; }
-
-.kubecode-activity-group {
-  color: var(--text-secondary);
-  font: var(--ws-font-meta);
-  padding: 0 var(--ws-space-2);
-}
-
-.kubecode-activity-group summary { cursor: pointer; min-height: var(--ws-touch-target); }
-.kubecode-activity-group ul { display: flex; flex-direction: column; gap: var(--ws-space-1); list-style: none; margin: 0; padding: 0 0 0 var(--ws-space-3); }
-.kubecode-activity-group li { display: flex; flex-wrap: wrap; gap: var(--ws-space-2); overflow-wrap: anywhere; }
-
-.kubecode-date-separator {
-  align-items: center;
-  color: var(--text-secondary);
-  display: flex;
-  font: var(--ws-font-meta);
-  gap: var(--ws-space-2);
-  margin: var(--ws-space-2) 0;
-}
-
-.kubecode-date-separator::before,
-.kubecode-date-separator::after {
-  border-top: 1px solid var(--border-subtle);
-  content: '';
-  flex: 1 1 auto;
-}
 
 .kubecode-inert-image {
   border: 1px dashed var(--border-subtle);
@@ -2364,23 +1727,11 @@
   padding: 0 var(--ws-space-1);
 }
 
-.kubecode-composer-about,
-.kubecode-composer-to {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  font: var(--ws-font-meta);
-  gap: var(--ws-space-2);
-  min-width: 0;
-}
 
-.kubecode-composer-about-label { color: var(--text-secondary); }
 
-.kubecode-composer-warning { color: var(--feedback-warning-text); font: var(--ws-font-meta); margin: 0; }
 .kubecode-composer-hint { color: var(--text-secondary); font: var(--ws-font-meta); margin: 0; }
-.kubecode-channel-outside { color: var(--text-secondary); font: var(--ws-font-meta); margin: 0; }
-.kubecode-mention-unavailable { color: var(--text-secondary); }
 
+.kubecode-dm-turn { display: flex; flex-direction: column; max-width: var(--ws-reading-width); }
 .kubecode-member-provider {
   align-items: center;
   color: var(--text-secondary);
@@ -2388,15 +1739,8 @@
   gap: var(--ws-space-1);
 }
 
-.kubecode-dm-turn { display: flex; flex-direction: column; max-width: var(--ws-reading-width); }
 
-@media (pointer: coarse) {
-  .kubecode-message-toolbar { opacity: 1; }
-}
 
-@media (max-width: 980px) {
-  .kubecode-message-content { padding-left: 0; }
-}
 
 /* -- Workspace navigation and the on-demand detail area (ADR 0224) ----------- */
 
@@ -2440,16 +1784,6 @@
 .kubecode-detail-pane > h4,
 .kubecode-detail-pane > p,
 .kubecode-detail-pane > button { margin-left: 14px; margin-right: 14px; }
-
-.kubecode-member-profile {
-  align-items: flex-start;
-  display: flex;
-  flex-direction: column;
-  gap: var(--ws-space-2);
-}
-.kubecode-member-profile > h4,
-.kubecode-member-profile > p { margin: 0; }
-.kubecode-detail-pane > .kubecode-member-profile { padding: 0 14px 14px; }
 
 /*
  * The inspector stack (ADR 0228 §3). Every entry is its own scroll container;
@@ -2514,198 +1848,13 @@
 }
 
 /* -- The one Kanban of Tasks and a Task's details (ADR 0225, ADR 0230) ----- */
-.kubecode-task-board {
-  background: var(--surface-app);
-  color: var(--text-primary);
-  container-type: inline-size;
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  gap: var(--ws-space-3);
-  min-height: 0;
-  min-width: 0;
-  overflow: auto;
-  padding: var(--ws-space-3) var(--ws-space-4);
-}
 
-.kubecode-task-needs-you {
-  align-items: center;
-  display: inline-flex;
-  font: var(--ws-font-meta);
-  gap: var(--ws-space-2);
-  min-height: var(--ws-touch-target);
-}
-
-.kubecode-task-empty {
-  align-items: flex-start;
-  display: flex;
-  flex-direction: column;
-  gap: var(--ws-space-2);
-  max-width: var(--ws-reading-width);
-}
-
-.kubecode-task-drafts summary,
-.kubecode-task-archived summary,
-.kubecode-task-records summary {
-  cursor: pointer;
-  font: var(--ws-font-meta);
-  min-height: var(--ws-touch-target);
-}
-
-.kubecode-task-columns {
-  display: grid;
-  gap: var(--ws-space-3);
-  grid-template-columns: repeat(4, minmax(180px, 1fr));
-}
-
-.kubecode-task-column { min-width: 0; }
-.kubecode-task-column h3 {
-  align-items: center;
-  display: flex;
-  font-size: var(--kubecode-ui-font-small);
-  gap: var(--ws-space-1);
-  margin: 0 0 var(--ws-space-1);
-}
-
-.kubecode-task-column ul,
-.kubecode-task-drafts ul,
-.kubecode-task-archived ul { display: flex; flex-direction: column; gap: var(--ws-space-1); list-style: none; margin: 0; padding: 0; }
-
-.kubecode-task-card {
-  background: var(--surface-subtle);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  color: var(--text-primary);
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  gap: var(--ws-space-1);
-  min-height: var(--ws-touch-target);
-  padding: var(--ws-space-2) var(--ws-space-3);
-  text-align: left;
-  width: 100%;
-}
-
-.kubecode-task-card:focus-visible { outline: var(--ws-focus-ring); outline-offset: 2px; }
-.kubecode-task-card[aria-current='true'] { border-color: var(--text-primary); }
-.kubecode-task-card strong { overflow-wrap: anywhere; }
-.kubecode-task-card small { color: var(--text-secondary); font: var(--ws-font-meta); overflow-wrap: anywhere; }
-.kubecode-task-badges { align-items: center; display: flex; flex-wrap: wrap; gap: var(--ws-space-1); min-width: 0; }
-.kubecode-task-condition-reason { color: var(--text-secondary); font: var(--ws-font-meta); overflow-wrap: anywhere; }
 /* On a card the reason takes its own line under the badges. */
-.kubecode-task-condition-reason[data-compact] { flex-basis: 100%; }
-.kubecode-task-card-people { display: flex; flex-wrap: wrap; gap: var(--ws-space-2); font: var(--ws-font-meta); }
-.kubecode-task-card-person { align-items: center; display: inline-flex; gap: var(--ws-space-1); min-width: 0; }
 
 /* One stage at a time on a narrow board; the stage picker exists only there. */
-.kubecode-task-stage-tabs { display: none; }
-.kubecode-task-stage-tab {
-  background: transparent;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  flex: 0 0 auto;
-  font: var(--ws-font-meta);
-  min-height: var(--ws-touch-target);
-  padding: 0 var(--ws-space-2);
-}
-
-.kubecode-task-stage-tab[aria-pressed='true'] { border-bottom-color: var(--text-primary); color: var(--text-primary); }
-.kubecode-task-stage-tab:focus-visible { outline: var(--ws-focus-ring); }
-
-@container (max-width: 980px) {
-  .kubecode-task-columns { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-
-@container (max-width: 640px) {
-  .kubecode-task-stage-tabs { display: flex; gap: var(--ws-space-1); max-width: 100%; overflow-x: auto; }
-  .kubecode-task-columns { grid-template-columns: 1fr; }
-  .kubecode-task-column[data-selected='false'] { display: none; }
-  .kubecode-task-column h3 { display: none; }
-}
 
 /* A Task's details. */
-.kubecode-task-panel { display: flex; flex-direction: column; gap: var(--ws-space-2); min-width: 0; }
-.kubecode-task-next { font: var(--ws-font-body); margin: 0; overflow-wrap: anywhere; }
-.kubecode-task-next[data-tone='warn'] { color: var(--text-primary); font-weight: 600; }
-.kubecode-task-tabs { min-width: 0; }
-.kubecode-task-tabs [role='tablist'] {
-  background: var(--surface-app);
-  max-width: 100%;
-  overflow-x: auto;
-  position: sticky;
-  top: 0;
-  z-index: 1;
-}
 
-.kubecode-task-overview,
-.kubecode-task-results,
-.kubecode-task-activity { display: flex; flex-direction: column; gap: var(--ws-space-3); padding-top: var(--ws-space-2); }
-
-.kubecode-task-overview h4,
-.kubecode-task-results h4,
-.kubecode-task-activity h4 { font-size: var(--kubecode-ui-font-small); margin: 0 0 var(--ws-space-1); }
-
-.kubecode-task-brief { display: flex; flex-direction: column; gap: var(--ws-space-3); margin: 0; }
-.kubecode-task-brief > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.kubecode-task-overview h4,
-.kubecode-task-brief dt { color: var(--text-secondary); font: 600 var(--kubecode-ui-font-small)/1.4 var(--kubecode-ui-font, system-ui, sans-serif); margin: 0; }
-.kubecode-task-brief dd { margin: 0; overflow-wrap: anywhere; }
-.kubecode-task-brief ul { list-style: disc outside; margin: 0; padding-inline-start: 1.25em; }
-.kubecode-task-brief li + li { margin-top: 2px; }
-.kubecode-task-provenance { margin: 0; }
-.kubecode-task-provenance q { display: block; margin: 2px 0; overflow-wrap: anywhere; }
-.kubecode-task-people ul { display: flex; flex-direction: column; gap: var(--ws-space-1); list-style: none; margin: 0; padding: 0; }
-
-.kubecode-task-work,
-.kubecode-task-reviews,
-.kubecode-task-evidence,
-.kubecode-task-timeline,
-.kubecode-task-recent ul,
-.kubecode-task-questions ul { display: flex; flex-direction: column; gap: var(--ws-space-2); list-style: none; margin: 0; padding: 0; }
-
-.kubecode-task-work li,
-.kubecode-task-timeline li,
-.kubecode-task-recent li { align-items: center; display: flex; flex-wrap: wrap; gap: var(--ws-space-1) var(--ws-space-2); min-width: 0; }
-.kubecode-task-timeline q { flex-basis: 100%; overflow-wrap: anywhere; }
-.kubecode-task-recent-message { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-.kubecode-task-waiting,
-.kubecode-task-review,
-.kubecode-task-questions {
-  background: var(--surface-subtle);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  display: flex;
-  flex-direction: column;
-  gap: var(--ws-space-2);
-  padding: var(--ws-space-2) var(--ws-space-3);
-}
-
-.kubecode-task-questions { background: transparent; border: 0; padding: 0; }
-.kubecode-task-evidence-row { display: flex; flex-direction: column; gap: var(--ws-space-1); min-width: 0; }
-.kubecode-task-version { align-items: flex-start; display: flex; flex-wrap: wrap; gap: var(--ws-space-2); }
-.kubecode-task-review-summary { align-items: center; display: flex; flex-wrap: wrap; gap: var(--ws-space-1) var(--ws-space-2); }
-.kubecode-task-review-summary q { flex-basis: 100%; overflow-wrap: anywhere; }
-.kubecode-task-decided { margin: 0; }
-.kubecode-task-decided:focus-visible { outline: var(--ws-focus-ring); }
-
-.kubecode-task-outcome { border: 0; display: flex; flex-direction: column; gap: var(--ws-space-2); margin: 0; min-width: 0; padding: 0; }
-.kubecode-task-outcome legend { font-weight: 600; margin-bottom: var(--ws-space-1); padding: 0; }
-.kubecode-task-outcome-choice { display: flex; flex-direction: column; }
-.kubecode-task-outcome-choice label { align-items: center; display: inline-flex; gap: var(--ws-space-2); min-height: var(--ws-touch-target); }
-.kubecode-task-outcome-choice small { padding-left: calc(var(--ws-space-2) + 16px); }
-
-.kubecode-task-decisions { align-items: flex-start; background: var(--surface-subtle); display: flex; flex-wrap: wrap; gap: var(--ws-space-2); padding: var(--ws-space-2) 0; }
-[data-inspector-layout='screen'] .kubecode-task-decisions {
-  bottom: 0;
-  padding-bottom: calc(var(--ws-space-2) + env(safe-area-inset-bottom));
-  position: sticky;
-}
-
-.kubecode-task-field { display: flex; flex-direction: column; gap: 2px; }
-.kubecode-channel-proposal { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; }
 
 @media (max-width: 900px) {
   .kubecode-channel-workspace { flex-direction: column; overflow-y: auto; }
@@ -2954,19 +2103,6 @@
   overflow-wrap: anywhere;
 }
 
-/* A named reference to a Workspace object (on the official Badge, ADR 0247). */
-.kubecode-reference-chip-version { flex: 0 0 auto; }
-/* A long reference wraps instead of hiding its title or state behind a hover-only tooltip. */
-.kubecode-reference-chip-state { overflow-wrap: anywhere; }
-.kubecode-reference-chip-title {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.kubecode-reference-chip-version { color: var(--text-secondary); }
-.kubecode-reference-chip-state { color: var(--feedback-warning-text); }
-.kubecode-reference-chip[data-state='removed'] .kubecode-reference-chip-title { text-decoration: line-through; }
-.kubecode-reference-chip[data-state='removed'] .kubecode-reference-chip-state { color: var(--ws-danger-text); }
-
 /* The one header of a Workspace view or detail. */
 .kubecode-view-header {
   display: flex;
@@ -3086,248 +2222,21 @@
   color: var(--text-secondary);
   font: var(--ws-font-meta);
 }
-@media (pointer: coarse) {
-  .kubecode-reference-chip-remove { min-height: var(--ws-touch-target); min-width: var(--ws-touch-target); }
-  button.kubecode-reference-chip-open { min-height: var(--ws-touch-target); }
-}
-.kubecode-reference-chip[data-state='unavailable'] .kubecode-reference-chip-state { color: var(--text-secondary); }
 
 /* Text in the danger color must read at 4.5:1; the bright error red is for icons and borders. */
 .kubecode-app { --ws-danger-text: #C53030; }
 :root.dark .kubecode-app,
 :root[data-theme='dark'] .kubecode-app { --ws-danger-text: var(--feedback-error-text); }
 
-/* -- Workspace search, previews, and versioned references (ADR 0231) ------ */
-.kubecode-ws-search-host { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; min-width: 0; }
-.kubecode-ws-search {
-  background: var(--surface-app);
-  display: grid;
-  gap: var(--ws-space-2);
-  padding-bottom: var(--ws-space-2);
-  position: sticky;
-  top: 0;
-  z-index: 1;
-}
-.kubecode-ws-search-field { align-items: center; display: flex; gap: var(--ws-space-2); min-width: 0; }
-.kubecode-ws-search-field input { min-height: var(--ws-touch-target); }
-.kubecode-ws-search-sections { display: flex; flex-wrap: wrap; gap: var(--ws-space-1); }
-.kubecode-ws-search-section { min-height: var(--ws-touch-target); }
-.kubecode-ws-search-count {
-  color: var(--text-secondary);
-  font: var(--ws-font-meta);
-  font-variant-numeric: tabular-nums;
-}
-.kubecode-ws-search-scope,
-.kubecode-ws-search-notice { color: var(--text-secondary); font: var(--ws-font-meta); margin: 0; }
-.kubecode-ws-search-results { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
-.kubecode-ws-search-list { display: grid; gap: 2px; list-style: none; margin: 0; padding: 0; }
-.kubecode-ws-search-more { margin-top: var(--ws-space-1); width: 100%; }
-.kubecode-resource-row {
-  align-items: flex-start;
-  border-radius: 8px;
-  cursor: pointer;
-  display: flex;
-  gap: var(--ws-space-3);
-  min-height: var(--ws-touch-target);
-  padding: var(--ws-space-2) var(--ws-space-3);
-}
-.kubecode-resource-row:hover,
-.kubecode-resource-row[data-active] { background: var(--state-hover, color-mix(in srgb, var(--text-primary) 6%, transparent)); }
-.kubecode-resource-row[aria-selected='true'] { box-shadow: inset 2px 0 0 var(--state-focus-ring); }
-.kubecode-resource-row > svg { flex: 0 0 auto; margin-top: 2px; }
-.kubecode-resource-row-body { display: grid; gap: 2px; min-width: 0; }
-.kubecode-resource-row-title { font: var(--ws-font-subtitle); overflow-wrap: anywhere; }
-.kubecode-resource-row-meta { color: var(--text-secondary); font: var(--ws-font-meta); overflow-wrap: anywhere; }
-.kubecode-resource-row[data-availability='removed'] .kubecode-resource-row-title { text-decoration: line-through; }
-.kubecode-resource-row-summary {
-  color: var(--text-secondary);
-  font: var(--ws-font-meta);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.kubecode-attach-bar {
-  align-items: center;
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--ws-space-2);
-  margin-bottom: var(--ws-space-2);
-  padding: var(--ws-space-2) var(--ws-space-3);
-}
-.kubecode-attach-bar > span { flex: 1 1 16rem; }
-.kubecode-record-preview-meta { align-items: center; display: flex; flex-wrap: wrap; gap: var(--ws-space-2); }
-.kubecode-record-preview-meta strong { overflow-wrap: anywhere; }
-.kubecode-record-preview-related { list-style: none; margin: 0; padding: 0; }
-.kubecode-reference-chip-host { display: contents; }
-
-/* The titlebar search: a field-like button, then the popover. */
-.kubecode-ws-search-launcher {
-  align-items: center;
-  background: var(--surface-app);
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  color: var(--text-secondary);
-  display: flex;
-  gap: var(--ws-space-2);
-  max-width: 32rem;
-  min-height: var(--ws-touch-target);
-  min-width: 0;
-  padding: 0 var(--ws-space-3);
-  width: 100%;
-}
-.kubecode-ws-search-launcher:focus-visible { box-shadow: var(--ws-focus-ring); outline: 2px solid transparent; }
-.kubecode-ws-search-launcher-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.kubecode-ws-search-popover {
-  background: var(--surface-app);
-  border: 1px solid var(--border-subtle);
-  border-radius: 10px;
-  box-shadow: 0 12px 32px color-mix(in srgb, #000 18%, transparent);
-  display: flex;
-  max-height: min(70vh, 560px);
-  padding: var(--ws-space-3);
-  width: min(36rem, calc(100vw - 32px));
-  z-index: 60;
-}
-
-/* Add context: results and the preview side by side when the dialog is wide enough. */
-[data-slot='dialog-content'].kubecode-add-context-dialog {
-  container-type: inline-size;
-  max-height: calc(100vh - 32px);
-  overflow-y: auto;
-  width: min(960px, calc(100vw - 32px));
-}
-@media (min-width: 640px) {
-  [data-slot='dialog-content'].kubecode-add-context-dialog { max-width: min(960px, calc(100vw - 32px)); }
-}
-.kubecode-add-context { display: grid; gap: var(--ws-space-3); min-height: 0; }
-.kubecode-add-context-list,
-.kubecode-add-context-preview { display: flex; flex-direction: column; gap: var(--ws-space-2); min-height: 0; min-width: 0; }
-.kubecode-add-context-list .kubecode-ws-search-results { max-height: 50vh; }
-.kubecode-add-context-actions {
-  align-items: center;
-  background: var(--surface-app);
-  bottom: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--ws-space-2);
-  padding-top: var(--ws-space-2);
-  position: sticky;
-}
-.kubecode-add-context-actions button { min-height: var(--ws-touch-target); }
-.kubecode-add-context-footer { display: flex; justify-content: flex-end; }
-@container (min-width: 720px) {
-  .kubecode-add-context { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  .kubecode-add-context-back { display: none; }
-}
-@container (max-width: 719px) {
-  .kubecode-add-context[data-step='list'] .kubecode-add-context-preview,
-  .kubecode-add-context[data-step='preview'] .kubecode-add-context-list { display: none; }
-}
-@media (max-width: 640px) {
-  [data-slot='dialog-content'].kubecode-add-context-dialog {
-    border-radius: 0;
-    height: 100dvh;
-    max-height: none;
-    max-width: none;
-    width: 100vw;
-  }
-  .kubecode-add-context-actions button { min-height: 44px; }
-  /* The sections scroll in their own row, so the page never scrolls sideways. */
-  .kubecode-ws-search-sections { flex-wrap: nowrap; overflow-x: auto; }
-  .kubecode-ws-search-section { flex: 0 0 auto; }
-}
-
 /* -- What waits on the researcher, and what is working (ADR 0232) ------------- */
-.kubecode-needs-you-list { display: flex; flex-direction: column; gap: var(--ws-space-1); }
-.kubecode-needs-you-group .kubecode-nav-heading { margin: var(--ws-space-1) 10px 0; }
-.kubecode-needs-you-row { align-items: flex-start; gap: var(--ws-space-2); height: auto; min-height: var(--ws-touch-target); }
-.kubecode-needs-you-text { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; }
-/* A title wraps instead of hiding behind a tooltip. */
-.kubecode-needs-you-title { overflow-wrap: anywhere; white-space: normal; }
-.kubecode-needs-you-detail { color: var(--text-secondary); font: var(--ws-font-meta); overflow-wrap: anywhere; white-space: normal; }
-.kubecode-needs-you-row[data-state='resolving'] { opacity: 0.75; }
-.kubecode-needs-you-decision { align-items: flex-start; display: flex; gap: var(--ws-space-2); padding: var(--ws-space-1) 10px; }
-.kubecode-research-nav-note[data-tone='warn'] { color: var(--text-primary); }
 
-.kubecode-execution-strip {
-  border-top: 1px solid var(--border-subtle);
-  display: flex;
-  flex-direction: column;
-  gap: var(--ws-space-2);
-  padding: var(--ws-space-2) var(--ws-space-3);
-}
-.kubecode-execution-body { display: flex; flex-direction: column; gap: var(--ws-space-2); min-height: 0; }
-.kubecode-execution-rows { display: flex; flex-direction: column; gap: var(--ws-space-1); list-style: none; margin: 0; padding: 0; }
-.kubecode-execution-row {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--ws-space-2);
-  min-height: var(--ws-touch-target);
-}
-.kubecode-execution-state { color: var(--text-secondary); flex: 1 1 12rem; font: var(--ws-font-meta); min-width: 0; overflow-wrap: anywhere; }
-.kubecode-execution-row[data-state='failed'] .kubecode-execution-state { color: var(--ws-danger-text); }
-.kubecode-execution-who { align-items: center; display: flex; flex-wrap: wrap; gap: var(--ws-space-2); min-height: var(--ws-touch-target); min-width: 0; }
-.kubecode-execution-pill { align-self: flex-start; border-radius: 999px; gap: var(--ws-space-1); }
-.kubecode-execution-popover {
-  background: var(--surface-popover);
-  border: 0.5px solid var(--ws-hairline-strong);
-  border-radius: var(--ws-radius-md);
-  box-shadow: var(--ws-elevation-soft);
-  max-height: 40vh;
-  overflow-y: auto;
-  padding: var(--ws-space-1);
-  /* As wide as the dock it opens from (set from the dock when it opens). */
-  width: var(--kubecode-execution-popover-width, min(28rem, calc(100vw - 32px)));
-  z-index: 50;
-}
+/* A title wraps instead of hiding behind a tooltip. */
+
 /* Opened by a mouse, the list shows no ring; from the keyboard it does. */
-.kubecode-execution-popover:focus { outline: none; box-shadow: var(--ws-elevation-soft); }
-.kubecode-execution-popover[data-opened-by='keyboard']:focus-visible { box-shadow: var(--ws-focus-ring), var(--ws-elevation-soft); }
-.kubecode-execution-popover[data-opened-by='pointer']:focus-visible { outline: none; }
+
 /* One running item (ADR 0240): who, a queued count and Stop; the Task below. */
-.kubecode-execution-row:has(> .kubecode-execution-line) {
-  align-items: stretch;
-  flex-direction: column;
-  flex-wrap: nowrap;
-  gap: 0;
-  padding-block: var(--ws-space-1);
-}
-.kubecode-execution-line { align-items: center; display: flex; gap: var(--ws-space-2); min-width: 0; }
-.kubecode-execution-line > .kubecode-execution-who { flex: 1 1 auto; flex-wrap: nowrap; min-height: 0; overflow: hidden; }
-.kubecode-execution-queued {
-  background: var(--ws-surface-quiet);
-  border-radius: 999px;
-  color: var(--text-secondary);
-  flex: 0 0 auto;
-  font: var(--ws-font-meta);
-  padding: 0 var(--ws-space-2);
-  white-space: nowrap;
-}
-.kubecode-execution-line .kubecode-stop-button { flex: 0 0 auto; gap: var(--ws-space-1); height: 28px; padding-inline: var(--ws-space-2); }
-.kubecode-execution-line .kubecode-stop-button-text { display: inline; white-space: nowrap; }
-.kubecode-execution-row > .kubecode-execution-state {
-  flex: 0 0 auto;
-  overflow: hidden;
-  padding-inline-start: calc(var(--ws-avatar-sm) + var(--ws-space-2));
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.kubecode-execution-strip .kubecode-elicitation-dock { margin: 0; }
-.kubecode-permission-actions .kubecode-decision,
-.kubecode-elicitation-actions .kubecode-decision { max-width: 100%; }
-.kubecode-permission-actions .kubecode-decision-button,
-.kubecode-elicitation-actions .kubecode-decision-button { height: auto; white-space: normal; }
 
 .kubecode-delivery-status { display: flex; flex-direction: column; gap: var(--ws-space-1); }
-.kubecode-outbox { display: flex; flex-direction: column; gap: var(--ws-space-1); list-style: none; margin: 0; padding: var(--ws-space-1) var(--ws-space-3) 0; }
-.kubecode-outbox-row { display: flex; flex-direction: column; gap: var(--ws-space-1); }
-.kubecode-outbox-text { color: var(--text-secondary); overflow-wrap: anywhere; white-space: pre-wrap; }
-.kubecode-outbox-row[data-state='sending'] .kubecode-outbox-text { opacity: 0.75; }
-.kubecode-outbox-failure { align-items: center; display: flex; flex-wrap: wrap; font: var(--ws-font-meta); gap: var(--ws-space-2); }
-.kubecode-outbox-failure .kubecode-research-error { color: var(--ws-danger-text); }
 .kubecode-delivery-failure {
   align-items: center;
   display: flex;
@@ -3340,26 +2249,12 @@
 .kubecode-delivery-details summary { cursor: pointer; }
 .kubecode-delivery-details ul { margin: var(--ws-space-1) 0 0; overflow-wrap: anywhere; padding-left: var(--ws-space-4); }
 
-.kubecode-task-work { display: flex; flex-direction: column; gap: var(--ws-space-2); }
-.kubecode-round-pause { align-items: center; display: flex; flex-wrap: wrap; gap: var(--ws-space-2); }
-.kubecode-round-pause p { flex: 1 1 14rem; margin: 0; }
-.kubecode-task-waiting,
-.kubecode-task-delivery-issues { display: flex; flex-direction: column; gap: var(--ws-space-1); list-style: none; margin: 0; padding: 0; }
-.kubecode-task-waiting li,
-.kubecode-task-delivery-issues li { align-items: center; display: flex; flex-wrap: wrap; gap: var(--ws-space-2); }
-.kubecode-task-work .kubecode-execution-strip { border-top: 0; padding: 0; }
 /* On a phone the strip never pushes the composer off screen: what waits on
    the researcher is capped and scrolls. */
-@media (max-width: 720px) {
-  .kubecode-execution-body { max-height: min(40dvh, 22rem); overflow-y: auto; overscroll-behavior: contain; }
-  .kubecode-task-work .kubecode-execution-body { max-height: none; overflow: visible; }
-}
+
 @media (pointer: coarse) {
   .kubecode-delivery-failure .kubecode-decision-button,
-  .kubecode-delivery-failure button,
-  .kubecode-task-waiting button,
-  .kubecode-outbox-failure button,
-  .kubecode-execution-row button { min-height: var(--ws-touch-target); }
+  .kubecode-delivery-failure button { min-height: var(--ws-touch-target); }
 }
 
 /* ------------------------------------------------------------------
@@ -3548,8 +2443,7 @@
 
 /* One header for General, Kanban, Resources, Needs you and Members. */
 .kubecode-resources,
-.kubecode-members-view,
-.kubecode-task-board { padding-top: 0; }
+.kubecode-members-view { padding-top: 0; }
 .kubecode-view-header.kubecode-destination-header {
   background: var(--surface-app);
   border-bottom: 0.5px solid var(--ws-hairline-strong);
@@ -3558,24 +2452,10 @@
 }
 .kubecode-resources > .kubecode-destination-header,
 .kubecode-members-view > .kubecode-destination-header { margin: 0 -16px var(--ws-space-3); }
-.kubecode-task-board > .kubecode-destination-header { margin: 0 calc(-1 * var(--ws-space-4)); }
+
 .kubecode-channel-main > .kubecode-destination-header { margin: -12px -16px 0; }
-.kubecode-needs-you-view {
-  background: var(--surface-app);
-  color: var(--text-primary);
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  min-height: 0;
-  min-width: 0;
-  overflow-y: auto;
-}
+
 .kubecode-destination-body { max-width: var(--ws-conversation-width); padding: var(--ws-space-3) var(--ws-space-4); width: 100%; }
-.kubecode-needs-you-view .kubecode-research-nav-list { display: flex; flex-direction: column; gap: 2px; padding: 0; }
-.kubecode-needs-you-view .kubecode-needs-you-row { border-radius: var(--ws-radius-sm); font: var(--ws-font-body); padding: var(--ws-space-2); }
-.kubecode-needs-you-view .kubecode-needs-you-row:hover { background: var(--ws-surface-quiet); }
-.kubecode-needs-you-view .kubecode-nav-heading { padding: 0 var(--ws-space-2); }
-.kubecode-needs-you-view .kubecode-research-nav-note { font: var(--ws-font-body); padding: var(--ws-space-2); }
 
 /* The one inspector: a 360-pixel column beside the view, over a hairline. */
 .kubecode-detail-pane.kubecode-inspector {
@@ -3604,120 +2484,6 @@
   min-height: 0;
   min-width: 0;
 }
-.kubecode-manager-setup {
-  align-items: flex-start;
-  background: var(--feedback-warning-bg);
-  border: 1px solid var(--feedback-warning-border);
-  border-radius: var(--ws-radius-lg);
-  color: var(--text-primary);
-  display: flex;
-  flex: 0 0 auto;
-  flex-wrap: wrap;
-  gap: var(--ws-space-3);
-  margin: var(--ws-space-3) var(--ws-space-4) 0;
-  padding: var(--ws-space-3) var(--ws-space-4);
-}
-.kubecode-manager-setup-actions { align-items: center; display: flex; flex-wrap: wrap; gap: var(--ws-space-2); }
-
-.kubecode-members-tabs { display: flex; flex-direction: column; gap: var(--ws-space-3); max-width: var(--ws-conversation-width); width: 100%; }
-.kubecode-members,
-.kubecode-member-defaults { display: flex; flex-direction: column; gap: var(--ws-space-3); }
-.kubecode-members-header {
-  align-items: flex-start;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--ws-space-2) var(--ws-space-3);
-  justify-content: space-between;
-}
-.kubecode-members-header > div { display: flex; flex: 1 1 240px; flex-direction: column; gap: var(--ws-space-1); min-width: 0; }
-.kubecode-members-header h3 { font: var(--ws-font-subtitle); margin: 0; }
-.kubecode-members-header p { margin: 0; }
-.kubecode-member-list {
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ws-radius-lg);
-  display: flex;
-  flex-direction: column;
-  list-style: none;
-  margin: 0;
-  overflow: hidden;
-  padding: 0;
-}
-.kubecode-member-row {
-  align-items: flex-start;
-  background: var(--surface-card);
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--ws-space-2) var(--ws-space-3);
-  padding: var(--ws-space-3);
-}
-.kubecode-member-row + .kubecode-member-row { border-top: 1px solid var(--border-subtle); }
-.kubecode-member-row[data-state='setup_required'] { box-shadow: inset 3px 0 0 var(--feedback-warning-border); }
-.kubecode-member-main { display: flex; flex: 1 1 280px; flex-direction: column; gap: var(--ws-space-1); min-width: 0; }
-.kubecode-member-main .kubecode-member-identity-text { flex-wrap: wrap; }
-.kubecode-member-actions { align-items: center; display: flex; flex: 0 0 auto; flex-wrap: wrap; gap: var(--ws-space-1); }
-.kubecode-member-row > .kubecode-member-form { flex: 1 1 100%; }
-.kubecode-member-locked {
-  align-items: flex-start;
-  color: var(--text-secondary);
-  display: flex;
-  font: var(--ws-font-meta);
-  gap: var(--ws-space-1);
-  margin: 0;
-}
-.kubecode-member-locked > svg { flex: 0 0 auto; margin-top: 3px; }
-.kubecode-member-form {
-  background: var(--surface-panel);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ws-radius-lg);
-  display: flex;
-  flex-direction: column;
-  gap: var(--ws-space-3);
-  padding: var(--ws-space-3) var(--ws-space-4);
-}
-.kubecode-member-defaults > .kubecode-member-form { background: var(--surface-card); }
-.kubecode-member-form label { display: flex; flex-direction: column; gap: var(--ws-space-1); }
-.kubecode-member-form label > span,
-.kubecode-member-form legend { color: var(--text-primary); font: var(--ws-font-meta); font-weight: 600; }
-.kubecode-member-form fieldset {
-  border: 0;
-  border-top: 1px solid var(--border-subtle);
-  display: flex;
-  flex-direction: column;
-  gap: var(--ws-space-2);
-  margin: 0;
-  min-width: 0;
-  padding: var(--ws-space-3) 0 0;
-}
-.kubecode-member-form fieldset > legend { float: left; padding: 0; width: 100%; }
-.kubecode-member-form fieldset > legend + * { clear: both; }
-.kubecode-member-form fieldset > button { align-self: flex-start; }
-.kubecode-member-form .kubecode-channel-select { max-width: 100%; min-width: 0; }
-.kubecode-member-form input[aria-invalid='true'] { border-color: var(--feedback-error-text); }
-.kubecode-member-config-row { align-items: center; display: grid; gap: var(--ws-space-2); grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; }
-.kubecode-member-restrictions {
-  background: var(--surface-panel);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ws-radius-md);
-  display: flex;
-  flex-direction: column;
-  gap: var(--ws-space-1);
-  padding: var(--ws-space-2) var(--ws-space-3);
-  width: 100%;
-}
-.kubecode-member-restrictions h4 { align-items: center; display: flex; font: var(--ws-font-meta); font-weight: 600; gap: var(--ws-space-1); margin: 0; }
-.kubecode-member-restrictions p { font: var(--ws-font-meta); margin: 0; }
-.kubecode-project-next { color: var(--text-secondary); font: var(--ws-font-meta); margin: 0; }
-
-@media (max-width: 760px) {
-  .kubecode-manager-setup { margin: var(--ws-space-2) var(--ws-space-3) 0; padding: var(--ws-space-3); }
-  .kubecode-manager-setup-actions { width: 100%; }
-  .kubecode-member-actions { width: 100%; }
-  .kubecode-member-form { padding: var(--ws-space-3); }
-  .kubecode-members-tabs [data-slot='tabs-list'] { max-width: 100%; overflow-x: auto; }
-}
-
-/* A message's cited materials as Sources (ADR 0236): aligned with the message text. */
-.kubecode-reference-sources { min-width: 0; }
 
 /*
  * General and DMs as one conversation (#232, ADR 0233): each message is an
@@ -3744,29 +2510,11 @@
 
 .kubecode-channel-messages > .kubecode-research-muted:only-child { margin-block: auto; text-align: center; }
 /* The dock's work sits on the composer's top edge: one compact row or a count. */
-.kubecode-conversation-dock .kubecode-execution-strip { background: transparent; border: 0; padding: 0; }
-.kubecode-conversation-dock .kubecode-execution-rows > .kubecode-execution-row {
-  background: color-mix(in srgb, var(--text-primary) 4%, var(--surface-app));
-  border: 0.5px solid var(--ws-hairline-strong);
-  border-radius: var(--ws-radius-md);
-  padding: 0 var(--ws-space-1) 0 var(--ws-space-3);
-}
-.kubecode-conversation-dock .kubecode-outbox { padding: 0; }
-.kubecode-conversation-dock .kubecode-outbox-row {
-  background: var(--ws-surface-self);
-  border-radius: var(--ws-radius-md);
-  padding: var(--ws-space-2) var(--ws-space-3);
-}
-.kubecode-conversation-dock .kubecode-outbox-row[data-state='failed'] { box-shadow: inset 2px 0 0 var(--feedback-error-text); }
 .kubecode-conversation-dock .kubecode-channel-composer { gap: var(--ws-space-2); }
 
-.kubecode-composer-footer { display: flex; flex-direction: column; gap: var(--ws-space-1); }
 
 /* ADR 0239: a chat. The researcher's messages sit on the right as a tinted
    bubble with no avatar; members' messages sit on the left with theirs. */
-.kubecode-channel-messages .kubecode-message,
-.kubecode-dm-turn { max-width: none; }
-.kubecode-dm-turn { width: 100%; }
 
 .kubecode-conversation-dock {
   max-width: none;
@@ -3778,10 +2526,8 @@
 .kubecode-channel-messages { padding-block-end: var(--ws-space-4); scroll-padding-block-end: var(--ws-space-4); }
 /* A comfortable measure on a wide pane: a member's message about 90 characters, the researcher's 70. */
 
-.kubecode-composer-notice { margin: 0; }
 /* Empty, the card is one line over its tools (ADR 0240); it grows with the text up to a limit, then scrolls. */
 .kubecode-conversation-dock .kubecode-composer { gap: 2px; }
-.kubecode-conversation-dock .kubecode-composer-footer:empty { display: none; }
 
 @media (max-width: 767px) {
   .kubecode-channel-messages { padding-inline: var(--ws-space-3); }
@@ -3793,86 +2539,19 @@
   
   
   /* The conversation keeps room to read: the strip's body scrolls sooner beside the card. */
-  .kubecode-conversation-dock .kubecode-execution-body { max-height: min(28dvh, 16rem); }
+  
 }
 
 /* -- The research Kanban, Task review and Needs you (#234) ------------------- */
 /* The board: four lanes, the cards that wait on the researcher marked. */
-.kubecode-task-column {
-  background: var(--ws-surface-quiet);
-  border-radius: var(--radius-md);
-  padding: var(--ws-space-2);
-}
-.kubecode-task-column h3 { color: var(--text-secondary); padding: 0 var(--ws-space-1); }
-.kubecode-task-column > .kubecode-research-muted { margin: 0; padding: var(--ws-space-1); }
-.kubecode-task-card { background: var(--surface-card); box-shadow: inset 3px 0 0 transparent; }
-.kubecode-task-card[data-needs-you='true'] { box-shadow: inset 3px 0 0 var(--feedback-info-text); }
-.kubecode-task-card:hover { border-color: var(--border-default); }
-.kubecode-task-card[aria-current='true'] { border-color: var(--text-primary); }
-@container (max-width: 640px) {
-  .kubecode-task-column { background: transparent; padding: 0; }
-}
 
 /* A Task in the 360px inspector: the header keeps the Task's facts; what happens next carries Discuss. */
-.kubecode-task-next-step {
-  align-items: center;
-  background: var(--ws-surface-quiet);
-  border-radius: var(--radius-md);
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--ws-space-2);
-  justify-content: space-between;
-  padding: var(--ws-space-2) var(--ws-space-3);
-}
-.kubecode-task-next-step[data-tone='warn'] { box-shadow: inset 3px 0 0 var(--feedback-warning-border); }
-.kubecode-task-next-step .kubecode-task-next { flex: 1 1 14rem; min-width: 0; }
 
 /* Results: evidence as chips, the outcome compact, the decision kept together at the bottom. */
-.kubecode-task-review { background: transparent; }
-.kubecode-task-evidence-row { align-items: flex-start; }
-.kubecode-task-outcome { gap: var(--ws-space-1); }
-.kubecode-task-outcome-choice small { margin-top: -6px; }
-.kubecode-task-decisions {
-  align-items: flex-start;
-  background: var(--surface-app);
-  border-top: 1px solid var(--border-subtle);
-  bottom: 0;
-  margin: 0 calc(-1 * var(--ws-space-3));
-  padding: var(--ws-space-2) var(--ws-space-3);
-  position: sticky;
-  z-index: 1;
-}
-.kubecode-task-decisions-note { color: var(--text-secondary); flex-basis: 100%; font: var(--ws-font-meta); margin: 0; }
 
 /* Activity: the lifecycle as one timeline, General's messages as left-aligned lines. */
-.kubecode-task-timeline { border-left: 1px solid var(--border-default); gap: var(--ws-space-3); margin-left: var(--ws-space-1); padding-left: var(--ws-space-3); }
-.kubecode-task-timeline > li { position: relative; }
-.kubecode-task-timeline > li::before {
-  background: var(--surface-app);
-  border: 2px solid var(--border-default);
-  border-radius: 50%;
-  content: '';
-  height: 9px;
-  left: calc(-1 * var(--ws-space-3) - 5px);
-  position: absolute;
-  top: 6px;
-  width: 9px;
-}
-.kubecode-task-timeline > li:first-child::before { border-color: var(--text-primary); }
-.kubecode-task-recent .kubecode-task-recent-message { display: block; justify-content: flex-start; text-align: start; }
 
 /* Needs you: each decision a row that reads as one thing to open. */
-.kubecode-needs-you-view .kubecode-needs-you-list { max-width: var(--ws-reading-width); }
-.kubecode-needs-you-view .kubecode-research-nav-list { gap: var(--ws-space-1); }
-.kubecode-needs-you-view .kubecode-needs-you-row {
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  padding: var(--ws-space-2) var(--ws-space-3);
-}
-.kubecode-needs-you-view .kubecode-needs-you-row:hover { border-color: var(--border-default); }
-.kubecode-task-decisions { flex-wrap: wrap; row-gap: var(--ws-space-1); }
-.kubecode-task-decisions > .kubecode-decision { flex: 1 1 8rem; min-width: 0; }
-.kubecode-task-decisions > .kubecode-decision > button { width: 100%; }
 
 /* ============================================================
    S4 Session view on official AI Elements (ADR 0245)
@@ -3917,66 +2596,11 @@
 /* Status tones on the official Badge: the text carries the meaning, the tone only adds emphasis. */
 
 /* Kanban: the Card is the frame, its one button the whole card. */
-.kubecode-task-card-frame {
-  background: var(--surface-card);
-  border-radius: var(--radius-md);
-  box-shadow: inset 3px 0 0 transparent;
-  gap: 0;
-  overflow: hidden;
-  padding: 0;
-}
-.kubecode-task-card-frame:has(> [data-needs-you='true']) { box-shadow: inset 3px 0 0 var(--feedback-info-text); }
-.kubecode-task-card-frame:hover { border-color: var(--border-default); }
-.kubecode-task-card-frame:has(> [aria-current='true']) { border-color: var(--text-primary); }
-.kubecode-task-card-frame > .kubecode-task-card { background: transparent; border: 0; border-radius: inherit; box-shadow: none; }
-.kubecode-task-card-frame > .kubecode-task-card:focus-visible { outline-offset: -2px; }
-.kubecode-task-stages { display: contents; }
-.kubecode-task-stage-tabs[data-variant='line'] { height: auto; max-width: 100%; overflow-x: auto; }
-.kubecode-task-stage-tab[data-state='active'] { color: var(--text-primary); }
-.kubecode-task-disclosure {
-  align-items: center;
-  background: none;
-  border: 0;
-  border-radius: var(--ws-radius-sm);
-  color: var(--text-secondary);
-  cursor: pointer;
-  display: flex;
-  font: var(--ws-font-meta);
-  min-height: var(--ws-touch-target);
-  padding: 0;
-  text-align: start;
-}
-.kubecode-task-disclosure:hover,
-.kubecode-task-disclosure[data-state='open'] { color: var(--text-primary); }
-.kubecode-task-disclosure { gap: var(--ws-space-1); }
-.kubecode-task-disclosure-chevron { flex: none; transform: rotate(-90deg); transition: transform 120ms ease; }
-.kubecode-task-disclosure[data-state='open'] .kubecode-task-disclosure-chevron { transform: none; }
-@media (prefers-reduced-motion: reduce) { .kubecode-task-disclosure-chevron { transition: none; } }
-.kubecode-task-disclosure:focus-visible { box-shadow: var(--ws-focus-ring); outline: 2px solid transparent; }
-.kubecode-task-board .kubecode-task-empty { align-items: flex-start; border: 0; padding: 0; text-align: start; }
-.kubecode-task-board .kubecode-task-empty [data-slot='empty-content'] { align-items: flex-start; }
 
 /* Inspector: the brief as a Plan, work as Task items, evidence as Sources of Item rows. */
-.kubecode-task-plan { border-radius: var(--radius-md); gap: 0; padding: var(--ws-space-3) 0; }
-.kubecode-task-plan [data-slot='plan-content'] { padding: 0 var(--ws-space-3); }
-.kubecode-task-work-item,
-.kubecode-task-waiting-item { align-items: center; color: var(--text-primary); display: flex; flex-wrap: wrap; gap: var(--ws-space-1) var(--ws-space-2); min-width: 0; }
-.kubecode-task-sources { color: var(--text-primary); font-size: inherit; margin: 0; }
-.kubecode-task-evidence[data-slot='item-group'] { gap: var(--ws-space-1); }
-.kubecode-task-evidence-row[data-slot='item'] { align-items: flex-start; flex-direction: column; gap: var(--ws-space-1); padding: 0; }
-.kubecode-task-version[data-slot='item-actions'] { align-items: flex-start; flex-wrap: wrap; }
-.kubecode-task-decisions[data-slot='alert'] { border-radius: 0; border-width: 1px 0 0; color: var(--text-primary); }
-.kubecode-task-decision-actions { align-self: stretch; flex-wrap: wrap; gap: var(--ws-space-2); justify-content: flex-start; width: 100%; }
-.kubecode-task-decision-actions > .kubecode-decision { flex: 1 1 8rem; min-width: 0; }
-.kubecode-task-decision-actions > .kubecode-decision > button { width: 100%; }
-.kubecode-evidence-cannot-accept { margin-bottom: var(--ws-space-2); }
 
 /* Needs you: named Item groups, one row per thing to open; Empty when nothing waits. */
-.kubecode-needs-you-item[data-slot='item'] { padding: 0; }
-.kubecode-needs-you-item > .kubecode-needs-you-row { width: 100%; }
-.kubecode-needs-you-decision[data-slot='item'] { flex-wrap: nowrap; }
-.kubecode-needs-you-decision [data-slot='item-content'] { gap: 2px; }
-.kubecode-needs-you-empty { align-items: flex-start; border: 0; padding: var(--ws-space-2); text-align: start; }
+
 /* ==== end S2 ==== */
 
 /* -- General and DMs on the official components (#229 S1, ADR 0242) --------- */
@@ -4006,10 +2630,6 @@
   width: 2rem;
   z-index: 2;
 }
-.kubecode-date-separator { align-items: center; color: var(--text-secondary); display: flex; font: var(--ws-font-meta); gap: var(--ws-space-2); margin: var(--ws-space-2) 0; }
-.kubecode-date-separator::before,
-.kubecode-date-separator::after { content: none; }
-.kubecode-date-separator > .kubecode-date-separator-rule { flex: 1 1 auto; width: auto; }
 
 /* One message: an article around the official Message. Members on the left
    with their avatar, the researcher's own as a tinted bubble on the right. */
@@ -4041,7 +2661,6 @@
 .kubecode-message[data-from='self'] .kubecode-message-recipients > .kubecode-member-identity:last-child { flex: 0 1 auto; min-width: 0; }
 .kubecode-message[data-from='self'] .kubecode-message-recipients .kubecode-member-identity-text { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kubecode-message[data-from='self'] .kubecode-message-recipients .kubecode-member-identity-text > * + * { margin-inline-start: var(--ws-space-2); }
-.kubecode-message[data-from='self'] .kubecode-message-toolbar { margin-left: 0; margin-right: auto; order: -1; }
 .kubecode-message[data-from='self'] .kubecode-message-inner > :not(.kubecode-message-header) {
   background: var(--ws-surface-self);
   border-radius: var(--ws-radius-md);
@@ -4055,108 +2674,32 @@
 /* Cells keep words whole on a phone; the table scrolls inside its box instead (#229). */
 .kubecode-message-body :is(th, td) { overflow-wrap: normal; word-break: normal; }
 .kubecode-message-action { color: var(--text-secondary); }
-.kubecode-dm-turn { display: flex; flex-direction: column; width: 100%; }
 .kubecode-dm-waiting { align-items: center; color: var(--text-secondary); display: flex; font: var(--ws-font-meta); gap: var(--ws-space-2); margin: 0; }
 
 /* Identity: the official Avatar, toned by who someone is; the words say it. */
 .kubecode-conversation-avatar { flex: none; }
 .kubecode-member-identity[data-size='md'] > .kubecode-conversation-avatar { height: var(--ws-avatar-md); width: var(--ws-avatar-md); }
 .kubecode-member-identity[data-size='sm'] > .kubecode-conversation-avatar { height: var(--ws-avatar-sm); width: var(--ws-avatar-sm); }
-.kubecode-conversation-avatar > [data-slot='avatar-fallback'] { color: var(--text-primary); font: 600 11px/1 var(--font-sans, inherit); }
-.kubecode-conversation-avatar[data-role='manager'] > [data-slot='avatar-fallback'] { background: var(--accent-blue-light); box-shadow: inset 0 0 0 1px var(--accent-blue); }
-.kubecode-conversation-avatar[data-role='specialist'] > [data-slot='avatar-fallback'] { background: var(--accent-teal-light); box-shadow: inset 0 0 0 1px var(--accent-teal); }
 .kubecode-conversation-avatar[data-role='researcher'] > [data-slot='avatar-fallback'] { background: var(--accent-purple-light); box-shadow: inset 0 0 0 1px var(--accent-purple); }
-.kubecode-conversation-avatar[data-role='system'] > [data-slot='avatar-fallback'] { background: var(--surface-button); }
 .kubecode-identity-card { display: flex; flex-direction: column; gap: 2px; width: auto; max-width: 20rem; }
 .kubecode-identity-card-name { color: var(--text-primary); font: var(--ws-font-subtitle); }
 
-/* Sources: the references a message cites. */
-.kubecode-reference-sources { margin: 0; }
-.kubecode-reference-sources-trigger { align-items: center; color: var(--text-secondary); display: inline-flex; font: var(--ws-font-meta); gap: var(--ws-space-1); min-height: 24px; }
-.kubecode-reference-sources-trigger[data-state='open'] .kubecode-reference-sources-chevron { transform: rotate(180deg); }
-.kubecode-reference-sources-list { display: flex; flex-wrap: wrap; gap: var(--ws-space-1); list-style: none; margin: 0; padding: 0; }
-
 /* The composer: the official Prompt Input card, one line over its tools when empty (ADR 0240). */
 .kubecode-composer { display: flex; flex-direction: column; gap: 2px; position: relative; }
-.kubecode-prompt-input > [data-slot='input-group'] {
-  background: var(--ws-surface-composer);
-  border-color: transparent;
-  border-radius: var(--ws-radius-composer);
-  box-shadow: var(--ws-elevation-soft);
-}
-/* Reached by keyboard, the card shows the ring the soft elevation above would hide (#229). */
-.kubecode-prompt-input > [data-slot='input-group']:has(:focus-visible) {
-  border-color: var(--ring);
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 50%, transparent), var(--ws-elevation-soft);
-}
 .kubecode-composer-textarea {
   field-sizing: content;
-  font: var(--ws-font-reading);
   max-height: min(40dvh, 18rem);
   min-height: calc(1lh + 2 * var(--ws-space-2));
   overflow-y: auto;
-  padding: var(--ws-space-2) var(--ws-space-3) 0;
 }
-.kubecode-composer-row { padding: 0 var(--ws-space-2) var(--ws-space-2); }
 .kubecode-composer-controls { gap: var(--ws-space-1); }
 .kubecode-composer-context { align-items: flex-start; flex-direction: column; padding: var(--ws-space-2) var(--ws-space-3) 0; }
-.kubecode-composer-context .kubecode-channel-replying { margin: 0; }
-.kubecode-prompt-input .kubecode-composer-footer { align-self: stretch; display: flex; flex-direction: column; gap: var(--ws-space-1); padding: 0 var(--ws-space-3) var(--ws-space-2); }
-.kubecode-mention-menu {
-  background: var(--surface-popover);
-  border-radius: var(--ws-radius-md);
-  bottom: calc(100% + var(--ws-space-1));
-  box-shadow: var(--ws-elevation-soft);
-  left: 0;
-  max-height: 280px;
-  overflow: hidden;
-  padding: 0;
-  position: absolute;
-  right: 0;
-  z-index: 20;
-}
-.kubecode-mention-menu [cmdk-item] { gap: var(--ws-space-2); }
-.kubecode-mention-menu [cmdk-item] small { color: var(--text-secondary); margin-left: auto; }
-.kubecode-mention-menu [cmdk-item][data-selected='true'] { box-shadow: inset 2px 0 0 var(--primary); }
-@media (pointer: coarse) {
-  .kubecode-mention-menu [cmdk-item] { min-height: 44px; }
-}
 
 /* The unsent rows: each the researcher's message in its pending state, with its actions. */
-.kubecode-outbox-message { max-width: none; }
-.kubecode-outbox .kubecode-outbox-content { background: transparent; margin: 0; padding: 0; width: 100%; }
-.kubecode-outbox-status { align-items: center; color: var(--text-secondary); display: inline-flex; font: var(--ws-font-meta); gap: var(--ws-space-1); }
-.kubecode-outbox-actions { flex-wrap: wrap; }
 
 /* The running list in its popover: a Queue of Items, each two lines with one Stop (ADR 0238, 0240). */
-.kubecode-execution-queue { background: transparent; border: 0; box-shadow: none; gap: 0; padding: 0; }
-.kubecode-execution-queue-trigger { background: transparent; font: var(--ws-font-meta); padding: var(--ws-space-1) var(--ws-space-2); }
-.kubecode-execution-queue-list { margin: 0; }
-.kubecode-execution-row:has(> .kubecode-execution-item) { display: block; min-height: 0; padding: 0; }
-.kubecode-execution-item { flex-wrap: nowrap; gap: var(--ws-space-2); padding: var(--ws-space-1) var(--ws-space-1) var(--ws-space-1) var(--ws-space-3); }
-.kubecode-execution-content { gap: 0; min-width: 0; }
-.kubecode-execution-content > .kubecode-execution-line { width: 100%; }
-.kubecode-execution-content > .kubecode-execution-state {
-  /* In a column the strip's 12rem basis would be a height. */
-  flex: 0 0 auto;
-  overflow: hidden;
-  padding-inline-start: calc(var(--ws-avatar-sm) + var(--ws-space-2));
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.kubecode-execution-item .kubecode-stop-button { gap: var(--ws-space-1); height: 28px; padding-inline: var(--ws-space-2); }
-.kubecode-execution-item .kubecode-stop-button-text { display: inline; white-space: nowrap; }
-.kubecode-conversation-dock .kubecode-execution-rows > .kubecode-execution-row:has(> .kubecode-execution-item) {
-  background: color-mix(in srgb, var(--text-primary) 4%, var(--surface-app));
-  border: 0.5px solid var(--ws-hairline-strong);
-  border-radius: var(--ws-radius-md);
-  padding: 0;
-}
 
 /* Requests as Confirmations: the official Alert layout, the Workspace's decision look. */
-.kubecode-elicitation-dock { grid-template-columns: auto minmax(0, 1fr); }
-.kubecode-elicitation-dock > * { grid-column: 1 / -1; }
-.kubecode-elicitation-fields [data-slot='field'] { gap: var(--ws-space-1); }
 
 @media (max-width: 767px) {
   .kubecode-channel-messages { padding-inline: var(--ws-space-3); }
@@ -4178,25 +2721,72 @@
 /* Resource results and member rows are Items inside the existing lists. */
 .kubecode-resource-row[data-slot='item'] { border-radius: var(--ws-radius-md); flex-wrap: nowrap; align-items: flex-start; }
 .kubecode-resource-row-body[data-slot='item-content'] { gap: 2px; }
+
 .kubecode-member-row[data-slot='item'] { align-items: flex-start; border: 0; border-radius: 0; }
 .kubecode-member-row[data-slot='item'] + .kubecode-member-row[data-slot='item'] { border-top: 1px solid var(--border-subtle); }
 /* Member facts are Fields; forms use Field, Select and Input. */
-.kubecode-member-facts[data-slot='field-group'] { gap: var(--ws-space-2); }
-.kubecode-member-facts [data-slot='field'] { gap: var(--ws-space-3); justify-content: space-between; }
-.kubecode-member-facts [data-slot='field-label'] { color: var(--text-secondary); font: var(--ws-font-meta); }
-.kubecode-member-form [data-slot='field'] { gap: var(--ws-space-1); }
-.kubecode-member-form [data-slot='field-label'] { flex-direction: row; font: var(--ws-font-meta); font-weight: 600; }
-.kubecode-member-form [data-slot='field-set'] { border-top: 1px solid var(--border-subtle); gap: var(--ws-space-2); padding-top: var(--ws-space-3); }
-.kubecode-member-form [data-slot='field-set'] > button { align-self: flex-start; }
-.kubecode-member-select { max-width: 100%; min-width: 12rem; }
+
 /* The manager setup notice is an Alert in the warning tone. */
-.kubecode-manager-setup[data-slot='alert'] { display: grid; background: var(--feedback-warning-bg); border-color: var(--feedback-warning-border); color: var(--text-primary); }
-.kubecode-manager-setup[data-slot='alert'] > svg { color: var(--feedback-warning-text); }
-.kubecode-manager-setup [data-slot='alert-description'] p { color: var(--text-secondary); margin: 0; }
-.kubecode-manager-setup[data-slot='alert'] > .kubecode-manager-setup-actions { grid-column: 2; margin-top: var(--ws-space-2); }
+
 /* ==== end S3 ==== */
 
 /* The inspector and its entries take focus only so keyboard reading starts there;
    they are not controls, so they draw no ring around the whole panel (#229). */
 .kubecode-detail-pane[tabindex='-1']:focus,
 .kubecode-inspector-entry[tabindex='-1']:focus { outline: none; }
+
+/* -- Tasks, Needs you and execution feedback: layout only (#259) ------------
+   The official Card, Item, Alert, Empty, Tabs, Collapsible, Confirmation and
+   Queue own every surface here; these rules only place them. */
+.kubecode-task-board {
+  container-type: inline-size;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--ws-space-3);
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  padding: 0 var(--ws-space-4) var(--ws-space-3);
+}
+.kubecode-task-board > .kubecode-destination-header { margin: 0 calc(-1 * var(--ws-space-4)); }
+.kubecode-task-empty { max-width: var(--ws-reading-width); }
+.kubecode-task-columns {
+  display: grid;
+  gap: var(--ws-space-3);
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
+}
+.kubecode-task-column { display: flex; flex-direction: column; gap: var(--ws-space-2); min-width: 0; }
+/* One stage at a time on a narrow board; the stage picker exists only there. */
+.kubecode-task-stage-tabs { display: none; }
+@container (max-width: 980px) {
+  .kubecode-task-columns { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container (max-width: 640px) {
+  .kubecode-task-stage-tabs { display: flex; max-width: 100%; overflow-x: auto; }
+  .kubecode-task-columns { grid-template-columns: 1fr; }
+  .kubecode-task-column[data-selected='false'] { display: none; }
+  .kubecode-task-column-heading { display: none; }
+}
+/* On a phone the review's decision stays in reach at the bottom of the screen. */
+[data-inspector-layout='screen'] .kubecode-task-decisions {
+  bottom: 0;
+  padding-bottom: calc(var(--ws-space-2) + env(safe-area-inset-bottom));
+  position: sticky;
+}
+.kubecode-needs-you-view {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+}
+/* On a phone the strip never pushes the composer off screen: what waits on
+   the researcher is capped and scrolls. */
+@media (max-width: 720px) {
+  .kubecode-execution-body { max-height: min(40dvh, 22rem); overflow-y: auto; overscroll-behavior: contain; }
+}
+@media (max-width: 760px) {
+  .kubecode-conversation-dock .kubecode-execution-body { max-height: min(28dvh, 16rem); }
+}

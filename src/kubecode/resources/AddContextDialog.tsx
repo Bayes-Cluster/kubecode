@@ -1,17 +1,19 @@
 import { useCallback, useContext, useId, useLayoutEffect, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { IconButton } from '@/components/workspace/IconButton'
 import { Icon } from '@/kubecode/icons'
 import { WORKSPACE_COMMAND_ICONS } from '@/kubecode/icons/workspaceIcons'
 import type { Translator } from '@/lib/i18n'
+import { cn } from '@/lib/utils'
 
 import type { KubecodeApi, ProjectContextRef, WorkspaceEvent } from '../api'
 import { usePlaceState } from '../app/location/placeMemory'
 import { WorkspaceNavigationContext } from '../app/location/WorkspaceNavigation'
 import { useAttachTarget } from './attachTarget'
 import { MAX_DRAFT_REFERENCES, type AttachResult, type DraftReference } from './draftReferences'
+import { ReaderEmpty, ReaderNotice } from './ReaderStates'
 import { RecordPreview, type DisplayedRecord } from './RecordPreview'
 import type { SearchResult } from './useWorkspaceSearch'
 import { WorkspaceSearch } from './WorkspaceSearch'
@@ -137,7 +139,7 @@ export function AddContextDialog({
   return (
     <Dialog open={open} onOpenChange={changeOpen}>
       <DialogContent
-        className="kubecode-add-context-dialog"
+        className="@container max-h-[calc(100dvh-32px)] w-[min(960px,calc(100vw-32px))] max-w-[min(960px,calc(100vw-32px))] overflow-y-auto sm:max-w-[min(960px,calc(100vw-32px))] max-sm:h-dvh max-sm:max-h-none max-sm:w-screen max-sm:max-w-none max-sm:rounded-none"
         onCloseAutoFocus={onCloseAutoFocus}
         onEscapeKeyDown={(event) => {
           // Escape leaves the preview first, then closes.
@@ -151,8 +153,8 @@ export function AddContextDialog({
           <DialogTitle>{t('kubecode.vocab.command.addContext')}</DialogTitle>
           <DialogDescription>{t('kubecode.addContext.hint')}</DialogDescription>
         </DialogHeader>
-        <div className="kubecode-add-context" data-step={previewed ? 'preview' : 'list'}>
-          <div className="kubecode-add-context-list" ref={searchArea}>
+        <div className="grid min-h-0 gap-3 @[720px]:grid-cols-2" data-step={previewed ? 'preview' : 'list'}>
+          <div className={cn('flex min-h-0 min-w-0 flex-col gap-2', previewed && '@max-[719px]:hidden')} ref={searchArea}>
             <WorkspaceSearch
               api={api}
               autoFocus
@@ -173,11 +175,11 @@ export function AddContextDialog({
                 setPreviewed({ kind: result.item.ref.kind, id: result.item.ref.id, title: result.item.title })
               }}
             />
-            <p className="kubecode-composer-hint">{t('kubecode.addContext.keys')}</p>
+            <p className="text-xs text-muted-foreground">{t('kubecode.addContext.keys')}</p>
           </div>
           <section
             aria-label={previewed?.title ?? t('kubecode.addContext.choose')}
-            className="kubecode-add-context-preview"
+            className={cn('flex min-h-0 min-w-0 flex-col gap-2', !previewed && '@max-[719px]:hidden')}
             onKeyDown={(event) => {
               if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
                 event.preventDefault()
@@ -188,13 +190,13 @@ export function AddContextDialog({
             {previewed ? (
               <>
                 <IconButton
-                  className="kubecode-add-context-back"
+                  className="self-start @[720px]:hidden"
                   icon={<Icon role="command" source={WORKSPACE_COMMAND_ICONS.back.Icon} />}
                   label={t('kubecode.addContext.backToResults')}
                   onClick={backToResults}
                 />
                 {previewed.kind === 'research' && (
-                  <p className="kubecode-research-notice">{t('kubecode.resources.taskNote')}</p>
+                  <ReaderNotice live={false}>{t('kubecode.resources.taskNote')}</ReaderNotice>
                 )}
                 <RecordPreview
                   api={api}
@@ -208,26 +210,27 @@ export function AddContextDialog({
                   onDisplayed={onDisplayed}
                   onFailed={forgetShown}
                 />
-                <div className="kubecode-add-context-actions">
+                <div className="sticky bottom-0 flex flex-wrap items-center gap-2 bg-background pt-2">
                   <Button
                     aria-describedby={reason ? reasonId : undefined}
+                    className="max-sm:min-h-[44px] pointer-coarse:min-h-[44px]"
                     disabled={reason !== null}
                     type="button"
                     onClick={attachShown}
                   >
                     {t('kubecode.addContext.attachVersion')}
                   </Button>
-                  {reason && <small className="kubecode-research-muted" id={reasonId}>{reason}</small>}
+                  {reason && <p className="text-xs text-muted-foreground" id={reasonId}>{reason}</p>}
                 </div>
               </>
             ) : (
-              <p className="kubecode-research-muted">{t('kubecode.addContext.choose')}</p>
+              <ReaderEmpty>{t('kubecode.addContext.choose')}</ReaderEmpty>
             )}
           </section>
         </div>
-        {refusal && <p className="kubecode-research-error" role="alert">{refusal}</p>}
+        {refusal && <ReaderNotice failed>{refusal}</ReaderNotice>}
         {navigation && (
-        <div className="kubecode-add-context-footer">
+        <DialogFooter>
           <Button
             type="button"
             variant="link"
@@ -240,7 +243,7 @@ export function AddContextDialog({
           >
             {t('kubecode.addContext.browseAll')}
           </Button>
-        </div>
+        </DialogFooter>
         )}
       </DialogContent>
     </Dialog>

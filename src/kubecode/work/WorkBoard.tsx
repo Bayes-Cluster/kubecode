@@ -30,6 +30,7 @@ import type {
 } from '../api'
 import { newClientMessageId } from '../session/sessionModel'
 import type { WorkspaceConnectionState } from '../useWorkspaceEventStream'
+import { ReaderEmpty, ReaderLoading, ReaderNotice } from '../resources/ReaderStates'
 import { WorkCardView } from './WorkCardView'
 import { type FormRequest, WorkInspector } from './WorkInspector'
 import {
@@ -317,29 +318,23 @@ export function WorkBoard({
           </div>
         )}
 
-        {notice && <p className="kubecode-research-error" role="alert">{notice}</p>}
-        {status === 'loading' && <p className="kubecode-research-muted" role="status">{t('kubecode.work.loading')}</p>}
+        {notice && <ReaderNotice failed>{notice}</ReaderNotice>}
+        {status === 'loading' && <ReaderLoading>{t('kubecode.work.loading')}</ReaderLoading>}
         {status === 'error' && (
-          <p className="kubecode-research-error" role="alert">
-            {t('kubecode.work.loadFailed')}{' '}
-            <Button size="xs" variant="ghost" onClick={reload}>{t('kubecode.retry')}</Button>
-          </p>
+          <ReaderNotice action={<Button size="xs" variant="outline" onClick={reload}>{t('kubecode.retry')}</Button>} failed>
+            {t('kubecode.work.loadFailed')}
+          </ReaderNotice>
         )}
         {refreshFailed && (
-          <p className="kubecode-research-error" role="alert">
-            {t('kubecode.work.refreshFailed')}{' '}
-            <Button size="xs" variant="ghost" onClick={reload}>{t('kubecode.retry')}</Button>
-          </p>
+          <ReaderNotice action={<Button size="xs" variant="outline" onClick={reload}>{t('kubecode.retry')}</Button>} failed>
+            {t('kubecode.work.refreshFailed')}
+          </ReaderNotice>
         )}
         {board?.truncated && (
-          <p className="kubecode-research-notice" role="status">
-            {t('kubecode.work.truncated', { shown: board.cards.length, total: board.total })}
-          </p>
+          <ReaderNotice>{t('kubecode.work.truncated', { shown: board.cards.length, total: board.total })}</ReaderNotice>
         )}
         {status === 'ready' && board && board.total === 0 && closedCards.length === 0 && (
-          <p className="kubecode-research-muted">
-            {filterIsEmpty(filter) ? t('kubecode.work.empty') : t('kubecode.work.emptyFiltered')}
-          </p>
+          <ReaderEmpty>{filterIsEmpty(filter) ? t('kubecode.work.empty') : t('kubecode.work.emptyFiltered')}</ReaderEmpty>
         )}
 
         <div className="kubecode-work-columns">
