@@ -109,6 +109,8 @@ export function WorkspaceList({
                 <DropdownMenuTrigger asChild>
                   <SidebarMenuAction
                     aria-label={t('kubecode.projectActionsFor', { name: project.name })}
+                    // Centred on the taller touch-sized row.
+                    className="pointer-coarse:translate-y-[calc((var(--ws-touch-target)-2rem)/2)]"
                     showOnHover
                   >
                     <Ellipsis aria-hidden="true" />

@@ -446,6 +446,8 @@ function SessionRow({
       <DropdownMenuTrigger asChild>
         <SidebarMenuAction
           aria-label={t('kubecode.sessionListActions', { title })}
+          // Centred on the taller touch-sized row.
+          className="pointer-coarse:translate-y-[calc((var(--ws-touch-target)-2rem)/2)]"
           showOnHover={!nested}
         >
           <Ellipsis aria-hidden="true" />
