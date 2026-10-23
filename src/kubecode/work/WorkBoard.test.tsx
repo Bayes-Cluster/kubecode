@@ -121,6 +121,9 @@ describe('WorkBoard', () => {
     expect(within(screen.getByTestId('work-column-executing')).getByText('2', { selector: '[data-slot="badge"]' })).toBeInTheDocument()
 
     const run = screen.getByTestId('work-card-run')
+    // The official Card is the frame; one native button inside opens the item (like TaskCardView).
+    expect(run.tagName).toBe('BUTTON')
+    expect(run.parentElement).toHaveAttribute('data-slot', 'card')
     expect(within(run).getByText('kubecode.work.attemptFailed')).toBeInTheDocument()
     expect(run).toHaveTextContent('3')
     expect(run).toHaveTextContent('Pruner')

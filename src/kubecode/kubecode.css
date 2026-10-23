@@ -1233,27 +1233,8 @@
 .kubecode-work-closed { border: 1px dashed var(--border-subtle); border-radius: 6px; }
 .kubecode-work-closed > div { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
 
-.kubecode-work-card {
-  background: var(--surface-card);
-  border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  cursor: pointer;
-  display: grid;
-  gap: 6px;
-  min-width: 0;
-  padding: 10px;
-}
-.kubecode-work-card:hover,
-.kubecode-work-card:focus-visible,
-.kubecode-work-card.is-selected {
-  background: var(--surface-hover);
-  border-color: var(--border-strong);
-  outline: none;
-}
-.kubecode-work-card[data-lifecycle]:not([data-lifecycle='active']) { opacity: 0.8; }
-.kubecode-work-card[data-acceptance='accepted'] { border-left: 3px solid var(--feedback-success-text); }
-.kubecode-work-card[data-condition='needs_input'] { border-left: 3px solid var(--feedback-warning-text); }
-.kubecode-work-card strong {
+.kubecode-work-card [data-lifecycle]:not([data-lifecycle='active']) { opacity: 0.8; }
+.kubecode-work-card-title {
   font-size: 13px;
   font-weight: 550;
   line-height: 1.35;
@@ -1265,8 +1246,9 @@
 .kubecode-work-card-blocker { color: var(--text-secondary); font-size: 11px; overflow-wrap: anywhere; }
 .kubecode-work-card-blocker { align-items: center; display: inline-flex; gap: 4px; }
 .kubecode-work-card-badges { display: flex; flex-wrap: wrap; gap: 4px; }
-.kubecode-work-card footer {
+.kubecode-work-card-footer {
   align-items: center;
+  align-self: stretch;
   color: var(--text-muted);
   display: flex;
   font-size: 11px;

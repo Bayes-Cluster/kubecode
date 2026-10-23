@@ -1,9 +1,9 @@
 import { AlertCircle, FlaskConical, GitBranch, MessageSquareText, Repeat2 } from 'lucide-react'
 
+import { Card } from '@/components/ui/card'
 import { StatusBadge } from '@/components/workspace/StatusBadge'
 import { AiAgentIcon } from '@/components/AiAgentIcon'
 import type { Translator } from '@/lib/i18n'
-import { cn } from '@/lib/utils'
 
 import type { WorkCard } from '../api'
 import { CONDITION_LABELS, LIFECYCLE_LABELS } from './workModel'
@@ -39,17 +39,19 @@ export function WorkCardView({
   const failed = card.latest_attempt?.status === 'failed'
   const closed = item.lifecycle !== 'active'
   return (
-    <article
+    // The official Card is the frame and owns the surface; one native button opens the item
+    // and shows focus and the inspected item as a ring (the TaskCardView pattern, #259).
+    <Card className="kubecode-work-card gap-0 overflow-hidden py-0">
+    <button
       aria-current={selected ? 'true' : undefined}
-      className={cn('kubecode-work-card', selected && 'is-selected')}
+      className="flex w-full min-w-0 flex-col items-start gap-1.5 rounded-[inherit] p-2.5 text-left outline-none ring-inset focus-visible:ring-[3px] focus-visible:ring-ring aria-[current=true]:ring-2 aria-[current=true]:ring-primary"
       data-acceptance={item.acceptance}
       data-condition={item.condition}
       data-lifecycle={item.lifecycle}
       data-outcome={item.outcome}
       data-testid={`work-card-${item.id}`}
       draggable={draggable}
-      role="button"
-      tabIndex={0}
+      type="button"
       onClick={() => onSelect(card)}
       onDragEnd={onDragEnd}
       onDragStart={(event) => {
@@ -57,14 +59,8 @@ export function WorkCardView({
         event.dataTransfer.effectAllowed = 'move'
         onDragStart(card)
       }}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault()
-          onSelect(card)
-        }
-      }}
     >
-      <strong>{item.title}</strong>
+      <span className="kubecode-work-card-title">{item.title}</span>
       {item.description && (
         <small className="kubecode-work-card-objective">{clip(item.description, 110)}</small>
       )}
@@ -74,7 +70,7 @@ export function WorkCardView({
           {card.round ? ` · ${t('kubecode.work.roundNumber', { round: card.round.number })}` : ''}
         </small>
       )}
-      <div className="kubecode-work-card-badges">
+      <span className="kubecode-work-card-badges">
         {closed && (
           <StatusBadge tone="muted">
             {t(LIFECYCLE_LABELS[item.lifecycle as keyof typeof LIFECYCLE_LABELS])}
@@ -111,7 +107,7 @@ export function WorkCardView({
         {card.delivery?.state === 'pending' && (
           <StatusBadge tone="info">{t('kubecode.work.delivery.pending')}</StatusBadge>
         )}
-      </div>
+      </span>
       {dependencyBlockers.length > 0 && (
         <small className="kubecode-work-card-blocker">
           <GitBranch aria-hidden size={12} />
@@ -134,7 +130,7 @@ export function WorkCardView({
       {progress(card, t) && (
         <small className="kubecode-work-card-progress">{progress(card, t)}</small>
       )}
-      <footer>
+      <span className="kubecode-work-card-footer">
         {card.executor ? (
           <span className="kubecode-work-card-agent">
             {card.executor.agent_id && <AiAgentIcon agent={card.executor.agent_id} size={14} />}
@@ -162,8 +158,9 @@ export function WorkCardView({
             </span>
           )}
         </span>
-      </footer>
-    </article>
+      </span>
+    </button>
+    </Card>
   )
 }
 
