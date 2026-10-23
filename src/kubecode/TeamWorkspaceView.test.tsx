@@ -62,7 +62,7 @@ describe('TeamWorkspaceView', () => {
       />,
     )
 
-    expect(screen.getByText('1', { selector: '[data-metric="running"] strong' })).toBeInTheDocument()
+    expect(screen.getByText('1', { selector: '[data-metric="running"] [data-slot="item-title"]' })).toBeInTheDocument()
     expect(await screen.findByText('Review parser')).toBeInTheDocument()
     expect(screen.queryByText('Explore', { exact: true })).not.toBeInTheDocument()
     expect(screen.queryByText('Review', { exact: true })).not.toBeInTheDocument()

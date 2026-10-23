@@ -84,8 +84,11 @@ describe('TeamSetupView', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'OpenCode' })).toBeEnabled())
     const codexButton = screen.getByRole('button', { name: 'Codex' })
     const openCodeButton = screen.getByRole('button', { name: 'OpenCode' })
-    expect(codexButton).toHaveAttribute('data-variant', 'default')
-    expect(openCodeButton).toHaveAttribute('data-variant', 'default')
+    expect(codexButton).toHaveAttribute('data-slot', 'toggle-group-item')
+    expect(codexButton).toHaveAttribute('aria-pressed', 'true')
+    expect(openCodeButton).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('radio', { name: /kubecode.teamStandard/ })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('textbox', { name: 'kubecode.teamGoal' }).closest('[data-slot="field"]')).not.toBeNull()
     fireEvent.change(screen.getByRole('textbox', { name: 'kubecode.teamGoal' }), {
       target: { value: 'Reproduce the experiment' },
     })
@@ -93,11 +96,11 @@ describe('TeamSetupView', () => {
       target: { value: 'Tests pass\nResults are documented' },
     })
     fireEvent.click(openCodeButton)
-    expect(openCodeButton).toHaveAttribute('data-variant', 'outline')
+    expect(openCodeButton).toHaveAttribute('aria-pressed', 'false')
     fireEvent.click(openCodeButton)
-    expect(openCodeButton).toHaveAttribute('data-variant', 'default')
+    expect(openCodeButton).toHaveAttribute('aria-pressed', 'true')
     fireEvent.click(openCodeButton)
-    expect(openCodeButton).toHaveAttribute('data-variant', 'outline')
+    expect(openCodeButton).toHaveAttribute('aria-pressed', 'false')
     fireEvent.click(screen.getByRole('button', { name: 'kubecode.teamStart' }))
 
     expect(startTeam).toHaveBeenCalledWith('team-1', expect.objectContaining({

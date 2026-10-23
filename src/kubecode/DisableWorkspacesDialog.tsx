@@ -1,22 +1,29 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
 
-import { Button } from '@/components/ui/button'
+import { CircleAlert, TriangleAlert } from 'lucide-react'
+
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { Button } from '@/components/ui/button'
+import { Empty, EmptyDescription, EmptyHeader } from '@/components/ui/empty'
+import { Field, FieldContent, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Spinner } from '@/components/ui/spinner'
 import type { Translator } from '@/lib/i18n'
 import { trackEvent } from '@/lib/telemetry'
 
@@ -27,7 +34,6 @@ import type {
   WorkspaceMigrationResolution,
   WorkspaceMigrationStrategy,
 } from './api'
-import { SystemMessageNotice } from './SystemMessageNotice'
 
 export function DisableWorkspacesDialog({
   api,
@@ -46,6 +52,7 @@ export function DisableWorkspacesDialog({
 }) {
   const [preview, setPreview] = useState<WorkspaceMigrationPreview | null>(null)
   const [resolutions, setResolutions] = useState<Record<string, WorkspaceMigrationStrategy>>({})
+  const fieldId = useId()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -97,70 +104,86 @@ export function DisableWorkspacesDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="kubecode-disable-workspaces-dialog">
-        <DialogHeader>
-          <DialogTitle>{t('kubecode.disableWorkspaces')}</DialogTitle>
-          <DialogDescription>{t('kubecode.disableWorkspacesDescription')}</DialogDescription>
-        </DialogHeader>
-        <div className="kubecode-workspace-migration-list">
-          {loading && !preview && <div className="kubecode-empty-small">{t('kubecode.loading')}</div>}
-          {active && (
-            <SystemMessageNotice
-              detailsLabel={t('kubecode.details')}
-              dismissLabel={t('window.close')}
-              level="warning"
-              message={t('kubecode.stopSessionsBeforeMigration', {
-                count: preview?.active_conversation_ids.length ?? 0,
-              })}
-            />
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col sm:max-w-xl">
+        <AlertDialogHeader>
+          <AlertDialogTitle>{t('kubecode.disableWorkspaces')}</AlertDialogTitle>
+          <AlertDialogDescription>{t('kubecode.disableWorkspacesDescription')}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <FieldGroup className="min-h-0 gap-4 overflow-y-auto">
+          {loading && !preview && (
+            <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
+              <Spinner aria-hidden="true" />
+              {t('kubecode.loading')}
+            </p>
           )}
-          {preview?.worktrees.map((worktree) => (
-            <div className="kubecode-workspace-migration-item" key={worktree.conversation_id}>
-              <div>
-                <strong>{worktree.title || t('kubecode.untitledSession')}</strong>
-                <span>{worktree.dirty ? t('kubecode.uncommittedChanges') : t('kubecode.cleanWorkspace')}</span>
-                <code title={worktree.path}>{worktree.path}</code>
-              </div>
-              <Select
-                value={resolutions[worktree.conversation_id] ?? ''}
-                onValueChange={(strategy) => setResolutions((current) => ({
-                  ...current,
-                  [worktree.conversation_id]: strategy as WorkspaceMigrationStrategy,
-                }))}
-              >
-                <SelectTrigger aria-label={t('kubecode.workspaceResolutionFor', { title: worktree.title })}>
-                  <SelectValue placeholder={t('kubecode.chooseResolution')} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="merge">{t('kubecode.mergeWorkspace')}</SelectItem>
-                  <SelectItem value="export_patch">{t('kubecode.exportPatch')}</SelectItem>
-                  <SelectItem value="discard">{t('kubecode.discardWorkspace')}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          ))}
+          {active && (
+            <Alert>
+              <TriangleAlert />
+              <AlertDescription>
+                {t('kubecode.stopSessionsBeforeMigration', { count: preview?.active_conversation_ids.length ?? 0 })}
+              </AlertDescription>
+            </Alert>
+          )}
+          {preview?.worktrees.map((worktree) => {
+            const id = `${fieldId}-${worktree.conversation_id}`
+            return (
+              <Field key={worktree.conversation_id} orientation="responsive">
+                <FieldContent className="min-w-0">
+                  <FieldLabel htmlFor={id}>{worktree.title || t('kubecode.untitledSession')}</FieldLabel>
+                  <FieldDescription>
+                    {worktree.dirty ? t('kubecode.uncommittedChanges') : t('kubecode.cleanWorkspace')}
+                  </FieldDescription>
+                  <code className="truncate text-xs text-muted-foreground" title={worktree.path}>{worktree.path}</code>
+                </FieldContent>
+                <Select
+                  value={resolutions[worktree.conversation_id] ?? ''}
+                  onValueChange={(strategy) => setResolutions((current) => ({
+                    ...current,
+                    [worktree.conversation_id]: strategy as WorkspaceMigrationStrategy,
+                  }))}
+                >
+                  <SelectTrigger
+                    aria-label={t('kubecode.workspaceResolutionFor', { title: worktree.title })}
+                    className="w-full sm:w-48"
+                    id={id}
+                  >
+                    <SelectValue placeholder={t('kubecode.chooseResolution')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="merge">{t('kubecode.mergeWorkspace')}</SelectItem>
+                      <SelectItem value="export_patch">{t('kubecode.exportPatch')}</SelectItem>
+                      <SelectItem value="discard">{t('kubecode.discardWorkspace')}</SelectItem>
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </Field>
+            )
+          })}
           {preview?.worktrees.length === 0 && !active && (
-            <div className="kubecode-empty-small">{t('kubecode.noWorktreesToMigrate')}</div>
+            <Empty className="p-4 md:p-6">
+              <EmptyHeader>
+                <EmptyDescription>{t('kubecode.noWorktreesToMigrate')}</EmptyDescription>
+              </EmptyHeader>
+            </Empty>
           )}
           {error && (
-            <SystemMessageNotice
-              detailsLabel={t('kubecode.details')}
-              dismissLabel={t('window.close')}
-              level="error"
-              message={error}
-              onDismiss={() => setError(null)}
-            />
+            <Alert variant="destructive">
+              <CircleAlert />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
           )}
-        </div>
-        <DialogFooter>
-          <DialogClose asChild><Button variant="ghost">{t('kubecode.cancel')}</Button></DialogClose>
+        </FieldGroup>
+        <AlertDialogFooter>
+          <AlertDialogCancel>{t('kubecode.cancel')}</AlertDialogCancel>
           <Button disabled={loading || !preview || active || unresolved} onClick={() => void submit()}>
+            {loading && preview && <Spinner aria-hidden="true" data-icon="inline-start" />}
             {t('kubecode.disableWorkspaces')}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   )
 }
 

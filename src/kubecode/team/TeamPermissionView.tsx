@@ -1,6 +1,16 @@
 import {
+  Field,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+  FieldLegend,
+  FieldSet,
+  FieldTitle,
+} from '@/components/ui/field'
+import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -36,36 +46,38 @@ export function NativeLeaderOptions({
   ]
   if (options.length === 0 && !permissionModeLocked) return null
   return (
-    <div className="kubecode-new-session-field">
-      <span>{t('kubecode.teamLeaderConfiguration')}</span>
-      <div className="kubecode-team-native-options">
+    <FieldSet>
+      <FieldLegend variant="label">{t('kubecode.teamLeaderConfiguration')}</FieldLegend>
+      <FieldGroup className="gap-3">
         {permissionModeLocked && (
-          <div className="kubecode-team-native-permission">
-            <strong>{t('kubecode.teamYoloNativePermission')}</strong>
-            <span>{nativePermissionLabel(agentId, t)}</span>
-          </div>
+          <Field>
+            <FieldTitle>{t('kubecode.teamYoloNativePermission')}</FieldTitle>
+            <FieldDescription>{nativePermissionLabel(agentId, t)}</FieldDescription>
+          </Field>
         )}
         {options.map((option) => {
           const label = option.kind === 'mode' ? t('kubecode.agentMode') : option.name
+          const id = `team-leader-${option.kind}-${option.id}`
           if (option.type === 'boolean') {
             return (
-              <label key={`${option.kind}:${option.id}`}>
-                <span>{label}</span>
+              <Field key={`${option.kind}:${option.id}`} orientation="horizontal">
+                <FieldLabel htmlFor={id}>{label}</FieldLabel>
                 <Switch
                   aria-label={label}
                   checked={option.currentValue}
+                  id={id}
                   onCheckedChange={(value) => {
                     void api.setSessionConfig(conversationId, option.id, value)
                       .then(() => api.getSessionState(conversationId))
                       .then(setSessionState)
                   }}
                 />
-              </label>
+              </Field>
             )
           }
           return (
-            <label key={`${option.kind}:${option.id}`}>
-              <span>{label}</span>
+            <Field key={`${option.kind}:${option.id}`}>
+              <FieldLabel htmlFor={id}>{label}</FieldLabel>
               <Select
                 value={option.currentValue}
                 onValueChange={(value) => {
@@ -75,18 +87,20 @@ export function NativeLeaderOptions({
                   void request.then(() => api.getSessionState(conversationId)).then(setSessionState)
                 }}
               >
-                <SelectTrigger aria-label={label}><SelectValue /></SelectTrigger>
+                <SelectTrigger aria-label={label} id={id}><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {option.options.map((item) => (
-                    <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>
-                  ))}
+                  <SelectGroup>
+                    {option.options.map((item) => (
+                      <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>
+                    ))}
+                  </SelectGroup>
                 </SelectContent>
               </Select>
-            </label>
+            </Field>
           )
         })}
-      </div>
-    </div>
+      </FieldGroup>
+    </FieldSet>
   )
 }
 

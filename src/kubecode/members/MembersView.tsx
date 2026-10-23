@@ -68,8 +68,8 @@ export function MembersView({
   return (
     <section aria-label={t('kubecode.nav.members')} className="kubecode-members-view" ref={scroller}>
       <DestinationHeader description={t('kubecode.members.viewDescription')} destination="members" t={t} />
-      <Tabs className="kubecode-members-tabs" value={tab} onValueChange={(value) => setTab(value as typeof tab)}>
-        <TabsList>
+      <Tabs className="w-full max-w-(--ws-conversation-width) gap-3" value={tab} onValueChange={(value) => setTab(value as typeof tab)}>
+        <TabsList className="max-w-full overflow-x-auto">
           <TabsTrigger value="current">{t('kubecode.members.tabs.current')}</TabsTrigger>
           <TabsTrigger value="defaults">{t('kubecode.members.tabs.defaults')}</TabsTrigger>
         </TabsList>

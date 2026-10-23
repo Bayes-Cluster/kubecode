@@ -13,7 +13,24 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from '@/components/ui/empty'
 import { Input } from '@/components/ui/input'
+import {
+  Item,
+  ItemContent,
+  ItemDescription,
+  ItemGroup,
+  ItemMedia,
+  ItemTitle,
+} from '@/components/ui/item'
+import { Spinner } from '@/components/ui/spinner'
 import type { AppLocale, Translator } from '@/lib/i18n'
 import { trackEvent } from '@/lib/telemetry'
 
@@ -473,65 +490,75 @@ export function AgentSessionWorkspace({
     const readyAgents = agents.filter((candidate) => candidate.available)
     return (
       <section className="kubecode-agent-session kubecode-session-empty" data-testid="agent-session-workspace">
-        <img
-          alt=""
-          aria-hidden="true"
-          className="kubecode-session-empty-mark"
-          src={`${import.meta.env.BASE_URL}logo.svg`}
-        />
-        <h1>{projectId ? t('kubecode.startSession') : t('kubecode.firstRunTitle')}</h1>
-        <p>{projectId ? t('kubecode.startSessionDescription') : t('kubecode.firstRunDescription')}</p>
-        <div className="kubecode-agent-readiness-grid">
-          {agents.map((candidate) => (
-            <div
-              className="kubecode-agent-readiness-card"
-              data-ready={candidate.available}
-              key={candidate.id}
-            >
-              <AiAgentIcon agent={candidate.id} size={22} />
-              <span>
-                <strong>{agentName(candidate.id)}</strong>
-                <small>
-                  {candidate.available
-                    ? candidate.version ?? t('kubecode.ready')
-                    : t('kubecode.unavailable')}
-                </small>
-              </span>
+        <Empty>
+          <EmptyHeader>
+            <EmptyMedia>
+              <img
+                alt=""
+                aria-hidden="true"
+                className="kubecode-session-empty-mark"
+                src={`${import.meta.env.BASE_URL}logo.svg`}
+              />
+            </EmptyMedia>
+            <EmptyTitle>
+              <h1>{projectId ? t('kubecode.startSession') : t('kubecode.firstRunTitle')}</h1>
+            </EmptyTitle>
+            <EmptyDescription>
+              {projectId ? t('kubecode.startSessionDescription') : t('kubecode.firstRunDescription')}
+            </EmptyDescription>
+          </EmptyHeader>
+          <EmptyContent className="max-w-xl">
+            <ItemGroup className="kubecode-agent-readiness-grid">
+              {agents.map((candidate) => (
+                <Item data-ready={candidate.available} key={candidate.id} size="sm" variant="outline">
+                  <ItemMedia>
+                    <AiAgentIcon agent={candidate.id} size={22} />
+                  </ItemMedia>
+                  <ItemContent>
+                    <ItemTitle>{agentName(candidate.id)}</ItemTitle>
+                    <ItemDescription>
+                      {candidate.available
+                        ? candidate.version ?? t('kubecode.ready')
+                        : t('kubecode.unavailable')}
+                    </ItemDescription>
+                  </ItemContent>
+                </Item>
+              ))}
+            </ItemGroup>
+            <div className="flex flex-wrap justify-center gap-2">
+              {projectId ? (
+                <Button
+                  aria-label={t('kubecode.startSession')}
+                  disabled={readyAgents.length === 0}
+                  onClick={onNewSession}
+                >
+                  <Plus data-icon="inline-start" />
+                  {t('kubecode.newSession')}
+                </Button>
+              ) : (
+                <Button aria-label={t('kubecode.firstRunTitle')} onClick={onAddProject}>
+                  <Plus data-icon="inline-start" />
+                  {t('kubecode.addProject')}
+                </Button>
+              )}
+              <Button
+                disabled={agentsRefreshing}
+                variant="outline"
+                onClick={() => void onRefreshAgents?.()}
+              >
+                {agentsRefreshing ? <Spinner data-icon="inline-start" /> : <RotateCw data-icon="inline-start" />}
+                {t('kubecode.checkAgain')}
+              </Button>
+              <Button variant="ghost" onClick={onOpenAgentSettings}>
+                <Settings data-icon="inline-start" />
+                {t('kubecode.agentSettings')}
+              </Button>
             </div>
-          ))}
-        </div>
-        <div className="kubecode-session-empty-actions">
-          {projectId ? (
-            <Button
-              aria-label={t('kubecode.startSession')}
-              disabled={readyAgents.length === 0}
-              onClick={onNewSession}
-            >
-              <Plus  size={16}/>
-              {t('kubecode.newSession')}
-            </Button>
-          ) : (
-            <Button aria-label={t('kubecode.firstRunTitle')} onClick={onAddProject}>
-              <Plus  size={16}/>
-              {t('kubecode.addProject')}
-            </Button>
-          )}
-          <Button
-            disabled={agentsRefreshing}
-            variant="outline"
-            onClick={() => void onRefreshAgents?.()}
-          >
-            <RotateCw className={agentsRefreshing ? 'animate-spin' : undefined}  size={16}/>
-            {t('kubecode.checkAgain')}
-          </Button>
-          <Button variant="ghost" onClick={onOpenAgentSettings}>
-            <Settings  size={16}/>
-            {t('kubecode.agentSettings')}
-          </Button>
-        </div>
-        {projectId && readyAgents.length === 0 && (
-          <span className="kubecode-session-empty-hint">{t('kubecode.noReadyAgents')}</span>
-        )}
+            {projectId && readyAgents.length === 0 && (
+              <EmptyDescription>{t('kubecode.noReadyAgents')}</EmptyDescription>
+            )}
+          </EmptyContent>
+        </Empty>
       </section>
     )
   }

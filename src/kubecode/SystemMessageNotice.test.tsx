@@ -32,14 +32,11 @@ describe('SystemMessageProvider', () => {
     expect(alert).toHaveTextContent('Changes')
     expect(alert).toHaveTextContent('The complete diagnostic')
     expect(alert).toHaveAttribute('data-slot', 'alert')
-    expect(alert.querySelector('[data-slot="alert-title"]')).toHaveTextContent('Changes')
-    const content = alert.querySelector('[data-slot="alert-description"] > p')
-    expect(content).toHaveTextContent('The complete diagnostic')
-    expect(content).toHaveClass('truncate')
+    expect(alert).toHaveAttribute('data-level', 'error')
+    expect(alert.querySelector('[data-slot="alert-description"]')).toHaveTextContent('The complete diagnostic')
 
     fireEvent.click(screen.getByRole('button', { name: 'Details', expanded: false }))
     expect(screen.getByRole('button', { name: 'Details', expanded: true })).toBeInTheDocument()
-    expect(content).not.toHaveClass('truncate')
 
     fireEvent.click(screen.getByRole('button', { name: 'Close' }))
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()

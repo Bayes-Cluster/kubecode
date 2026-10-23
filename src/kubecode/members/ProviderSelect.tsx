@@ -20,7 +20,7 @@ export function ProviderSelect({
 }) {
   return (
     <Select disabled={disabled} value={value} onValueChange={(next) => onChange(next as AgentId)}>
-      <SelectTrigger aria-describedby={describedBy} className="kubecode-member-select" id={id}>
+      <SelectTrigger aria-describedby={describedBy} className="w-full sm:w-56" id={id}>
         <SelectValue />
       </SelectTrigger>
       <SelectContent>

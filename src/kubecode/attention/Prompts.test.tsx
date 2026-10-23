@@ -34,6 +34,8 @@ describe('PermissionPrompt', () => {
     expect(card).toHaveAttribute('data-slot', 'alert')
     expect(card).toHaveAttribute('role', 'group')
     expect(card).toHaveAttribute('data-focus-key', 'permission:q1')
+    // The dock/heading rules left kubecode.css with #261; no dead legacy hooks remain.
+    expect(card.outerHTML).not.toMatch(/kubecode-permission-(dock|heading)/)
     expect(card).toHaveTextContent('Analyst asks permission · For Structured pruning')
     expect(card).toHaveTextContent('pytest -q')
     expect(screen.getByTestId('permission-countdown')).toHaveTextContent('2m expires')
@@ -103,6 +105,7 @@ describe('PermissionPrompt', () => {
     expect(onResolve).toHaveBeenCalledTimes(1)
     await act(async () => fail(new Error('network')))
     expect(screen.getByRole('alert')).toHaveTextContent('Your answer was not recorded. Try again.')
+    expect(screen.getByRole('alert')).toHaveAttribute('data-slot', 'alert')
     expect(screen.getByTestId('permission-queue-card')).toBeInTheDocument()
   })
 

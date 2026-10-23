@@ -227,7 +227,7 @@ test.describe('on a desktop', () => {
       await proposed.getByRole('button', { name: `Reply to ${manager.name}` }).click()
       await expect(composer(page)).toHaveValue('')
       await composer(page).fill('half a thought')
-      const about = page.locator('.kubecode-composer-about')
+      const about = page.locator('[data-composer-about]')
       await expect(about).toContainText('Structured pruning')
       await workspaceNav(page).getByRole('button', { name: /^Kanban/ }).click()
       await openGeneral(page)

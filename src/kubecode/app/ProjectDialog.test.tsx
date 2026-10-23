@@ -27,4 +27,26 @@ describe('ProjectDialog', () => {
     expect(api.importProject).not.toHaveBeenCalled()
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })
+
+  it('switches between creating and registering as one choice', async () => {
+    const api = {
+      listDirectories: vi.fn().mockResolvedValue({ path: '/tmp', parent: '/', entries: [] }),
+    } as unknown as KubecodeApi
+    render(<ProjectDialog api={api} open t={t} onOpenChange={vi.fn()} onProject={vi.fn()} />)
+    const create = screen.getByRole('radio', { name: 'kubecode.createProject' })
+    expect(create).toHaveAttribute('aria-checked', 'true')
+    fireEvent.click(screen.getByRole('radio', { name: 'kubecode.importProject' }))
+    expect(screen.getByRole('heading', { name: 'kubecode.importProject' })).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'kubecode.importProject' })).toHaveAttribute('aria-checked', 'true')
+  })
+
+  it('reports a directory that cannot be listed as an alert', async () => {
+    const api = {
+      listDirectories: vi.fn().mockRejectedValue(new Error('Permission denied')),
+    } as unknown as KubecodeApi
+    render(<ProjectDialog api={api} open t={t} onOpenChange={vi.fn()} onProject={vi.fn()} />)
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('Permission denied')
+    expect(alert.closest('[data-slot="alert"]') ?? alert).toHaveAttribute('data-slot', 'alert')
+  })
 })

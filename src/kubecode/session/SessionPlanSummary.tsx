@@ -1,4 +1,4 @@
-import { ChevronRight, ListChecks } from 'lucide-react'
+import { ChevronRight } from 'lucide-react'
 
 import {
   Plan,
@@ -31,25 +31,23 @@ export function SessionPlanSummary({
 }: SessionPlanSummaryProps) {
   return (
     <Plan className="kubecode-session-plan" data-testid="session-plan-summary">
-      <PlanHeader className="kubecode-session-plan-header">
-        <div className="kubecode-session-plan-heading">
-          <ListChecks aria-hidden size={16} />
-          <PlanTitle className="kubecode-session-plan-title">{t('kubecode.agentPlan')}</PlanTitle>
-          <PlanDescription className="kubecode-session-plan-progress">
+      <PlanHeader>
+        <div className="flex min-w-0 flex-col gap-1">
+          <PlanTitle>{t('kubecode.agentPlan')}</PlanTitle>
+          <PlanDescription className="tabular-nums">
             {t('kubecode.session.planProgress', { completed: completedEntries, total: totalEntries })}
           </PlanDescription>
         </div>
         <PlanAction>
           <Button
             aria-label={t('kubecode.showAgentPlan')}
-            className="kubecode-session-plan-trigger"
             size="icon-sm"
             title={t('kubecode.showAgentPlan')}
             type="button"
             variant="ghost"
             onClick={onOpenPlan}
           >
-            <ChevronRight aria-hidden size={16} />
+            <ChevronRight aria-hidden />
           </Button>
         </PlanAction>
       </PlanHeader>

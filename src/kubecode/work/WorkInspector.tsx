@@ -4,6 +4,16 @@ import { StatusBadge } from '@/components/workspace/StatusBadge'
 import { useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import type { Translator } from '@/lib/i18n'
 
@@ -16,6 +26,7 @@ import type {
   WorkspaceEvent,
 } from '../api'
 import type { WorkspaceConnectionState } from '../useWorkspaceEventStream'
+import { ReaderEmpty, ReaderLoading, ReaderNotice } from '../resources/ReaderStates'
 import {
   CONDITION_LABELS,
   hasOpenAttempt,
@@ -112,9 +123,9 @@ export function WorkInspector({
         <header>
           <IconButton icon={<X aria-hidden size={16} />} label={t('kubecode.work.closeInspector')} onClick={onClose} />
         </header>
-        <p className="kubecode-research-muted" role={status === 'error' ? 'alert' : 'status'}>
-          {status === 'error' ? t('kubecode.work.loadFailed') : t('kubecode.work.loading')}
-        </p>
+        {status === 'error'
+          ? <ReaderNotice failed>{t('kubecode.work.loadFailed')}</ReaderNotice>
+          : <ReaderLoading>{t('kubecode.work.loading')}</ReaderLoading>}
       </aside>
     )
   }
@@ -234,28 +245,24 @@ export function WorkInspector({
       </dl>
 
       {item.condition_reason && item.condition !== 'none' && (
-        <p className="kubecode-research-notice">{item.condition_reason}</p>
+        <ReaderNotice live={false}>{item.condition_reason}</ReaderNotice>
       )}
       {item.stage === 'analyzing' && (
-        <p className="kubecode-research-notice" role="status">{t('kubecode.work.analysisWaiting')}</p>
+        <ReaderNotice>{t('kubecode.work.analysisWaiting')}</ReaderNotice>
       )}
       {item.closed_reason && (
-        <p className="kubecode-research-notice">
-          {t('kubecode.work.closedReason', { reason: item.closed_reason })}
-        </p>
+        <ReaderNotice live={false}>{t('kubecode.work.closedReason', { reason: item.closed_reason })}</ReaderNotice>
       )}
       {detail.operable === 'legacy_team' && (
-        <p className="kubecode-research-notice" role="status">
-          {t('kubecode.work.legacyNotice')}
-          {onOpenTeam && detail.team && (
-            <>
-              {' '}
-              <Button size="xs" variant="ghost" onClick={() => onOpenTeam(detail.team!.id)}>
-                {t('kubecode.work.openTeam')}
-              </Button>
-            </>
+        <ReaderNotice
+          action={onOpenTeam && detail.team && (
+            <Button size="xs" variant="outline" onClick={() => onOpenTeam(detail.team!.id)}>
+              {t('kubecode.work.openTeam')}
+            </Button>
           )}
-        </p>
+        >
+          {t('kubecode.work.legacyNotice')}
+        </ReaderNotice>
       )}
 
       <Section title={t('kubecode.work.field.objective')} text={item.description} />
@@ -279,7 +286,7 @@ export function WorkInspector({
 
       <section>
         <h4>{t('kubecode.work.field.attempts')}</h4>
-        {detail.attempts.length === 0 && <p className="kubecode-research-muted">{t('kubecode.work.noAttempts')}</p>}
+        {detail.attempts.length === 0 && <ReaderEmpty>{t('kubecode.work.noAttempts')}</ReaderEmpty>}
         <ol>
           {detail.attempts.map((attempt) => (
             <li key={attempt.id} data-status={attempt.status}>
@@ -357,17 +364,13 @@ export function WorkInspector({
                 ) : (
                   <div className="kubecode-work-command-row">
                     {request.options.length > 0 ? (
-                      <select
-                        aria-label={`${request.question} — ${t('kubecode.work.question.choose')}`}
-                        className="kubecode-channel-select"
+                      <ChoiceSelect
+                        label={`${request.question} — ${t('kubecode.work.question.choose')}`}
+                        options={offeredChoices(request.options)}
+                        placeholder={t('kubecode.work.question.choose')}
                         value={answers[request.id] ?? ''}
-                        onChange={(event) => setAnswers((current) => ({ ...current, [request.id]: event.target.value }))}
-                      >
-                        <option value="">{t('kubecode.work.question.choose')}</option>
-                        {request.options.map((option) => (
-                          <option key={option} value={option}>{option}</option>
-                        ))}
-                      </select>
+                        onChange={(value) => setAnswers((current) => ({ ...current, [request.id]: value }))}
+                      />
                     ) : (
                       <Textarea
                         aria-label={`${request.question} — ${t('kubecode.work.question.placeholder')}`}
@@ -431,9 +434,9 @@ export function WorkInspector({
         <section aria-label={t('kubecode.work.stale.title')}>
           <h4>{t('kubecode.work.stale.title')}</h4>
           {/* A Task's evidence is accepted only by the researcher, at a version they displayed, in its Results (ADR 0230 §4). */}
-          <p className="kubecode-research-notice">
+          <ReaderNotice live={false}>
             {detail.research?.task ? t('kubecode.work.stale.taskHint') : t('kubecode.work.stale.hint')}
-          </p>
+          </ReaderNotice>
           {native && !detail.research?.task && detail.stale_evidence.map((entry) => (
             <div className="kubecode-work-command-row" key={entry.result_id}>
               <span>{entry.kind}: {entry.ref_id}</span>
@@ -481,7 +484,7 @@ export function WorkInspector({
         </section>
       )}
 
-      {error && <p className="kubecode-research-error" role="alert">{error}</p>}
+      {error && <ReaderNotice failed>{error}</ReaderNotice>}
 
       {native && (
         <section className="kubecode-work-commands" aria-label={t('kubecode.work.commands')}>
@@ -521,17 +524,13 @@ export function WorkInspector({
 
           {form === 'assign' && (
             <div className="kubecode-work-command-row">
-              <select
-                aria-label={t('kubecode.work.command.chooseSession')}
-                className="kubecode-channel-select"
+              <ChoiceSelect
+                label={t('kubecode.work.command.chooseSession')}
+                options={assignable.map((session) => ({ label: session.title, value: session.id }))}
+                placeholder={t('kubecode.work.command.chooseSession')}
                 value={sessionId}
-                onChange={(event) => setSessionId(event.target.value)}
-              >
-                <option value="">{t('kubecode.work.command.chooseSession')}</option>
-                {assignable.map((session) => (
-                  <option key={session.id} value={session.id}>{session.title}</option>
-                ))}
-              </select>
+                onChange={setSessionId}
+              />
               <Button
                 disabled={busy || sessionId === ''}
                 size="sm"
@@ -543,25 +542,24 @@ export function WorkInspector({
           )}
 
           {item.stage === 'review' && (
-            <div className="kubecode-work-review">
-              <label>
-                <span>{t('kubecode.work.review.outcome')}</span>
-                <select
-                  className="kubecode-channel-select"
+            <FieldGroup className="kubecode-work-review gap-3">
+              <Field>
+                <FieldLabel htmlFor="work-review-outcome">{t('kubecode.work.review.outcome')}</FieldLabel>
+                <ChoiceSelect
+                  id="work-review-outcome"
+                  label={t('kubecode.work.review.outcome')}
+                  options={OUTCOMES.map((value) => ({
+                    label: t(`kubecode.work.outcome.${value}` as 'kubecode.work.outcome.refuted'),
+                    value,
+                  }))}
                   value={outcome}
-                  onChange={(event) => setOutcome(event.target.value as WorkOutcome)}
-                >
-                  {OUTCOMES.map((value) => (
-                    <option key={value} value={value}>
-                      {t(`kubecode.work.outcome.${value}` as 'kubecode.work.outcome.refuted')}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                <span>{t('kubecode.work.review.reason')}</span>
-                <Textarea rows={2} value={reason} onChange={(event) => setReason(event.target.value)} />
-              </label>
+                  onChange={(value) => setOutcome(value as WorkOutcome)}
+                />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="work-review-reason">{t('kubecode.work.review.reason')}</FieldLabel>
+                <Textarea id="work-review-reason" rows={2} value={reason} onChange={(event) => setReason(event.target.value)} />
+              </Field>
               <div className="kubecode-work-command-row">
                 {form !== 'reject' && (
                   <Button
@@ -587,15 +585,15 @@ export function WorkInspector({
                   </Button>
                 )}
               </div>
-            </div>
+            </FieldGroup>
           )}
 
           {form === 'close' && (
-            <div className="kubecode-work-review">
-              <label>
-                <span>{t('kubecode.work.review.reason')}</span>
-                <Textarea rows={2} value={reason} onChange={(event) => setReason(event.target.value)} />
-              </label>
+            <FieldGroup className="kubecode-work-review gap-3">
+              <Field>
+                <FieldLabel htmlFor="work-close-reason">{t('kubecode.work.review.reason')}</FieldLabel>
+                <Textarea id="work-close-reason" rows={2} value={reason} onChange={(event) => setReason(event.target.value)} />
+              </Field>
               <div className="kubecode-work-command-row">
                 {(['canceled', 'abandoned'] as const).map((lifecycle) => (
                   <Button
@@ -613,17 +611,13 @@ export function WorkInspector({
               </div>
               {replacements.length > 0 && (
                 <div className="kubecode-work-command-row">
-                  <select
-                    aria-label={t('kubecode.work.command.chooseReplacement')}
-                    className="kubecode-channel-select"
+                  <ChoiceSelect
+                    label={t('kubecode.work.command.chooseReplacement')}
+                    options={replacements.map((candidate) => ({ label: candidate.title, value: candidate.id }))}
+                    placeholder={t('kubecode.work.command.chooseReplacement')}
                     value={replacement}
-                    onChange={(event) => setReplacement(event.target.value)}
-                  >
-                    <option value="">{t('kubecode.work.command.chooseReplacement')}</option>
-                    {replacements.map((candidate) => (
-                      <option key={candidate.id} value={candidate.id}>{candidate.title}</option>
-                    ))}
-                  </select>
+                    onChange={setReplacement}
+                  />
                   <Button
                     disabled={busy || reason.trim() === '' || replacement === ''}
                     size="sm"
@@ -640,21 +634,22 @@ export function WorkInspector({
                   </Button>
                 </div>
               )}
-            </div>
+            </FieldGroup>
           )}
 
           <div className="kubecode-work-command-row">
-            <label>
-              <span>{t('kubecode.work.field.priority')}</span>
-              <input
+            <Field className="w-auto" orientation="horizontal">
+              <FieldLabel className="shrink-0" htmlFor="work-priority">{t('kubecode.work.field.priority')}</FieldLabel>
+              <Input
                 aria-label={t('kubecode.work.field.priority')}
-                className="kubecode-channel-select"
+                className="w-24"
+                id="work-priority"
                 inputMode="numeric"
                 placeholder={String(item.priority)}
                 value={priority}
                 onChange={(event) => setPriority(event.target.value)}
               />
-            </label>
+            </Field>
             <Button
               disabled={busy || !/^-?\d{1,6}$/.test(priority)}
               size="sm"
@@ -698,3 +693,43 @@ function Section({ text, title }: { text: string | null; title: string }) {
   )
 }
 
+
+
+/** One official Select for the Inspector's choices; an empty value shows the placeholder. */
+// Radix Select rejects an empty item value and keys items by value, so an
+// Agent's blank or repeated options are dropped; an answer is trimmed anyway.
+function offeredChoices(options: string[]) {
+  return [...new Set(options.map((option) => option.trim()).filter((option) => option !== ''))]
+    .map((option) => ({ label: option, value: option }))
+}
+
+function ChoiceSelect({
+  id,
+  label,
+  onChange,
+  options,
+  placeholder,
+  value,
+}: {
+  id?: string
+  label: string
+  onChange: (value: string) => void
+  options: Array<{ label: string; value: string }>
+  placeholder?: string
+  value: string
+}) {
+  return (
+    <Select value={value} onValueChange={onChange}>
+      <SelectTrigger aria-label={label} className="min-w-40 max-w-full" id={id} size="sm">
+        <SelectValue placeholder={placeholder} />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectGroup>
+          {options.map((option) => (
+            <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+          ))}
+        </SelectGroup>
+      </SelectContent>
+    </Select>
+  )
+}

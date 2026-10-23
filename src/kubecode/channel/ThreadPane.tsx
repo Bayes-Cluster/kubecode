@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ViewHeader } from '@/components/workspace/ViewHeader'
@@ -139,10 +140,10 @@ export function ThreadPane({
           ? t('kubecode.channel.linkedTo', { title: linked.title })
           : t('kubecode.channel.notLinked')}
         level={3}
-        meta={<span className="kubecode-legacy-thread-topic">{thread.title}</span>}
+        meta={<span className="text-muted-foreground [overflow-wrap:anywhere]">{thread.title}</span>}
         title={t('kubecode.channel.legacyThread.title')}
       />
-      <p className="kubecode-legacy-thread-note">{t('kubecode.channel.legacyThread.readOnly')}</p>
+      <Alert role="note"><AlertDescription>{t('kubecode.channel.legacyThread.readOnly')}</AlertDescription></Alert>
       <div className="kubecode-channel-link">
         <Select value={selected} onValueChange={setChoice}>
           <SelectTrigger aria-label={t('kubecode.channel.linkLabel')} className="max-w-full min-w-0" size="sm">
@@ -200,7 +201,7 @@ export function ThreadPane({
           </Button>
         )}
       </div>
-      {link.error && <p className="kubecode-research-error" role="alert">{link.error}</p>}
+      {link.error && <Alert variant="destructive"><AlertDescription>{link.error}</AlertDescription></Alert>}
       <MessageList
         directory={directory}
         emptyLabel={t('kubecode.channel.threadEmpty')}
@@ -214,7 +215,7 @@ export function ThreadPane({
         t={t}
         onOpenReference={onOpenReference}
       />
-      <div className="kubecode-legacy-thread-actions">
+      <div className="flex justify-end">
         <Button disabled={!root} size="sm" variant="outline" onClick={() => root && onReplyInGeneral(root)}>
           <Icon role="command" source={WORKSPACE_COMMAND_ICONS.reply.Icon} />
           {t('kubecode.channel.legacyThread.replyInGeneral')}

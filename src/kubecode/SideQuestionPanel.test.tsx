@@ -21,10 +21,13 @@ describe('SideQuestionPanel', () => {
       t={createTranslator('en')}
     />)
 
+    expect(screen.getByTestId('side-question-panel')).toHaveAttribute('data-slot', 'collapsible')
     expect(screen.getByText('Waiting for Claude')).toBeInTheDocument()
+    expect(screen.getByText('Are tests passing?').closest('[data-slot="item"]')).not.toBeNull()
     expect(screen.getByText('The focused tests pass.')).toHaveClass('select-text')
     fireEvent.click(screen.getByRole('button', { name: /Side questions/ }))
     expect(screen.queryByText('The focused tests pass.')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Side questions/ })).toHaveAttribute('data-slot', 'collapsible-trigger')
   })
 
   it('copies a completed answer', () => {

@@ -1,4 +1,5 @@
-import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Command, CommandGroup, CommandItem, CommandList } from '@/components/ui/command'
 
 import type { AcpCommand } from './acpCommands'
 
@@ -11,6 +12,13 @@ type AcpCommandMenuProps = {
   unavailableLabel: string
 }
 
+function commandKey(command: AcpCommand): string {
+  return `${command.providerIndex}:${command.name}`
+}
+
+// The composer keeps focus and owns arrow/Enter handling
+// (useComposerController.handleCommandKeyDown); the official Command list
+// renders the suggestions and mirrors that selection through `value`.
 export function AcpCommandMenu({
   commands,
   label,
@@ -19,36 +27,42 @@ export function AcpCommandMenu({
   selectedIndex,
   unavailableLabel,
 }: AcpCommandMenuProps) {
+  const selected = commands[selectedIndex]
   return (
-    <div aria-label={label} className="kubecode-command-suggestions" role="listbox">
-      {commands.map((command, index) => {
-        const disabled = command.ambiguous || command.input.kind === 'unsupported'
-        return (
-          <Button
-            aria-disabled={disabled}
-            aria-selected={index === selectedIndex}
-            className="kubecode-command-suggestion"
-            data-selected={index === selectedIndex}
-            key={`${command.providerIndex}:${command.name}`}
-            onClick={() => {
-              if (!disabled) onSelect(command)
-            }}
-            onPointerMove={() => onHover(index)}
-            role="option"
-            type="button"
-            variant="ghost"
-          >
-            <code>/{command.name}</code>
-            <span className="kubecode-command-description">{command.description}</span>
-            {command.input.kind === 'text' && command.input.hint !== undefined && (
-              <small className="kubecode-command-hint">{command.input.hint}</small>
-            )}
-            {disabled && (
-              <small className="kubecode-command-hint">{unavailableLabel}</small>
-            )}
-          </Button>
-        )
-      })}
-    </div>
+    <Command
+      className="kubecode-command-suggestions h-auto rounded-lg border shadow-md"
+      label={label}
+      shouldFilter={false}
+      value={selected ? commandKey(selected) : ''}
+      onValueChange={(value) => {
+        const index = commands.findIndex((command) => commandKey(command) === value)
+        if (index >= 0) onHover(index)
+      }}
+    >
+      <CommandList label={label}>
+        <CommandGroup>
+          {commands.map((command) => {
+            const disabled = command.ambiguous || command.input.kind === 'unsupported'
+            return (
+              <CommandItem
+                disabled={disabled}
+                key={commandKey(command)}
+                value={commandKey(command)}
+                onSelect={() => {
+                  if (!disabled) onSelect(command)
+                }}
+              >
+                <code>/{command.name}</code>
+                <span className="min-w-0 flex-1 truncate text-muted-foreground">{command.description}</span>
+                {command.input.kind === 'text' && command.input.hint !== undefined && (
+                  <Badge variant="outline">{command.input.hint}</Badge>
+                )}
+                {disabled && <Badge variant="secondary">{unavailableLabel}</Badge>}
+              </CommandItem>
+            )
+          })}
+        </CommandGroup>
+      </CommandList>
+    </Command>
   )
 }

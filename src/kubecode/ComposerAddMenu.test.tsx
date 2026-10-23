@@ -185,11 +185,30 @@ describe('ComposerAddMenu', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Add context' }))
 
-    expect(screen.getByRole('dialog', { name: 'Add context' })).toHaveStyle({
-      bottom: `${window.innerHeight - 10 + 12}px`,
-      left: '10px',
-      width: '500px',
-    })
+    // The official Popover places it above the composer; it is as wide as the composer.
+    const palette = screen.getByRole('dialog', { name: 'Add context' })
+    expect(palette).toHaveAttribute('data-slot', 'popover-content')
+    expect(palette).toHaveStyle({ width: '500px' })
+  })
+
+  it('closes with Escape through the official Popover and returns focus to its button', async () => {
+    render(
+      <ComposerAddMenu
+        api={{} as KubecodeApi}
+        commands={commands}
+        conversationId="session-1"
+        onInsert={vi.fn()}
+        onReference={vi.fn()}
+        projectId="project-1"
+        t={createTranslator('en')}
+      />,
+    )
+    const trigger = screen.getByRole('button', { name: 'Add context' })
+    fireEvent.click(trigger)
+    const palette = screen.getByRole('dialog', { name: 'Add context' })
+    fireEvent.keyDown(palette, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Add context' })).not.toBeInTheDocument())
+    expect(trigger).toHaveFocus()
   })
 
   it('inserts a native Agent skill or command from the add menu', async () => {
@@ -209,7 +228,7 @@ describe('ComposerAddMenu', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Add context' }))
     expect(screen.getByRole('dialog', { name: 'Add context' })).toBeInTheDocument()
-    fireEvent.change(screen.getByRole('textbox', { name: 'Search skills, commands, and files' }), {
+    fireEvent.change(screen.getByRole('combobox', { name: 'Search skills, commands, and files' }), {
       target: { value: 'review' },
     })
     fireEvent.click(screen.getByRole('button', { name: /review/i }))
@@ -217,7 +236,7 @@ describe('ComposerAddMenu', () => {
     expect(onInsert).toHaveBeenCalledWith('/review ', 'command')
   })
 
-  it('uses the same ranked collision-safe capability selection from the add menu', () => {
+  it('uses the same ranked collision-safe capability selection from the add menu', async () => {
     const onCapability = vi.fn()
     render(
       <ComposerAddMenu
@@ -241,9 +260,10 @@ describe('ComposerAddMenu', () => {
     const options = screen.getAllByRole('option')
     expect(options).toHaveLength(2)
     expect(options[0]).toHaveTextContent('Project skill')
-    expect(options[1]).toBeDisabled()
+    expect(options[1]).toHaveAttribute('aria-disabled', 'true')
     expect(input).toHaveAttribute('aria-controls', screen.getByRole('listbox').id)
-    expect(input).toHaveAttribute('aria-activedescendant', options[0].id)
+    expect(screen.getByRole('listbox').closest('[data-slot="command"]')).not.toBeNull()
+    await waitFor(() => expect(options[0]).toHaveAttribute('aria-selected', 'true'))
     expect(screen.queryByText('This Agent has not exposed any skills or commands yet.')).not.toBeInTheDocument()
     fireEvent.keyDown(input, { key: 'Enter' })
 
@@ -253,6 +273,51 @@ describe('ComposerAddMenu', () => {
       kind: 'skill',
     }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('moves through enabled capabilities with the official Command keyboard model and accepts with Tab', async () => {
+    const onCapability = vi.fn()
+    const catalog: ComposerCatalogSnapshot = {
+      ...capabilityCatalog,
+      items: [
+        ...capabilityCatalog.items,
+        {
+          id: 'cap:project:release', kind: 'skill', name: 'release', description: 'Cut a release',
+          source_label: 'Project skill', scope: 'project', input_hint: null,
+          enabled: true, disabled_reason: null,
+        },
+      ],
+    }
+    render(
+      <ComposerAddMenu
+        api={{} as KubecodeApi}
+        capabilityCatalog={catalog}
+        capabilityLabels={capabilityLabels}
+        capabilityStatus="ready"
+        commands={[]}
+        conversationId="session-1"
+        onCapability={onCapability}
+        onInsert={vi.fn()}
+        onReference={vi.fn()}
+        projectId="project-1"
+        t={createTranslator('en')}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Add context' }))
+    const input = screen.getByRole('combobox', { name: 'Search skills, commands, and files' })
+    const enabled = screen.getAllByRole('option').filter((option) => option.getAttribute('aria-disabled') !== 'true')
+    expect(enabled).toHaveLength(2)
+    // cmdk highlights the first enabled row; it names it as active once the arrows move.
+    await waitFor(() => expect(enabled[0]).toHaveAttribute('aria-selected', 'true'))
+    fireEvent.keyDown(input, { key: 'ArrowDown' })
+    await waitFor(() => expect(input).toHaveAttribute('aria-activedescendant', enabled[1].id))
+    fireEvent.keyDown(input, { key: 'ArrowDown' })
+    // Wraps past the disabled row back to the first enabled one.
+    await waitFor(() => expect(input).toHaveAttribute('aria-activedescendant', enabled[0].id))
+    fireEvent.keyDown(input, { key: 'ArrowUp' })
+    await waitFor(() => expect(input).toHaveAttribute('aria-activedescendant', enabled[1].id))
+    fireEvent.keyDown(input, { key: 'Tab' })
+    expect(onCapability).toHaveBeenCalledWith(expect.objectContaining({ id: enabled[1].getAttribute('data-value') }))
   })
 
   it('shows a graceful capability absence without hiding native commands', () => {
@@ -359,5 +424,83 @@ describe('ComposerAddMenu', () => {
     expect(option).toBeDefined()
     // Choosing a reference closes the menu; it started nothing else.
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+  it('steps back from an inner panel with Escape instead of closing the whole popover', async () => {
+    render(
+      <ComposerAddMenu
+        api={{} as KubecodeApi}
+        commands={[]}
+        conversationId="session-1"
+        onInsert={vi.fn()}
+        onReference={vi.fn()}
+        onTerminalContext={vi.fn()}
+        projectId="project-1"
+        t={createTranslator('en')}
+        terminalSources={[{ terminalId: 'terminal-1', paneIndex: 1, selectedText: null }]}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Add context' }))
+    fireEvent.click(screen.getByRole('button', { name: /Reference terminal output/i }))
+    const row = screen.getByRole('button', { name: /Attach recent output from Terminal pane 1/i })
+    fireEvent.keyDown(row, { key: 'Escape' })
+    expect(screen.getByRole('dialog', { name: 'Add context' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Reference terminal output/i })).toBeInTheDocument()
+    fireEvent.keyDown(screen.getByRole('dialog', { name: 'Add context' }), { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Add context' })).not.toBeInTheDocument())
+  })
+
+  it('peels the Project work preview inside the real popover before stepping back or closing', async () => {
+    const item = {
+      ref: { kind: 'finding' as const, id: 'f1', revision: '2' },
+      title: 'Accuracy holds',
+      summary: 'Pruned model within 1 percent',
+      provenance: { author: 'agent', updated_at: null, research_id: 'r1', parent: null, state: null },
+      availability: 'available' as const,
+    }
+    const api = {
+      readProjectContext: vi.fn().mockReturnValue(new Promise(() => {})),
+      searchProjectContext: vi.fn().mockResolvedValue({ items: [item], next_cursor: null, truncated: false }),
+    } as unknown as KubecodeApi
+    render(
+      <ComposerAddMenu
+        api={api}
+        commands={[]}
+        conversationId="session-1"
+        onInsert={vi.fn()}
+        onProjectContext={vi.fn()}
+        onReference={vi.fn()}
+        projectId="project-1"
+        t={createTranslator('en')}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Add context' }))
+    fireEvent.click(screen.getByRole('button', { name: /Reference Project work/i }))
+    await screen.findByRole('option', { name: /Accuracy holds/ })
+    fireEvent.click(screen.getByRole('button', { name: 'Preview selected' }))
+    const search = screen.getByRole('combobox', { name: 'Search Project work' })
+    expect(screen.getByRole('region', { name: /preview/i })).toBeInTheDocument()
+    fireEvent.keyDown(search, { key: 'Escape' })
+    expect(screen.queryByRole('region', { name: /preview/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Search Project work' })).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Add context' })).toBeInTheDocument()
+  })
+
+  it('keeps menu rows touch-sized on coarse pointers', () => {
+    render(
+      <ComposerAddMenu
+        api={{} as KubecodeApi}
+        commands={[]}
+        conversationId="session-1"
+        onInsert={vi.fn()}
+        onReference={vi.fn()}
+        onTerminalContext={vi.fn()}
+        projectId="project-1"
+        t={createTranslator('en')}
+        terminalSources={[{ terminalId: 'terminal-1', paneIndex: 1, selectedText: null }]}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Add context' }))
+    expect(screen.getByRole('button', { name: /Reference terminal output/i }).className)
+      .toContain('pointer-coarse:min-h-11')
   })
 })

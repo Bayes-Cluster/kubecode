@@ -1,10 +1,9 @@
 import { CircleAlert, Eye, FlaskConical, Loader2 } from 'lucide-react'
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { Command, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import type { Translator } from '@/lib/i18n'
-import { cn } from '@/lib/utils'
 
 import type { KubecodeApi, ProjectContextItem, ProjectContextKind, ProjectContextRef } from './api'
 import {
@@ -49,6 +48,14 @@ type ComposerProjectWorkPickerProps = {
  * starts an Agent or any other work. Project files are never offered here: a
  * Session cites files under its own execution root.
  */
+/**
+ * Keeps a button's own Enter and arrow keys from reaching the surrounding
+ * Command, which would otherwise treat them as list navigation or selection.
+ */
+function keepKeysFromCommand(event: KeyboardEvent) {
+  if (['ArrowDown', 'ArrowUp', 'End', 'Enter', 'Home'].includes(event.key)) event.stopPropagation()
+}
+
 export function ComposerProjectWorkPicker({
   api,
   conversationId,
@@ -65,7 +72,6 @@ export function ComposerProjectWorkPicker({
   const [activeIndex, setActiveIndex] = useState(0)
   const [preview, setPreview] = useState<PreviewState>(CLOSED_PREVIEW)
   const requestRef = useRef(0)
-  const listboxId = useId()
   const kinds = useMemo(
     () => PROJECT_WORK_FILTERS.find((entry) => entry.id === filter)?.kinds ?? undefined,
     [filter],
@@ -142,31 +148,34 @@ export function ComposerProjectWorkPicker({
   const choose = (item: ProjectContextItem) => onSelect(item)
   const openPreview = (target: ProjectContextItem) => setPreview({ scope, status: 'open', target })
 
-  const move = (direction: 1 | -1) => {
-    if (enabledIndexes.length === 0) return
-    const position = Math.max(0, enabledIndexes.indexOf(current))
-    setActiveIndex(enabledIndexes[(position + direction + enabledIndexes.length) % enabledIndexes.length])
-  }
-
   const kindLabel = (ref: ProjectContextRef) => t(PROJECT_CONTEXT_KIND_LABELS[ref.kind])
   const unavailableLabel = (item: ProjectContextItem) => t(
     item.availability === 'removed' ? 'kubecode.projectWorkRemoved' : 'kubecode.projectWorkChanged',
   )
   const closePreview = () => setPreview(CLOSED_PREVIEW)
-  const hasList = ready && rows.length > 0
+  const rowKey = (item: ProjectContextItem) => `${item.ref.kind}:${item.ref.id}`
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+    {/* The official Command (cmdk) owns the combobox, the listbox, the active row,
+    arrows with wrap-around, Enter, and skipping unavailable rows. The server
+    ranks and pages results, so Command neither filters nor sorts them. */}
+    <Command
+      className="min-h-0 flex-1 rounded-none bg-transparent"
+      label={t('kubecode.searchProjectWork')}
+      loop
+      onValueChange={(key) => {
+        const index = rows.findIndex((item) => rowKey(item) === key)
+        if (index >= 0) setActiveIndex(index)
+      }}
+      shouldFilter={false}
+      value={activeItem ? rowKey(activeItem) : ''}
+    >
       <div className="border-b border-border p-2">
-        <Input
-          aria-activedescendant={hasList && current >= 0 ? `${listboxId}-option-${current}` : undefined}
-          aria-autocomplete="list"
-          aria-controls={hasList ? listboxId : undefined}
-          aria-expanded={hasList}
+        <CommandInput
           aria-label={t('kubecode.searchProjectWork')}
           autoFocus
-          className="h-9 border-0 bg-transparent shadow-none focus-visible:ring-0"
-          onChange={(event) => setQuery(event.target.value)}
+          className="h-9"
           onKeyDown={(event) => {
             // IME composition must never select, move, or dismiss.
             if (event.nativeEvent.isComposing) return
@@ -175,25 +184,25 @@ export function ComposerProjectWorkPicker({
               event.preventDefault()
               event.stopPropagation()
               closePreview()
-            } else if (event.key === 'ArrowDown') {
-              event.preventDefault()
-              move(1)
-            } else if (event.key === 'ArrowUp') {
-              event.preventDefault()
-              move(-1)
             } else if (event.key === 'ArrowRight' && activeItem && query === '') {
               event.preventDefault()
               openPreview(activeItem)
-            } else if ((event.key === 'Enter' || (event.key === 'Tab' && !event.shiftKey)) && activeItem) {
+            } else if (event.key === 'Tab' && !event.shiftKey && activeItem) {
+              // Tab accepts the active row, as Enter does through Command.
               event.preventDefault()
               choose(activeItem)
             }
           }}
+          onValueChange={setQuery}
           placeholder={t('kubecode.searchProjectWork')}
-          role="combobox"
           value={query}
         />
-        <div aria-label={t('kubecode.projectWorkFilters')} className="mt-1 flex flex-wrap gap-1" role="group">
+        <div
+          aria-label={t('kubecode.projectWorkFilters')}
+          className="mt-1 flex flex-wrap gap-1"
+          onKeyDown={keepKeysFromCommand}
+          role="group"
+        >
           {PROJECT_WORK_FILTERS.map((entry) => (
             <Button
               aria-pressed={filter === entry.id}
@@ -213,6 +222,7 @@ export function ComposerProjectWorkPicker({
         <p className="min-w-0 text-xs text-muted-foreground">{t('kubecode.projectWorkReadOnly')}</p>
         <Button
           aria-label={t('kubecode.projectWorkPreviewSelected')}
+          onKeyDown={keepKeysFromCommand}
           className="h-7 shrink-0 gap-1 px-2 text-xs"
           disabled={!activeItem}
           onClick={() => activeItem && openPreview(activeItem)}
@@ -243,25 +253,19 @@ export function ComposerProjectWorkPicker({
             {t('kubecode.projectWorkEmpty')}
           </p>
         ) : (
-          <ul aria-label={t('kubecode.projectWorkResults')} id={listboxId} role="listbox">
-            {rows.map((item, index) => {
+          <CommandList aria-label={t('kubecode.projectWorkResults')} className="max-h-none overflow-visible">
+            <CommandGroup className="p-0">
+            {rows.map((item) => {
               const enabled = selectable(item)
               return (
-                <li
-                  aria-disabled={!enabled}
-                  aria-selected={index === current}
-                  className={cn(
-                    'flex cursor-pointer items-start gap-3 rounded-xl px-3 py-2',
-                    index === current && 'bg-accent text-accent-foreground',
-                    !enabled && 'cursor-not-allowed opacity-60',
-                  )}
+                <CommandItem
+                  className="items-start gap-3 py-2 pointer-coarse:min-h-11"
+                  disabled={!enabled}
                   data-focus-key={`resource:${item.ref.kind}:${item.ref.id}`}
                   data-scroll-anchor={`resource:${item.ref.kind}:${item.ref.id}`}
-                  id={`${listboxId}-option-${index}`}
-                  key={`${item.ref.kind}:${item.ref.id}`}
-                  onClick={() => enabled && choose(item)}
-                  onMouseEnter={() => enabled && setActiveIndex(index)}
-                  role="option"
+                  key={rowKey(item)}
+                  onSelect={() => choose(item)}
+                  value={rowKey(item)}
                 >
                   <FlaskConical aria-hidden className="mt-0.5 shrink-0" size={18} />
                   <span className="min-w-0">
@@ -289,10 +293,11 @@ export function ComposerProjectWorkPicker({
                       </small>
                     )}
                   </span>
-                </li>
+                </CommandItem>
               )
             })}
-          </ul>
+            </CommandGroup>
+          </CommandList>
         )}
         {ready && list.truncatedKinds.length > 0 && (
           <p className="px-3 py-2 text-xs text-muted-foreground" role="note">
@@ -308,11 +313,19 @@ export function ComposerProjectWorkPicker({
           </p>
         )}
         {ready && list.nextCursor && (
-          <Button className="mt-1 w-full" onClick={loadMore} size="sm" type="button" variant="ghost">
+          <Button
+            className="mt-1 w-full"
+            onClick={loadMore}
+            onKeyDown={keepKeysFromCommand}
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
             {t('kubecode.projectWorkLoadMore')}
           </Button>
         )}
       </div>
+    </Command>
       {preview.status !== 'closed' && (
         <section
           aria-label={t('kubecode.projectWorkPreview')}

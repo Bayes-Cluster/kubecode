@@ -109,7 +109,7 @@ describe('Kubecode workspace', () => {
         await screen.findByRole('button', { name: 'New session' })
         fireEvent.click(screen.getByRole('button', { name: 'New session' }))
         if (mode === 'import') {
-          fireEvent.click(screen.getByRole('button', { name: 'Import Agent session' }))
+          fireEvent.click(screen.getByRole('radio', { name: 'Import Agent session' }))
           await screen.findByText('Race session')
         } else {
           fireEvent.change(screen.getByRole('textbox', { name: 'Session title' }), {
@@ -190,7 +190,7 @@ describe('Kubecode workspace', () => {
 
     render(<KubecodeApp api={api} />)
     fireEvent.click(await screen.findByRole('button', { name: 'Settings' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Notifications' }))
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Notifications' }))
     fireEvent.click(screen.getByRole('button', { name: 'Send test' }))
 
     await waitFor(() => expect(MockNotification.deliveries).toEqual([
@@ -253,7 +253,7 @@ describe('Kubecode workspace', () => {
 
     render(<KubecodeApp api={api} />)
     fireEvent.click(await screen.findByRole('button', { name: 'Settings' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Agents' }))
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Agents' }))
     fireEvent.click(screen.getByRole('switch', { name: 'Allow direct teammate chat' }))
 
     await waitFor(() => expect(localStorage.getItem('kubecode:agent-preferences:v1'))
@@ -301,7 +301,7 @@ describe('Kubecode workspace', () => {
 
     render(<KubecodeApp api={api} />)
     fireEvent.click(await screen.findByRole('button', { name: 'Settings' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Agents' }))
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Agents' }))
     const dialog = within(screen.getByRole('dialog'))
     fireEvent.click(dialog.getByRole('button', { name: 'Check again' }))
 
@@ -388,7 +388,7 @@ describe('Kubecode workspace', () => {
     })
     render(<KubecodeApp api={settingsApi({ ilinkStatus })} />)
     fireEvent.click(await screen.findByRole('button', { name: 'Settings' }))
-    fireEvent.click(screen.getByRole('button', { name: 'WeChat' }))
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'WeChat' }))
     expect(await screen.findByTestId('wechat-settings-panel')).toBeInTheDocument()
     expect(await screen.findByRole('button', { name: 'Connect WeChat' })).toBeInTheDocument()
     // The Settings panel and the shell's binding view each load status once.
@@ -403,7 +403,7 @@ describe('Kubecode workspace', () => {
       .mockImplementationOnce(() => new Promise((resolve) => { finishRefresh = resolve }))
     render(<KubecodeApp api={settingsApi({ runtimeStatus })} />)
     fireEvent.click(await screen.findByRole('button', { name: 'Settings' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Agents' }))
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Agents' }))
     expect(screen.getByRole('status', { name: '' })).toHaveTextContent('Loading Runtime status')
     expect(screen.getByRole('button', { name: 'Refresh Runtime status' })).toBeDisabled()
 
@@ -468,7 +468,7 @@ describe('Kubecode workspace', () => {
       render(<KubecodeApp api={settingsApi({ runtimeStatus })} />)
 
       fireEvent.click(await screen.findByRole('button', { name: 'Settings' }))
-      fireEvent.click(screen.getByRole('button', { name: 'Agents' }))
+      fireEvent.mouseDown(screen.getByRole('tab', { name: 'Agents' }))
       expect(within(screen.getByTestId('runtime-status-panel')).getByRole('status'))
         .toHaveTextContent('Loading Runtime status')
       fireEvent.click(screen.getByRole('button', { name: 'Close' }))
@@ -488,7 +488,7 @@ describe('Kubecode workspace', () => {
       })
 
       fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
-      fireEvent.click(screen.getByRole('button', { name: 'Agents' }))
+      fireEvent.mouseDown(screen.getByRole('tab', { name: 'Agents' }))
       expect(within(screen.getByTestId('runtime-status-panel')).getByRole('status'))
         .toHaveTextContent('Loading Runtime status')
       expect(screen.queryByText('91')).not.toBeInTheDocument()
@@ -521,7 +521,7 @@ describe('Kubecode workspace', () => {
       })
     render(<KubecodeApp api={settingsApi({ runtimeStatus })} />)
     fireEvent.click(await screen.findByRole('button', { name: 'Settings' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Agents' }))
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Agents' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Runtime status could not be loaded')
     fireEvent.click(screen.getByRole('button', { name: 'Refresh Runtime status' }))
     expect(await screen.findByText('Warm limit')).toBeInTheDocument()
@@ -539,7 +539,7 @@ describe('Kubecode workspace', () => {
   ])('shows Runtime status as unavailable when %s', async (_case, api) => {
     render(<KubecodeApp api={api} />)
     fireEvent.click(await screen.findByRole('button', { name: 'Settings' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Agents' }))
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Agents' }))
     expect(await screen.findByText('Runtime status is unavailable.')).toBeInTheDocument()
     expect(screen.getByTestId('runtime-status-panel')).not.toHaveTextContent('10')
   })
@@ -1297,9 +1297,11 @@ describe('Kubecode workspace', () => {
     expect(await screen.findByRole('button', { name: 'Demo' })).toBeInTheDocument()
     expect(await screen.findByTestId('agent-session-workspace')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'New session' }))
-    expect(screen.getByRole('button', { name: 'Start new' })).toHaveAttribute('aria-pressed', 'true')
-    fireEvent.click(screen.getByRole('button', { name: 'Team' }))
-    expect(screen.getByRole('button', { name: 'Team' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('radio', { name: 'Start new' })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('radio', { name: 'Start new' })).toHaveAttribute('data-slot', 'toggle-group-item')
+    fireEvent.click(screen.getByRole('radio', { name: 'Team' }))
+    expect(screen.getByRole('radio', { name: 'Team' })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('textbox', { name: 'Team name' }).closest('[data-slot="field"]')).not.toBeNull()
     expect(screen.getByRole('textbox', { name: 'Team name' })).not.toBeRequired()
     expect(screen.getByRole('button', { name: 'Create' })).toBeEnabled()
     fireEvent.change(screen.getByRole('textbox', { name: 'Team name' }), {
@@ -1578,7 +1580,7 @@ describe('Kubecode workspace', () => {
     expect(screen.queryByRole('textbox', { name: 'Project name' })).not.toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: 'Full path on this server' })).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Import project' }))
+    fireEvent.click(screen.getByRole('radio', { name: 'Import project' }))
     expect(await screen.findByRole('option', { name: /demo/ })).toBeInTheDocument()
     expect(api.listDirectories).toHaveBeenCalledWith(undefined)
   })

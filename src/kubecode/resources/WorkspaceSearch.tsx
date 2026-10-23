@@ -1,16 +1,21 @@
 import { useEffect, useId, useRef, useState, type ReactNode, type Ref } from 'react'
 
+import { CheckIcon } from 'lucide-react'
+
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Item, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@/components/ui/item'
+import { Command, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
+import { ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@/components/ui/item'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Icon } from '@/kubecode/icons'
-import { WORKSPACE_COMMAND_ICONS, WORKSPACE_OBJECT_ICONS } from '@/kubecode/icons/workspaceIcons'
+import { WORKSPACE_OBJECT_ICONS } from '@/kubecode/icons/workspaceIcons'
 import type { Translator } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
 import type { KubecodeApi, ProjectContextKind, WorkspaceEvent } from '../api'
 import { usePlaceState } from '../app/location/placeMemory'
 import { objectKindOf } from '../references/referenceLabels'
+import { ReaderEmpty, ReaderLoading, ReaderNotice } from './ReaderStates'
 import { resourceFocusKey } from './referenceKinds'
 import { resultMeta } from './resultMeta'
 import {
@@ -106,20 +111,11 @@ export function WorkspaceSearch({
   })
   const { results, status } = search
   useEffect(() => { onStatusChange?.(status) }, [onStatusChange, status])
-  const listboxId = useId()
   const scopeId = useId()
-  const optionId = (key: string) => `${listboxId}-${encodeURIComponent(key).replace(/%/g, '_')}`
   const activeIndex = Math.max(0, results.findIndex((entry) => entry.key === activeKey))
   const active = results.length > 0 ? results[activeIndex] : undefined
   const ready = status === 'ready'
 
-  const move = (to: number) => {
-    if (results.length === 0) return
-    const index = Math.min(results.length - 1, Math.max(0, to))
-    setActiveKey(results[index].key)
-    setRefusal(null)
-    document.getElementById(optionId(results[index].key))?.scrollIntoView?.({ block: 'nearest' })
-  }
   const choose = (result: SearchResult) => {
     setActiveKey(result.key)
     setRefusal(null)
@@ -156,190 +152,204 @@ export function WorkspaceSearch({
   // The walk's limits matter when they could explain a missing file: nothing found, or files cut short.
   const filesNote = sections.includes('files') && ready && (results.length === 0 || search.truncatedKinds.includes('file'))
   const input = useRef<HTMLInputElement>(null)
+  const countLabel = (counted: { count: number; more: boolean }) => (
+    counted.more ? t('kubecode.search.countMore', { count: counted.count }) : String(counted.count)
+  )
 
   return (
-    <div className={cn('kubecode-ws-search-host', `kubecode-ws-search-host-${mode}`)}>
-      <div className="kubecode-ws-search">
-        <div className="kubecode-ws-search-field">
-          <Icon role="command" size="secondary" source={WORKSPACE_COMMAND_ICONS.search.Icon} />
-          <Input
-            aria-activedescendant={active ? optionId(active.key) : undefined}
-            aria-autocomplete="list"
-            aria-controls={listboxId}
-            aria-describedby={scopeId}
-            aria-expanded={results.length > 0}
-            aria-label={t('kubecode.search.label', { workspace: workspaceName })}
-            autoFocus={autoFocus}
-            data-focus-key={inputFocusKey}
-            placeholder={t('kubecode.search.placeholder')}
-            ref={input}
-            role="combobox"
-            value={query}
-            onChange={(event) => {
-              setQuery(event.target.value)
-              setActiveKey(null)
-              setRefusal(null)
-            }}
-            onKeyDown={(event) => {
-              // IME composition must never move, choose, or dismiss.
-              if (event.nativeEvent.isComposing) return
-              if (event.key === 'ArrowDown') {
+    // The official Command (cmdk) owns the combobox, the listbox, the active row, and the arrow keys.
+    // The server ranks and pages the results, so Command neither filters nor sorts them.
+    <Command
+      className="min-h-0 min-w-0 flex-1 gap-2"
+      data-mode={mode}
+      label={t('kubecode.search.label', { workspace: workspaceName })}
+      loop={false}
+      shouldFilter={false}
+      value={active?.key ?? ''}
+      onValueChange={(key) => {
+        setActiveKey(key || null)
+        setRefusal(null)
+      }}
+    >
+      <div className="flex flex-col gap-2">
+        <CommandInput
+          aria-describedby={scopeId}
+          autoFocus={autoFocus}
+          data-focus-key={inputFocusKey}
+          placeholder={t('kubecode.search.placeholder')}
+          ref={input}
+          value={query}
+          onValueChange={(next) => {
+            setQuery(next)
+            setActiveKey(null)
+            setRefusal(null)
+          }}
+          onKeyDown={(event) => {
+            // IME composition never moves, chooses, or dismisses (Command ignores it too).
+            if (event.nativeEvent.isComposing || event.keyCode === 229) return
+            if ((event.key === 'Home' || event.key === 'End') && query !== '') {
+              // With words typed, Home and End move the caret, not the active row.
+              event.stopPropagation()
+            } else if (event.key === 'Enter') {
+              // Command would choose; here attach mode attaches, and nothing happens until results are in.
+              event.preventDefault()
+              if (!active || !ready) return
+              if (mode === 'attach') attach(active)
+              else choose(active)
+            } else if (event.key === 'ArrowRight' && mode === 'attach' && active && ready
+              && event.currentTarget.selectionStart === query.length) {
+              event.preventDefault()
+              choose(active)
+            } else if (event.key === 'Escape') {
+              if (query !== '') {
                 event.preventDefault()
-                move(activeIndex + 1)
-              } else if (event.key === 'ArrowUp') {
+                event.stopPropagation()
+                setQuery('')
+                setActiveKey(null)
+              } else if (onEscape) {
                 event.preventDefault()
-                move(activeIndex - 1)
-              } else if (event.key === 'Home' && results.length > 0 && query === '') {
-                event.preventDefault()
-                move(0)
-              } else if (event.key === 'End' && results.length > 0 && query === '') {
-                event.preventDefault()
-                move(results.length - 1)
-              } else if (event.key === 'Enter' && active && ready) {
-                event.preventDefault()
-                if (mode === 'attach') attach(active)
-                else choose(active)
-              } else if (event.key === 'ArrowRight' && mode === 'attach' && active && ready
-                && event.currentTarget.selectionStart === query.length) {
-                event.preventDefault()
-                choose(active)
-              } else if (event.key === 'Escape') {
-                if (query !== '') {
-                  event.preventDefault()
-                  event.stopPropagation()
-                  setQuery('')
-                  setActiveKey(null)
-                } else if (onEscape) {
-                  event.preventDefault()
-                  event.stopPropagation()
-                  onEscape()
-                }
+                event.stopPropagation()
+                onEscape()
               }
-            }}
-          />
-        </div>
+            }
+          }}
+        />
         {mode !== 'quick' && (
-          <div aria-label={t('kubecode.search.sectionsLabel')} className="kubecode-ws-search-sections" role="group">
+          <ToggleGroup
+            aria-label={t('kubecode.search.sectionsLabel')}
+            className="w-full justify-start max-sm:overflow-x-auto sm:flex-wrap"
+            size="sm"
+            spacing={1}
+            type="multiple"
+            value={sections}
+            variant="outline"
+            onValueChange={(next: string[]) => {
+              const chosen = RESOURCE_SECTION_ORDER.filter((section) => next.includes(section))
+              const changed = RESOURCE_SECTION_ORDER.find((section) => chosen.includes(section) !== sections.includes(section))
+              if (changed) toggle(changed)
+            }}
+          >
             {RESOURCE_SECTION_ORDER.map((section) => {
-              const pressed = sections.includes(section)
-              const counted = pressed ? sectionCount(section) : null
+              const counted = sections.includes(section) ? sectionCount(section) : null
               const label = t(RESOURCE_SECTIONS[section].label)
               return (
-                <Button
+                <ToggleGroupItem
                   aria-label={counted
                     ? t(counted.more ? 'kubecode.search.sectionCountMore' : 'kubecode.search.sectionCount', { section: label, count: counted.count })
                     : label}
-                  aria-pressed={pressed}
-                  className="kubecode-ws-search-section"
+                  className="shrink-0 pointer-coarse:min-h-[44px]"
                   key={section}
-                  size="sm"
-                  type="button"
-                  variant={pressed ? 'secondary' : 'ghost'}
-                  onClick={() => toggle(section)}
+                  value={section}
                 >
                   <Icon role="identity" size="secondary" source={WORKSPACE_OBJECT_ICONS[RESOURCE_SECTIONS[section].icon].Icon} />
                   <span>{label}</span>
-                  {counted && (
-                    <span className="kubecode-ws-search-count">
-                      {counted.more ? t('kubecode.search.countMore', { count: counted.count }) : counted.count}
-                    </span>
-                  )}
-                </Button>
+                  {counted && <Badge className="tabular-nums" variant="secondary">{countLabel(counted)}</Badge>}
+                </ToggleGroupItem>
               )
             })}
-          </div>
+          </ToggleGroup>
         )}
-        <p className="kubecode-ws-search-scope" id={scopeId} role="note">
+        <p className="text-xs text-muted-foreground" id={scopeId} role="note">
           {reported.length > 0 && <span>{describeScope(reported, workspaceName, t, locale ?? 'en')} </span>}
           <span>{t('kubecode.search.scopeMatch')} </span>
           <span>{t('kubecode.search.privateExcluded')}</span>
         </p>
-        {filesNote && (
-          <p className="kubecode-ws-search-notice">{t('kubecode.search.filesSkipped')}</p>
-        )}
+        {filesNote && <ReaderNotice live={false}>{t('kubecode.search.filesSkipped')}</ReaderNotice>}
         {ready && truncatedSections.length > 0 && (
-          <p className="kubecode-ws-search-notice">
+          <ReaderNotice live={false}>
             {t('kubecode.search.truncated', { kinds: sectionList(truncatedSections, t, locale ?? 'en') })}
-          </p>
+          </ReaderNotice>
         )}
         {search.stale && (
-          <p className="kubecode-ws-search-notice" role="status">
-            {t('kubecode.search.stale')}{' '}
-            <Button size="xs" variant="outline" onClick={search.refresh}>{t('kubecode.search.refresh')}</Button>
-          </p>
+          <ReaderNotice action={<Button size="xs" variant="outline" onClick={search.refresh}>{t('kubecode.search.refresh')}</Button>}>
+            {t('kubecode.search.stale')}
+          </ReaderNotice>
         )}
-        {refusal && <p className="kubecode-research-error" role="alert">{refusal}</p>}
+        {refusal && <ReaderNotice failed>{refusal}</ReaderNotice>}
       </div>
-      <div aria-busy={status === 'loading'} className="kubecode-ws-search-results" data-testid="search-results" ref={listRef}>
+      <div
+        aria-busy={status === 'loading'}
+        className={cn('flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto', mode === 'attach' && 'max-h-[50vh]')}
+        data-testid="search-results" ref={listRef}>
         {status === 'idle' ? (
-          <p className="kubecode-research-muted" role="status">{t('kubecode.search.noSections')}</p>
+          <ReaderEmpty>{t('kubecode.search.noSections')}</ReaderEmpty>
         ) : status === 'loading' ? (
-          <p className="kubecode-research-muted" role="status">{t('kubecode.search.loading')}</p>
+          <ReaderLoading>{t('kubecode.search.loading')}</ReaderLoading>
         ) : status === 'error' ? (
-          <p className="kubecode-research-error" role="alert">
-            {t('kubecode.search.failed')}{' '}
-            <Button size="xs" variant="ghost" onClick={search.retry}>{t('kubecode.vocab.command.retry')}</Button>
-          </p>
+          <ReaderNotice
+            action={<Button size="xs" variant="outline" onClick={search.retry}>{t('kubecode.vocab.command.retry')}</Button>}
+            failed
+          >
+            {t('kubecode.search.failed')}
+          </ReaderNotice>
         ) : results.length === 0 ? (
-          <div className="kubecode-research-muted" role="status">
+          <ReaderEmpty>
             {words ? (
               <>
-                <p>{t('kubecode.search.empty', { sections: sectionList(sections, t, locale ?? 'en'), query: words })}</p>
-                <p>{t('kubecode.search.emptyHint')}</p>
+                <span className="block">{t('kubecode.search.empty', { sections: sectionList(sections, t, locale ?? 'en'), query: words })}</span>
+                <span className="block">{t('kubecode.search.emptyHint')}</span>
               </>
-            ) : (
-              <p>{t('kubecode.search.emptyRecent')}</p>
-            )}
-          </div>
+            ) : t('kubecode.search.emptyRecent')}
+          </ReaderEmpty>
         ) : null}
-        <ul aria-label={t('kubecode.search.results')} className="kubecode-ws-search-list" id={listboxId} role="listbox">
-          {results.map((result) => {
-            const { item } = result
-            const focusKey = resourceFocusKey(item.ref)
-            return (
-              <Item asChild key={result.key} size="sm">
-              <li
-                aria-selected={result.key === selectedKey}
-                className="kubecode-resource-row"
-                data-active={result === active ? true : undefined}
-                data-availability={item.availability}
-                data-focus-key={focusKey}
-                data-scroll-anchor={focusKey}
-                id={optionId(result.key)}
-                role="option"
-                tabIndex={-1}
-                onClick={() => choose(result)}
-                onFocus={() => {
-                  // Focus returned to a row (after Back) belongs to the search box, with this row active.
-                  setActiveKey(result.key)
-                  input.current?.focus({ preventScroll: true })
-                }}
-              >
-                <ItemMedia>
-                  <Icon role="identity" source={WORKSPACE_OBJECT_ICONS[objectKindOf(item.ref.kind)].Icon} />
-                </ItemMedia>
-                <ItemContent className="kubecode-resource-row-body">
-                  <ItemTitle className="kubecode-resource-row-title">{item.title}</ItemTitle>
-                  <ItemDescription className="kubecode-resource-row-meta">
-                    {resultMeta(item, t, { locale, taskTitle }).join(' · ')}
-                  </ItemDescription>
-                  {item.summary && <ItemDescription className="kubecode-resource-row-summary">{item.summary}</ItemDescription>}
-                </ItemContent>
-              </li>
-              </Item>
-            )
-          })}
-        </ul>
+        <CommandList label={t('kubecode.search.results')} className="max-h-none overflow-visible">
+          {results.length > 0 && (
+            <CommandGroup>
+              {results.map((result) => {
+                const { item } = result
+                const focusKey = resourceFocusKey(item.ref)
+                const removed = item.availability === 'removed'
+                return (
+                  <CommandItem
+                    className="items-start gap-3"
+                    data-availability={item.availability}
+                    aria-current={result.key === selectedKey ? 'true' : undefined}
+                    data-focus-key={focusKey}
+                    data-scroll-anchor={focusKey}
+                    key={result.key}
+                    tabIndex={-1}
+                    value={result.key}
+                    onFocus={(event) => {
+                      // Focus returned to a row (after Back) belongs to the search box, with this row active.
+                      // cmdk only announces an active row it chose itself (a controlled value does not update
+                      // aria-activedescendant), so the row is made active the way a pointer would.
+                      event.currentTarget.dispatchEvent(new Event('pointermove', { bubbles: true }))
+                      input.current?.focus({ preventScroll: true })
+                    }}
+                    onSelect={() => choose(result)}
+                  >
+                    <ItemMedia className="mt-0.5">
+                      <Icon role="identity" source={WORKSPACE_OBJECT_ICONS[objectKindOf(item.ref.kind)].Icon} />
+                    </ItemMedia>
+                    <ItemContent className="min-w-0">
+                      <ItemTitle className={cn('break-words', removed && 'line-through')}>{item.title}</ItemTitle>
+                      <ItemDescription className="break-words">
+                        {resultMeta(item, t, { locale, taskTitle }).join(' · ')}
+                      </ItemDescription>
+                      {item.summary && <ItemDescription className="truncate">{item.summary}</ItemDescription>}
+                    </ItemContent>
+                    {result.key === selectedKey && <CheckIcon aria-hidden="true" className="ml-auto" />}
+                  </CommandItem>
+                )
+              })}
+            </CommandGroup>
+          )}
+        </CommandList>
         {ready && search.loadMoreFailed && (
-          <p className="kubecode-research-error" role="alert">{t('kubecode.projectWorkLoadMoreFailed')}</p>
+          <ReaderNotice
+            action={<Button size="xs" variant="outline" onClick={search.loadMore}>{t('kubecode.vocab.command.retry')}</Button>}
+            failed
+          >
+            {t('kubecode.projectWorkLoadMoreFailed')}
+          </ReaderNotice>
         )}
-        {ready && search.nextCursor && mode !== 'quick' && (
-          <Button className="kubecode-ws-search-more" size="sm" type="button" variant="ghost" onClick={search.loadMore}>
+        {ready && search.nextCursor && !search.loadMoreFailed && mode !== 'quick' && (
+          <Button className="w-full" size="sm" type="button" variant="ghost" onClick={search.loadMore}>
             {t('kubecode.projectWorkLoadMore')}
           </Button>
         )}
         {footer}
       </div>
-    </div>
+    </Command>
   )
 }

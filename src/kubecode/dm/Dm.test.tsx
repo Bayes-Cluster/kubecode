@@ -104,7 +104,7 @@ describe('DmPane', () => {
     expect(screen.getByText('within').closest('article')).toHaveAttribute('data-from', 'member')
     const waiting = screen.getByText("Waiting for Analyst's reply")
     expect(waiting.closest('article')).toHaveAttribute('data-state', 'pending')
-    const card = document.querySelector('.kubecode-prompt-input') as HTMLElement
+    const card = box().closest('form') as HTMLElement
     expect(card).toContainElement(box())
     expect(card).not.toHaveTextContent('Only Analyst sees this message.')
     // Empty, the card is compact: two lines that grow with the text.
@@ -175,7 +175,11 @@ describe('DmPane', () => {
       .mockResolvedValue([turn('run-1', 'is 0.91 enough?', 'ok')])
     const api = fakeApi({ memberDmTurns: turns })
     const view = render(context(pane(api)))
-    expect(await screen.findByRole('alert')).toHaveTextContent('The conversation could not be loaded.')
+    const failure = await screen.findByRole('alert')
+    expect(failure).toHaveTextContent('The conversation could not be loaded.')
+    // The official Alert, its Retry inside it (#257).
+    expect(failure).toHaveAttribute('data-slot', 'alert')
+    expect(within(failure).getByRole('button', { name: 'Retry' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
     expect(await screen.findByText('is 0.91 enough?')).toBeInTheDocument()
     const before = turns.mock.calls.length
@@ -244,8 +248,11 @@ describe('DmPane sharing to General (ADR 0223 §5, ADR 0229 §6)', () => {
     expect(within(dialog).getByRole('button', { name: 'Preview' })).toBeDisabled()
     fireEvent.click(within(dialog).getByRole('checkbox', { name: /is 0.91 enough/ }))
     expect(within(dialog).getByText('1 of 6 chosen')).toBeInTheDocument()
-    fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'for everyone' } })
-    fireEvent.change(within(dialog).getByRole('combobox'), { target: { value: 'r1' } })
+    // The official Field, Checkbox and Select (#257).
+    expect(within(dialog).getByRole('group', { name: 'Turns to share' })).toBeInTheDocument()
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Add a note (optional)' }), { target: { value: 'for everyone' } })
+    fireEvent.keyDown(within(dialog).getByRole('combobox', { name: 'About Task' }), { key: 'ArrowDown' })
+    fireEvent.keyDown(await screen.findByRole('option', { name: 'Pruning' }), { key: 'Enter' })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Preview' }))
     const card = await within(dialog).findByRole('region', { name: 'Preview' })
     expect(api.previewDmShare).toHaveBeenCalledWith('p1', 'm1', { runIds: ['run-1'], note: 'for everyone', taskId: 'r1' })
@@ -258,7 +265,7 @@ describe('DmPane sharing to General (ADR 0223 §5, ADR 0229 §6)', () => {
     expect(within(card).getByText('Exact text')).toBeInTheDocument()
     expect(card.querySelector('pre')).toHaveTextContent('> is 0.91 enough?')
     // Editing makes the preview stale: it must be shown again.
-    fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'for everyone!' } })
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Add a note (optional)' }), { target: { value: 'for everyone!' } })
     expect(within(dialog).queryByRole('region', { name: 'Preview' })).not.toBeInTheDocument()
     expect(within(dialog).queryByRole('button', { name: 'Post to General' })).not.toBeInTheDocument()
     fireEvent.click(within(dialog).getByRole('button', { name: 'Preview' }))
@@ -286,6 +293,9 @@ describe('DmPane sharing to General (ADR 0223 §5, ADR 0229 §6)', () => {
       fireEvent.click(within(dialog).getByRole('checkbox', { name: /is 0.91 enough/ }))
       fireEvent.click(within(dialog).getByRole('button', { name: 'Preview' }))
       const card = await within(dialog).findByRole('region', { name: 'Preview' })
+      // The official Card's own surface, with no legacy redraw class (#257).
+      expect(card).toHaveAttribute('data-slot', 'card')
+      expect(card.className).not.toMatch(/kubecode-/)
       expect(within(card).getByRole('status')).toHaveTextContent('No one can receive this yet: the project manager needs setup.')
       expect(card).not.toHaveTextContent('This will reach')
       expect(within(card).queryByText('General · Project manager')).not.toBeInTheDocument()
@@ -303,12 +313,14 @@ describe('DmPane sharing to General (ADR 0223 §5, ADR 0229 §6)', () => {
     for (let index = 0; index < 8; index += 1) {
       fireEvent.click(within(dialog).getByRole('checkbox', { name: new RegExp(`question ${index}$`) }))
     }
-    expect(within(dialog).getAllByRole('checkbox').filter((item) => (item as HTMLInputElement).checked)).toHaveLength(6)
+    expect(within(dialog).getAllByRole('checkbox').filter((item) => item.getAttribute('aria-checked') === 'true')).toHaveLength(6)
     expect(within(dialog).getByText('6 of 6 chosen')).toBeInTheDocument()
     fireEvent.click(within(dialog).getByRole('button', { name: 'Preview' }))
     await within(dialog).findByRole('region', { name: 'Preview' })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Post to General' }))
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Preview it again')
+    const alert = await within(dialog).findByRole('alert')
+    expect(alert).toHaveTextContent('Preview it again')
+    expect(alert).toHaveAttribute('data-slot', 'alert')
     expect(within(dialog).queryByRole('region', { name: 'Preview' })).not.toBeInTheDocument()
     expect(api.previewDmShare).toHaveBeenCalledTimes(1)
   })

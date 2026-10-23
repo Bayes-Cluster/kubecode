@@ -1,7 +1,9 @@
 import { useContext, useState } from 'react'
 
 import { Task, TaskContent, TaskItem } from '@/components/ai-elements/task'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { Item, ItemContent, ItemDescription, ItemGroup } from '@/components/ui/item'
 import { Icon } from '@/kubecode/icons'
 import { WORKSPACE_COMMAND_ICONS } from '@/kubecode/icons/workspaceIcons'
 
@@ -36,26 +38,38 @@ function DeliveryIssue({ issue, onChanged, projectId }: { issue: SourceDelivery;
   // An older verdict the Task moved past is listed, never delivered late.
   if (issue.route.superseded) {
     return (
-      <li className="kubecode-delivery-status" data-state="superseded">
-        <span className="kubecode-research-muted">{t('kubecode.delivery.superseded', { name })}</span>
-      </li>
+      <Item data-state="superseded" role="listitem" size="sm">
+        <ItemContent>
+          <ItemDescription>{t('kubecode.delivery.superseded', { name })}</ItemDescription>
+        </ItemContent>
+      </Item>
     )
   }
+  if (retrying) {
+    return (
+      <Item data-state={issue.route.state} role="listitem" size="sm">
+        <ItemContent>
+          <ItemDescription>{retryingText(issue.route, t)}</ItemDescription>
+        </ItemContent>
+      </Item>
+    )
+  }
+  // A decision that did not reach its recipient is an official destructive Alert, with its Retry.
   return (
-    <li className="kubecode-delivery-status" data-state={issue.route.state}>
-      <span className={retrying ? 'kubecode-research-muted' : 'kubecode-research-error'}>
-        {retrying
-          ? retryingText(issue.route, t)
-          : t('kubecode.delivery.decisionFailed', { name })}
-      </span>
-      {!retrying && issue.route.retryable && (
-        <Button aria-busy={busy || undefined} size="xs" variant="ghost" onClick={() => void retry()}>
-          <Icon role="command" size="secondary" source={WORKSPACE_COMMAND_ICONS.retry.Icon} />
-          {t('kubecode.delivery.retry', { name })}
-        </Button>
-      )}
-      {refusal && <span className="kubecode-research-error" role="alert">{refusal}</span>}
-    </li>
+    <div data-state={issue.route.state} role="listitem">
+      <Alert role={undefined} variant="destructive">
+        <AlertDescription className="flex flex-wrap items-center gap-2">
+          <span>{t('kubecode.delivery.decisionFailed', { name })}</span>
+          {issue.route.retryable && (
+            <Button aria-busy={busy || undefined} className="pointer-coarse:min-h-11" size="xs" variant="outline" onClick={() => void retry()}>
+              <Icon role="command" size="secondary" source={WORKSPACE_COMMAND_ICONS.retry.Icon} />
+              {t('kubecode.delivery.retry', { name })}
+            </Button>
+          )}
+          {refusal && <span className="basis-full" role="alert">{refusal}</span>}
+        </AlertDescription>
+      </Alert>
+    </div>
   )
 }
 
@@ -72,7 +86,7 @@ export function TaskWork({ detail, onChanged, projectId }: { detail: TaskDetail;
   const waiting = (attention?.forTask(detail.id) ?? []).filter((item) => item.kind === 'permission' || item.kind === 'input')
   const issues = detail.delivery_issues ?? []
   return (
-    <div className="kubecode-task-work">
+    <div className="flex min-w-0 flex-col gap-2">
       {detail.execution && (
         <RoundPauseControl
           api={api}
@@ -90,13 +104,14 @@ export function TaskWork({ detail, onChanged, projectId }: { detail: TaskDetail;
               const target = attentionTarget(item, navigation?.presentation ?? 'screen')
               const name = askerName(item, t)
               return (
-                <TaskItem className="kubecode-task-waiting-item" key={item.key} role="listitem">
+                <TaskItem className="flex flex-wrap items-center gap-2" key={item.key} role="listitem">
                   <span>
                     {t(item.kind === 'permission' ? 'kubecode.attention.waitingInTask' : 'kubecode.attention.waitingInputInTask', { name })}
                   </span>
                   {navigation && (
                     <Button
                       aria-label={t('kubecode.attention.showRequest', { name })}
+                      className="pointer-coarse:min-h-11"
                       size="xs"
                       variant="outline"
                       onClick={() => {
@@ -122,11 +137,11 @@ export function TaskWork({ detail, onChanged, projectId }: { detail: TaskDetail;
       )}
       <ExecutionStrip api={api} prompts={false} scope={{ taskId: detail.id }} t={t} />
       {issues.length > 0 && (
-        <ul className="kubecode-task-delivery-issues">
+        <ItemGroup className="gap-2" role="list">
           {issues.map((issue) => (
             <DeliveryIssue issue={issue} key={issue.route.route_id} projectId={projectId} onChanged={onChanged} />
           ))}
-        </ul>
+        </ItemGroup>
       )}
     </div>
   )

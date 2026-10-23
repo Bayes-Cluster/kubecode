@@ -1,9 +1,23 @@
+import { CircleCheck } from 'lucide-react'
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
 
 import { Confirmation, ConfirmationActions, ConfirmationTitle } from '@/components/ai-elements/confirmation'
 import { Sources } from '@/components/ai-elements/sources'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Item, ItemActions, ItemGroup } from '@/components/ui/item'
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
+import {
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+  FieldLegend,
+  FieldSet,
+} from '@/components/ui/field'
+import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from '@/components/ui/item'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Textarea } from '@/components/ui/textarea'
 import { DecisionButton } from '@/components/workspace/DecisionButton'
 import { ReferenceChip } from '@/components/workspace/ReferenceChip'
@@ -24,6 +38,7 @@ import { resolveThrough, useAttention } from '../attention/attentionContext'
 import { fallbackTitle, formatVersion } from '../resources/referenceKinds'
 import { ResearchFindingsPanel } from '../research/ResearchFindingsPanel'
 import type { ResearchBundle } from '../research/useResearch'
+import { ReaderEmpty, ReaderNotice } from '../resources/ReaderStates'
 import { evidenceKind, outcomeLabel, recordKindOf, taskTime } from './taskLabels'
 import { useShowInGeneral } from './taskNavigation'
 import { StatusBadge } from '@/components/workspace/StatusBadge'
@@ -58,7 +73,7 @@ export function TaskResults({ bundle = null, detail, onBundleChanged, onChanged,
   const openRequest = detail.review_requests.find((request) => (
     request.state === 'open' && request.id !== decided?.requestId
   )) ?? null
-  const status = useRef<HTMLParagraphElement>(null)
+  const status = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (decided) status.current?.focus({ preventScroll: true })
   }, [decided])
@@ -69,23 +84,26 @@ export function TaskResults({ bundle = null, detail, onBundleChanged, onChanged,
   const acceptedEvidence = reviewEvidence(detail).accepted
 
   return (
-    <div className="kubecode-task-results">
+    <div className="flex min-w-0 flex-col gap-4 pt-2">
       {decided && !openRequest && (
-        <p className="kubecode-task-decided" ref={status} role="status" tabIndex={-1}>
-          {decided.messageId === null
-            ? t('kubecode.task.decided.notPosted')
-            : decided.accepted
-              ? t('kubecode.task.decided.accepted', { outcome: outcomeLabel(t, decided.outcome) ?? '' })
-              : t('kubecode.task.decided.returned')}
-          {decided.messageId && (
-            <>
-              {' '}
-              <Button size="xs" variant="ghost" onClick={() => showInGeneral(decided.messageId as string)}>
+        // What was just decided, said once and focused, so the researcher's place is kept (#259: official Alert).
+        <Alert className="outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50" ref={status} role="status" tabIndex={-1}>
+          <CircleCheck aria-hidden />
+          <AlertDescription className="flex flex-wrap items-center gap-2">
+            <span>
+              {decided.messageId === null
+                ? t('kubecode.task.decided.notPosted')
+                : decided.accepted
+                  ? t('kubecode.task.decided.accepted', { outcome: outcomeLabel(t, decided.outcome) ?? '' })
+                  : t('kubecode.task.decided.returned')}
+            </span>
+            {decided.messageId && (
+              <Button className="pointer-coarse:min-h-11" size="xs" variant="outline" onClick={() => showInGeneral(decided.messageId as string)}>
                 {t('kubecode.task.showInGeneral')}
               </Button>
-            </>
-          )}
-        </p>
+            )}
+          </AlertDescription>
+        </Alert>
       )}
 
       {openRequest && (
@@ -100,17 +118,17 @@ export function TaskResults({ bundle = null, detail, onBundleChanged, onChanged,
       )}
 
       {done && accepted && (
-        <section aria-label={t('kubecode.task.outcomeTitle')} className="kubecode-task-outcome-done">
-          <h4>{t('kubecode.task.outcomeTitle')}</h4>
+        <section aria-label={t('kubecode.task.outcomeTitle')} className="flex flex-col gap-2">
+          <h4 className="text-sm font-semibold">{t('kubecode.task.outcomeTitle')}</h4>
           <ReviewSummary review={accepted} locale={locale} t={t} onShow={showInGeneral} />
         </section>
       )}
       {done && acceptedEvidence.length > 0 && (
         <>
-          <h4>{t('kubecode.task.acceptedEvidence')}</h4>
+          <h4 className="text-sm font-semibold">{t('kubecode.task.acceptedEvidence')}</h4>
           <EvidenceSources label={t('kubecode.task.acceptedEvidence')}>
             {acceptedEvidence.map((row) => (
-              <Item className="kubecode-task-evidence-row" key={row.key} role="listitem" size="sm">
+              <Item className="p-0" key={row.key} role="listitem" size="sm">
                 <EvidenceChip evidence={row} />
               </Item>
             ))}
@@ -119,12 +137,12 @@ export function TaskResults({ bundle = null, detail, onBundleChanged, onChanged,
       )}
 
       {!openRequest && !done && detail.reviews.length === 0 && (
-        <p className="kubecode-research-muted">{t('kubecode.task.noResultsYet')}</p>
+        <ReaderEmpty>{t('kubecode.task.noResultsYet')}</ReaderEmpty>
       )}
 
       {bundle && (
-        <section aria-label={t('kubecode.task.findings')} className="kubecode-task-findings">
-          <h4>{t('kubecode.task.findings')}</h4>
+        <section aria-label={t('kubecode.task.findings')} className="flex flex-col gap-2">
+          <h4 className="text-sm font-semibold">{t('kubecode.task.findings')}</h4>
           <ResearchFindingsPanel
             api={api}
             detail={bundle.detail}
@@ -140,14 +158,12 @@ export function TaskResults({ bundle = null, detail, onBundleChanged, onChanged,
 
       {earlier.length > 0 && (
         <>
-          <h4>{t('kubecode.task.earlierReviews')}</h4>
-          <ul className="kubecode-task-reviews">
+          <h4 className="text-sm font-semibold">{t('kubecode.task.earlierReviews')}</h4>
+          <ItemGroup className="gap-2">
             {[...earlier].reverse().map((review) => (
-              <li key={review.id}>
-                <ReviewSummary review={review} locale={locale} t={t} onShow={showInGeneral} />
-              </li>
+              <ReviewSummary key={review.id} review={review} locale={locale} t={t} onShow={showInGeneral} />
             ))}
-          </ul>
+          </ItemGroup>
         </>
       )}
     </div>
@@ -161,20 +177,27 @@ function ReviewSummary({ locale, onShow, review, t }: {
   onShow: (messageId: string) => void
 }) {
   const outcome = review.accepted ? outcomeLabel(t, review.outcome) : null
+  // One decided review as an official Item: the verdict and outcome, when, the researcher's words, and its message.
   return (
-    <div className="kubecode-task-review-summary">
-      <StatusBadge tone={review.accepted ? 'ok' : 'warn'}>
-        {review.accepted ? t('kubecode.task.accepted') : t('kubecode.task.returned')}
-      </StatusBadge>
-      {outcome && <StatusBadge tone="info">{outcome}</StatusBadge>}
-      <small className="kubecode-research-muted">{t('kubecode.task.decidedAt', { time: taskTime(review.created_at, locale) })}</small>
-      {review.reason && <q>{review.reason}</q>}
+    <Item role="listitem" size="sm" variant="outline">
+      <ItemContent className="gap-1">
+        <ItemTitle className="flex flex-wrap items-center gap-1">
+          <StatusBadge tone={review.accepted ? 'ok' : 'warn'}>
+            {review.accepted ? t('kubecode.task.accepted') : t('kubecode.task.returned')}
+          </StatusBadge>
+          {outcome && <StatusBadge tone="info">{outcome}</StatusBadge>}
+        </ItemTitle>
+        <ItemDescription>{t('kubecode.task.decidedAt', { time: taskTime(review.created_at, locale) })}</ItemDescription>
+        {review.reason && <q className="text-sm [overflow-wrap:anywhere]">{review.reason}</q>}
+      </ItemContent>
       {review.general_message_id && (
-        <Button size="xs" variant="ghost" onClick={() => onShow(review.general_message_id as string)}>
-          {t('kubecode.task.showInGeneral')}
-        </Button>
+        <ItemActions>
+          <Button className="pointer-coarse:min-h-11" size="xs" variant="ghost" onClick={() => onShow(review.general_message_id as string)}>
+            {t('kubecode.task.showInGeneral')}
+          </Button>
+        </ItemActions>
       )}
-    </div>
+    </Item>
   )
 }
 
@@ -182,8 +205,8 @@ function ReviewSummary({ locale, onShow, review, t }: {
 function EvidenceSources({ children, label }: { children: ReactNode; label: string }) {
   // The list is never folded, so Sources holds it without its trigger and content.
   return (
-    <Sources className="kubecode-task-sources" data-ws-sources="">
-      <ItemGroup aria-label={label} className="kubecode-task-evidence">{children}</ItemGroup>
+    <Sources className="mb-0" data-ws-sources="">
+      <ItemGroup aria-label={label} className="gap-2" role="list">{children}</ItemGroup>
     </Sources>
   )
 }
@@ -240,6 +263,10 @@ function OpenReview({ detail, onChanged, onDecided, projectId, request }: {
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const hintId = useId()
+  const feedbackId = useId()
+  const ackId = useId()
+  const legendId = useId()
+  const choiceId = useId()
 
   const { other, review } = reviewEvidence(detail)
   const rows = [...review, ...other.filter((row) => row.status === 'changed' || row.status === 'removed')]
@@ -315,107 +342,114 @@ function OpenReview({ detail, onChanged, onDecided, projectId, request }: {
   const requester = detail.timeline?.find((step) => step.kind === 'review_requested' && step.ref_id === request.id)?.member
 
   return (
-    <section
+    <Card
       aria-label={t('kubecode.task.reviewTitle')}
-      className="kubecode-task-review"
+      className="gap-4 py-4 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
       data-focus-key={`review:${request.id}`}
+      role="region"
       tabIndex={-1}
     >
-      <h4>{t('kubecode.task.reviewTitle')}</h4>
-      <p className="kubecode-channel-body">{request.summary}</p>
-      <p className="kubecode-research-muted">
-        {requester
-          ? t('kubecode.task.requestedBy', { name: requester.name, time: taskTime(request.created_at, locale) })
-          : taskTime(request.created_at, locale)}
-      </p>
-      {rows.length > 0 && (
-        <EvidenceSources label={t('kubecode.task.evidence')}>
-          {rows.map((row) => (
-            <EvidenceRow
-              busy={busy === row.key}
-              check={checks.get(row.key) as VersionCheck}
-              evidence={row}
-              key={row.key}
-              settle={settled === row.key}
-              onAccept={(revision) => void run(row.key, async () => {
-                // One pin at a time: when a later one fails, the earlier ones
-                // stand, so the researcher is told only part was accepted.
-                let accepted = 0
-                try {
-                  for (const citation of repinsFor(row)) {
-                    await api.repinTaskEvidence(projectId, detail.id, citation, revision)
-                    accepted += 1
+      <CardHeader className="px-4">
+        <CardTitle>{t('kubecode.task.reviewTitle')}</CardTitle>
+        <CardDescription>
+          {requester
+            ? t('kubecode.task.requestedBy', { name: requester.name, time: taskTime(request.created_at, locale) })
+            : taskTime(request.created_at, locale)}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4 px-4">
+        <p className="text-sm whitespace-pre-wrap [overflow-wrap:anywhere]">{request.summary}</p>
+        {rows.length > 0 && (
+          <EvidenceSources label={t('kubecode.task.evidence')}>
+            {rows.map((row) => (
+              <EvidenceRow
+                busy={busy === row.key}
+                check={checks.get(row.key) as VersionCheck}
+                evidence={row}
+                key={row.key}
+                settle={settled === row.key}
+                onAccept={(revision) => void run(row.key, async () => {
+                  // One pin at a time: when a later one fails, the earlier ones
+                  // stand, so the researcher is told only part was accepted.
+                  let accepted = 0
+                  try {
+                    for (const citation of repinsFor(row)) {
+                      await api.repinTaskEvidence(projectId, detail.id, citation, revision)
+                      accepted += 1
+                    }
+                  } catch (cause) {
+                    throw accepted > 0 ? new PartlyAccepted() : cause
                   }
-                } catch (cause) {
-                  throw accepted > 0 ? new PartlyAccepted() : cause
-                }
-                setSettled(row.key)
-              })}
+                  setSettled(row.key)
+                })}
+              />
+            ))}
+          </EvidenceSources>
+        )}
+        <FieldGroup className="gap-4">
+          {removed && (
+            <Field orientation="horizontal">
+              <Checkbox checked={ackRemoved} id={ackId} onCheckedChange={(checked) => setAckRemoved(checked === true)} />
+              <FieldLabel className="font-normal" htmlFor={ackId}>{t('kubecode.task.ackRemoved')}</FieldLabel>
+            </Field>
+          )}
+          <FieldSet>
+            <FieldLegend id={legendId} variant="label">{t('kubecode.work.review.outcome')}</FieldLegend>
+            <RadioGroup
+              aria-labelledby={legendId}
+              name={`outcome-${request.id}`}
+              value={outcome === 'unknown' ? '' : outcome}
+              onValueChange={(value) => setOutcome(value as WorkOutcome)}
+            >
+              {OUTCOMES.map((value) => (
+                <OutcomeChoice idPrefix={choiceId} key={value} t={t} value={value} />
+              ))}
+            </RadioGroup>
+          </FieldSet>
+          <Field>
+            <FieldLabel htmlFor={feedbackId}>{t('kubecode.task.feedback')}</FieldLabel>
+            <Textarea
+              aria-describedby={hintId}
+              id={feedbackId}
+              rows={3}
+              value={feedback}
+              onChange={(event) => setFeedback(event.target.value)}
             />
-          ))}
-        </EvidenceSources>
-      )}
-      {removed && (
-        <label className="kubecode-task-field">
-          <span>
-            <input checked={ackRemoved} type="checkbox" onChange={(event) => setAckRemoved(event.target.checked)} />
-            {' '}{t('kubecode.task.ackRemoved')}
-          </span>
-        </label>
-      )}
-      <fieldset className="kubecode-task-outcome">
-        <legend>{t('kubecode.work.review.outcome')}</legend>
-        {OUTCOMES.map((value) => (
-          <OutcomeChoice
-            checked={outcome === value}
-            key={value}
-            name={`outcome-${request.id}`}
-            t={t}
-            value={value}
-            onChoose={() => setOutcome(value)}
-          />
-        ))}
-      </fieldset>
-      <label className="kubecode-task-field">
-        <span>{t('kubecode.task.feedback')}</span>
-        <Textarea
-          aria-describedby={hintId}
-          rows={3}
-          value={feedback}
-          onChange={(event) => setFeedback(event.target.value)}
-        />
-      </label>
-      <small className="kubecode-research-muted" id={hintId}>{t('kubecode.task.feedbackHint')}</small>
-      {error && <p className="kubecode-research-error" role="alert">{error}</p>}
-      {/* The official Confirmation, kept a named group: nothing here is an alert (ADR 0243). */}
-      <Confirmation
-        approval={{ id: request.id }}
-        aria-label={t('kubecode.task.decisionTitle')}
-        className="kubecode-task-decisions"
-        role="group"
-        state="approval-requested"
-      >
-        <ConfirmationTitle className="kubecode-task-decisions-note">{t('kubecode.task.acceptsShownVersions')}</ConfirmationTitle>
-        <ConfirmationActions className="kubecode-task-decision-actions">
-          <DecisionButton
-            busy={busy === 'accept'}
-            disabledReason={acceptReason}
-            variant="primary"
-            onDecide={() => decide(true)}
-          >
-            {t('kubecode.task.acceptResults')}
-          </DecisionButton>
-          <DecisionButton
-            busy={busy === 'return'}
-            disabledReason={returnReason}
-            variant="secondary"
-            onDecide={() => decide(false)}
-          >
-            {t('kubecode.task.sendBack')}
-          </DecisionButton>
-        </ConfirmationActions>
-      </Confirmation>
-    </section>
+            <FieldDescription id={hintId}>{t('kubecode.task.feedbackHint')}</FieldDescription>
+          </Field>
+        </FieldGroup>
+        {error && <ReaderNotice failed>{error}</ReaderNotice>}
+      </CardContent>
+      <CardFooter className="kubecode-task-decisions bg-card px-4">
+        {/* The official Confirmation, kept a named group: nothing here is an alert (ADR 0243). */}
+        <Confirmation
+          approval={{ id: request.id }}
+          aria-label={t('kubecode.task.decisionTitle')}
+          role="group"
+          state="approval-requested"
+        >
+          <ConfirmationTitle>{t('kubecode.task.acceptsShownVersions')}</ConfirmationTitle>
+          <ConfirmationActions className="flex-wrap justify-start">
+            <DecisionButton
+              busy={busy === 'accept'}
+              disabledReason={acceptReason}
+              variant="primary"
+              onDecide={() => decide(true)}
+            >
+              {t('kubecode.task.acceptResults')}
+            </DecisionButton>
+            <DecisionButton
+              busy={busy === 'return'}
+              disabledReason={returnReason}
+              variant="secondary"
+              onDecide={() => decide(false)}
+            >
+              {t('kubecode.task.sendBack')}
+            </DecisionButton>
+          </ConfirmationActions>
+        </Confirmation>
+      </CardFooter>
+    </Card>
   )
 }
 
@@ -429,22 +463,21 @@ const BLOCKER_TEXT = {
   outcome: 'kubecode.task.blocked.outcome',
 } as const
 
-function OutcomeChoice({ checked, name, onChoose, t, value }: {
-  checked: boolean
-  name: string
+/** One scientific outcome: the official RadioGroupItem in a Field, its hint describing it. */
+function OutcomeChoice({ idPrefix, t, value }: {
+  idPrefix: string
   t: Translator
   value: Exclude<WorkOutcome, 'unknown'>
-  onChoose: () => void
 }) {
-  const hintId = useId()
+  const id = `${idPrefix}-${value}`
   return (
-    <div className="kubecode-task-outcome-choice">
-      <label>
-        <input aria-describedby={hintId} checked={checked} name={name} type="radio" value={value} onChange={onChoose} />
-        {' '}{outcomeLabel(t, value)}
-      </label>
-      <small className="kubecode-research-muted" id={hintId}>{t(`kubecode.task.outcomeHint.${value}`)}</small>
-    </div>
+    <Field orientation="horizontal">
+      <RadioGroupItem aria-describedby={`${id}-hint`} id={id} value={value} />
+      <FieldContent>
+        <FieldLabel className="font-normal" htmlFor={id}>{outcomeLabel(t, value)}</FieldLabel>
+        <FieldDescription id={`${id}-hint`}>{t(`kubecode.task.outcomeHint.${value}`)}</FieldDescription>
+      </FieldContent>
+    </Field>
   )
 }
 
@@ -464,17 +497,17 @@ function EvidenceRow({ busy, check, evidence, onAccept, settle }: {
     if (settle && !changed) row.current?.querySelector<HTMLElement>('button')?.focus({ preventScroll: true })
   }, [changed, settle])
   return (
-    <Item className="kubecode-task-evidence-row" data-status={evidence.status} ref={row} role="listitem" size="sm">
+    <Item className="flex-col items-stretch p-0" data-status={evidence.status} ref={row} role="listitem" size="sm">
       <EvidenceChip evidence={evidence} />
       {changed && (
-        <ItemActions className="kubecode-task-version">
+        <ItemActions className="flex-wrap items-start">
           {open && (
-            <Button data-focus-key={`evidence:${evidence.key}`} size="xs" variant="outline" onClick={open}>
+            <Button data-focus-key={`evidence:${evidence.key}`} className="pointer-coarse:min-h-11" size="xs" variant="outline" onClick={open}>
               {t('kubecode.task.lookAtIt')}
             </Button>
           )}
           {check.state === 'seen_current' && (
-            <small className="kubecode-research-muted">{t('kubecode.task.version.seenCurrent', { revision: check.seen.slice(0, 12) })}</small>
+            <small className="basis-full text-muted-foreground">{t('kubecode.task.version.seenCurrent', { revision: check.seen.slice(0, 12) })}</small>
           )}
           <DecisionButton
             busy={busy}

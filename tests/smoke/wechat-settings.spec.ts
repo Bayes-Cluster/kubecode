@@ -123,7 +123,7 @@ test('@smoke WeChat settings connect, verify, and bind on desktop and mobile', a
 
     // Connect: QR, verification against the live generation, connected.
     await page.getByRole('button', { name: 'Settings', exact: true }).click()
-    await page.getByRole('button', { name: 'WeChat', exact: true }).click()
+    await page.getByRole('tab', { name: 'WeChat', exact: true }).click()
     await expect(page.getByRole('status').filter({ hasText: 'Not connected' })).toBeVisible()
     await page.getByRole('button', { name: 'Connect WeChat' }).click()
     await expect(page.getByRole('img', { name: 'QR code for linking WeChat to Kubecode' })).toBeVisible()
@@ -151,7 +151,7 @@ test('@smoke WeChat settings connect, verify, and bind on desktop and mobile', a
     // On a phone the navigation, with Settings in its header, is a Sheet opened on demand.
     await toggleNavigation(page)
     await page.getByRole('button', { name: 'Settings', exact: true }).click()
-    await page.getByRole('button', { name: 'WeChat', exact: true }).click()
+    await page.getByRole('tab', { name: 'WeChat', exact: true }).click()
     await expect(page.getByRole('status').filter({ hasText: 'Connected' })).toBeVisible()
     await expect(page.getByRole('combobox', { name: 'Active Session' })).toContainText(sessionTitle)
     await expectContained(page)

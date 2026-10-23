@@ -1037,7 +1037,12 @@ In the browser (ADR 0231 §4–§6):
   Discussions, Files, and History (execution history, off by default);
   `channel` and `session_turn` are never results. The scope is said in words,
   from the kinds the server reports it `searched`; words, sections, active
-  row, and results are page memory only.
+  row, and results are page memory only. It is the official `Command`
+  with `shouldFilter={false}`, so the server's ranking and pages stand
+  (ADR 0250).
+- **Reader states.** `ReaderLoading`, `ReaderEmpty` and `ReaderNotice`
+  (`resources/ReaderStates.tsx`) are the one way search, the record reader,
+  Add context and evidence say loading, nothing, a change, or a failure.
 - **Draft reference.** `DraftReference` is
   `{ ref: {kind, id, revision}, title, seen: 'previewed' | 'listed' }`, kept in
   `GeneralDraft.references`, one per record (another version replaces it), at
@@ -1049,7 +1054,8 @@ In the browser (ADR 0231 §4–§6):
   (never an id), the cited version in words (`formatVersion`), and its state —
   changed since cited or attached, no longer exists, or not available here —
   from a per-Workspace resolver that batches at most 32 refs and forgets what a
-  Workspace event touched.
+  Workspace event touched. The chip is the official `Attachment` (ADR 0250);
+  its domain state is `data-reference-state`.
 - **Attach target.** While a General draft waits for a reference from
   Resources, `{ filter, focusKey }` sits in page memory; adding returns to that
   General view with the composer focused and the caret restored.

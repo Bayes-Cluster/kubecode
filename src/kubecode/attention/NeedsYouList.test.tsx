@@ -44,6 +44,8 @@ describe('NeedsYouList', () => {
     const setup = screen.getByRole('list', { name: 'Setup' })
     const row = within(decisions).getByRole('button', { name: /Title question:d1/ })
     expect(row).toHaveTextContent('In Structured pruning · asked by @analyst')
+    // The official Item is the row's button itself, not a frame around a handmade one.
+    expect(row).toHaveAttribute('data-slot', 'item')
     fireEvent.click(row)
     expect(props.onOpenTarget).toHaveBeenCalledWith({ place: { view: 'board' }, focus: 'question:d1' })
     expect(within(setup).getByRole('button', { name: /Writer needs setup/ })).toBeInTheDocument()
@@ -70,7 +72,7 @@ describe('NeedsYouList', () => {
     expect(screen.getByText('Nothing is waiting for you.').closest('[data-slot="empty"]')).not.toBeNull()
     rerender(<NeedsYouList {...props} entries={[entry('question:d1')]} status="error" />)
     expect(screen.queryByText('Nothing is waiting for you.')).not.toBeInTheDocument()
-    expect(screen.getByText('Some waiting items could not be loaded.')).toBeInTheDocument()
+    expect(screen.getByText('Some waiting items could not be loaded.').closest('[data-slot="alert"]')).not.toBeNull()
     expect(screen.getByRole('button', { name: /Title question:d1/ })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
     expect(props.onRetryLoad).toHaveBeenCalled()

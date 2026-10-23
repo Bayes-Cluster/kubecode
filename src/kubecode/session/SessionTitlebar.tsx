@@ -1,6 +1,7 @@
-import { Ellipsis } from 'lucide-react'
+import { Ellipsis, TriangleAlert } from 'lucide-react'
 
 import { AiAgentIcon } from '@/components/AiAgentIcon'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -9,8 +10,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { Spinner } from '@/components/ui/spinner'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { StatusBadge } from '@/components/workspace/StatusBadge'
 import type { Translator } from '@/lib/i18n'
 import { trackEvent } from '@/lib/telemetry'
+import { cn } from '@/lib/utils'
 
 import type { Conversation, TeamSnapshot } from '../api'
 import { UsageMeter } from './UsageMeter'
@@ -62,46 +67,52 @@ export function SessionTitlebar({
       </div>
       <UsageMeter locale={locale} t={t} usage={usage} />
       {team && (
-        <div className="kubecode-team-view-switch" role="tablist">
-          <Button
-            aria-selected={teamView === 'chat'}
-            role="tab"
-            size="xs"
-            variant={teamView === 'chat' ? 'secondary' : 'ghost'}
-            onClick={() => onTeamViewChange('chat')}
-          >
-            {t('kubecode.chat')}
-          </Button>
-          <Button
-            aria-selected={teamView === 'team'}
-            role="tab"
-            size="xs"
-            variant={teamView === 'team' ? 'secondary' : 'ghost'}
-            onClick={() => {
-              onTeamViewChange('team')
+        // A view switch, not tabs: the Chat and Team views are rendered by the
+        // workspace, so there is no tab panel for a tab to control.
+        <ToggleGroup
+          aria-label={t('kubecode.teamSession')}
+          className="kubecode-team-view-switch"
+          size="sm"
+          type="single"
+          value={teamView}
+          variant="outline"
+          onValueChange={(value) => {
+            if (value !== 'chat' && value !== 'team') return
+            onTeamViewChange(value)
+            if (value === 'team') {
               trackEvent('kubecode_team_view_opened', { team_size: team.members.length })
-            }}
-          >
+            }
+          }}
+        >
+          <ToggleGroupItem value="chat">{t('kubecode.chat')}</ToggleGroupItem>
+          <ToggleGroupItem value="team">
             {t('kubecode.teamSession')}
-            {team.summary?.needs_attention > 0 && <span>{team.summary.needs_attention}</span>}
-          </Button>
-        </div>
+            {team.summary?.needs_attention > 0 && (
+              <Badge variant="destructive">{team.summary.needs_attention}</Badge>
+            )}
+          </ToggleGroupItem>
+        </ToggleGroup>
       )}
       <div className="kubecode-session-status">
-        <span data-state={waitingForInput ? 'stuck' : active ? 'running' : 'idle'} />
-        <span className="kubecode-session-status-label">
-          {waitingForInput
-            ? t(pendingElicitation
-              ? 'kubecode.answerAgentQuestion'
-              : leaderReviewPending
-                ? 'kubecode.waitingForLeaderPermission'
-                : 'kubecode.permissionRequired')
-            : active ? t('kubecode.running') : t('kubecode.ready')}
-        </span>
+        <StatusBadge
+          className={cn('kubecode-session-status-badge', !waitingForInput && !active && 'is-idle')}
+          tone={waitingForInput ? 'warn' : active ? 'info' : 'muted'}
+        >
+          {waitingForInput ? <TriangleAlert aria-hidden="true" /> : active && <Spinner aria-hidden="true" aria-label={undefined} role={undefined} />}
+          <span className="kubecode-session-status-label">
+            {waitingForInput
+              ? t(pendingElicitation
+                ? 'kubecode.answerAgentQuestion'
+                : leaderReviewPending
+                  ? 'kubecode.waitingForLeaderPermission'
+                  : 'kubecode.permissionRequired')
+              : active ? t('kubecode.running') : t('kubecode.ready')}
+          </span>
+        </StatusBadge>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button aria-label={t('kubecode.sessionActions')} size="icon-xs" variant="ghost">
-              <Ellipsis  size={16}/>
+              <Ellipsis />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">

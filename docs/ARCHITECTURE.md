@@ -580,7 +580,7 @@ the next place is pushed, so Back lands on it. Workspace search, previews, and
 references (ADR 0231) live in `src/kubecode/resources/`: one search core
 (`useWorkspaceSearch`, `WorkspaceSearch`, explicit sections from
 `searchScope.ts`, its words, sections, active row and results kept in place
-memory only) hosted by `ResourcesView` (a preview-first library whose rows
+memory only, on the official `Command` without client filtering, ADR 0250) hosted by `ResourcesView` (a preview-first library whose rows
 open `ResourcePanel` in the inspector beside the list, never leaving it), the
 General composer's `AddContextDialog` (results beside the one `RecordPreview`;
 "Attach this version" or Enter for the current version), and the titlebar's
@@ -898,7 +898,18 @@ the official parts (ADR 0243): the brief is a Plan, internal work a Task list,
 the review's decision a Confirmation and its evidence Sources of Item rows,
 the board a Card per Task with Tabs for the narrow stage picker and
 Collapsibles for proposals and archived Tasks, and Needs you named Item
-groups with Empty.
+groups with Empty. ADR 0251 (#259) removes what was still handcrafted around
+them: the open review is one Card with the official Checkbox, RadioGroup and
+Field controls; archiving asks through an AlertDialog; rows (proposals,
+archived Tasks, Needs you, recent General messages) are `Item asChild` on
+their own button; record sections are Collapsibles; failures, notices,
+loading and empty states use the shared reader states (`ReaderNotice`,
+`ReaderLoading`, `ReaderEmpty` over Alert, Spinner and Empty); prompts report
+an unrecorded answer with a destructive Alert; and a failed turn in the
+execution strip is a destructive Alert. Domain authority is unchanged: stage
+is a Task's only state, a decision resolves once through the attention
+context, Stop pauses only its own Task's round, and `kubecode.css` keeps only
+the board's container-query layout and the sticky review decision on a phone.
 
 Resources and Members are on the official parts (ADR 0244): `RecordPreview`
 shows code and text files in the AI Elements Code Block (one Shiki language
@@ -914,6 +925,23 @@ parts use Reasoning, Tool with Code Block output, Plan, Task for subagents,
 Queue, Context for usage, and Prompt Input parts on an InputGroup composer.
 Its history stays virtualised, with a jump-to-latest button wired to
 `autoFollowRef`. The view loads lazily from `AgentSessionWorkspace.tsx`.
+
+UI G (ADR 0253) moved the rest of the Session and Team execution views onto
+official components without changing their data adapters or the ACP
+capabilities they expose. The Agent control is a `DropdownMenu` (a radio
+sub menu per native select, a checkbox item per native boolean, a disabled
+item with its reason when the mode is locked), so Claude Code, Codex and
+OpenCode still show only the controls their session advertises. Slash command
+suggestions are a `Command` list driven by the composer's own selection, side
+questions a `Collapsible` of Items, workspace and application notices an
+`Alert` (`SystemMessageNotice`), the leader-review wait and read-only states
+Alerts, the revision switcher a `ButtonGroup`, a recreated context a
+`Checkpoint`, the Chat/Team switch `Tabs`, and the run status a `StatusBadge`.
+The empty Session is an `Empty` with an Item per Agent. Team views use Field,
+`RadioGroup` choice cards, `ToggleGroup`, Card, Item and `AlertDialog`; the
+work board's filters are Select, Checkbox and a single `ToggleGroup` of
+attention conditions, and the inspector's forms are Field, Select and Input.
+None of these surfaces restyle official internals in `kubecode.css`.
 
 After the slices, ADR 0246 removed the hand-rolled composer and recipient row,
 the official files nothing rendered (with the `sonner`, `next-themes` and

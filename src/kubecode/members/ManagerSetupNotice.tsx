@@ -53,22 +53,22 @@ export function ManagerSetupNotice({ api, onOpenMembers, onReload, projectId, se
   }
 
   return (
-    <Alert className="kubecode-manager-setup">
+    <Alert className="mx-4 mt-3 w-auto shrink-0 max-md:mx-3 max-md:mt-2">
       <TriangleAlert aria-hidden />
       <AlertTitle>{t('kubecode.members.managerSetup.title')}</AlertTitle>
       <AlertDescription>
         <p>{reason}</p>
-        {error && <p className="kubecode-research-error">{error}</p>}
+        {error && <p className="text-destructive">{error}</p>}
       </AlertDescription>
-      <div className="kubecode-manager-setup-actions">
+      <div className="col-start-2 mt-2 flex flex-wrap items-center gap-2">
         {manager && (
           <Button disabled={busy} size="sm" variant="default" onClick={() => void retry()}>
-            <RotateCw aria-hidden size={14} />
+            <RotateCw data-icon="inline-start" />
             {t('kubecode.members.retrySetup')}
           </Button>
         )}
         <Button size="sm" variant="outline" onClick={() => onOpenMembers(manager?.id ?? null)}>
-          <Users aria-hidden size={14} />
+          <Users data-icon="inline-start" />
           {t('kubecode.members.managerSetup.openMembers')}
         </Button>
       </div>

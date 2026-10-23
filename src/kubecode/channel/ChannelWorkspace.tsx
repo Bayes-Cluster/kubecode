@@ -1,5 +1,6 @@
 import { useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ReferenceChip } from '@/components/workspace/ReferenceChip'
@@ -352,11 +353,13 @@ export function ChannelWorkspace({
           title={channel && !channel.is_default ? channel.name : undefined}
         />
         {status === 'error' && (
-          <p className="kubecode-research-error" role="alert">
-            {t('kubecode.channel.loadFailed')}{' '}
-            <Button size="xs" variant="ghost" onClick={retry}>{t('kubecode.retry')}</Button>
-          </p>
-        )}
+            <Alert className="kubecode-conversation-alert" role="alert" variant="destructive">
+              <AlertDescription className="flex flex-wrap items-center gap-2">
+                {t('kubecode.channel.loadFailed')}
+                <Button size="xs" variant="outline" onClick={retry}>{t('kubecode.retry')}</Button>
+              </AlertDescription>
+            </Alert>
+          )}
         <DeliveryActionsContext.Provider value={deliveryActions}>
         <MessageList
           delivery={deliverySource}
@@ -391,12 +394,14 @@ export function ChannelWorkspace({
         />
         </DeliveryActionsContext.Provider>
         {outside && outsideTitle && (
-          <p className="kubecode-channel-outside" role="status">
-            {t('kubecode.channel.notInFilter', { title: outsideTitle })}{' '}
+          <Alert className="kubecode-conversation-alert" role="status">
+            <AlertDescription className="flex flex-wrap items-center gap-2">
+            {t('kubecode.channel.notInFilter', { title: outsideTitle })}
             <Button size="xs" variant="ghost" onClick={() => setTaskFilter(null)}>
               {t('kubecode.channel.showEverything')}
             </Button>
-          </p>
+            </AlertDescription>
+          </Alert>
         )}
         <span className="sr-only" role="status">{announcement}</span>
         {/* Who is at work, what did not go, and the input card, together at the foot (#232). */}

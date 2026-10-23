@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useState, type SyntheticEvent } from 'react'
+import { type ReactNode, useCallback, useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible'
+import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from '@/components/ui/item'
 import type { Translator } from '@/lib/i18n'
 
 import type { ChannelMessage, TaskActivity as TaskActivityStep, TaskDetail } from '../api'
@@ -12,6 +14,8 @@ import { ResearchImportPanel } from '../research/ResearchImportPanel'
 import { ResearchRoundsPanel } from '../research/ResearchRoundsPanel'
 import { ResearchThreadsPanel } from '../research/ResearchThreadsPanel'
 import { useRefreshTick, useResearchImports, type ResearchBundle } from '../research/useResearch'
+import { ReaderEmpty, ReaderLoading, ReaderNotice } from '../resources/ReaderStates'
+import { TaskDisclosure } from './TaskDisclosure'
 import { taskTime } from './taskLabels'
 import { useShowInGeneral } from './taskNavigation'
 
@@ -37,22 +41,29 @@ export function TaskActivity({ bundle = null, detail, onBundleChanged, projectId
   const showInGeneral = useShowInGeneral(detail.id)
   const steps = [...(detail.timeline ?? [])].reverse()
   return (
-    <div className="kubecode-task-activity">
-      <h4>{t('kubecode.task.activity.history')}</h4>
+    <div className="flex min-w-0 flex-col gap-4 pt-2">
+      <h4 className="text-sm font-semibold">{t('kubecode.task.activity.history')}</h4>
       {steps.length === 0
-        ? <p className="kubecode-research-muted">{t('kubecode.task.activity.empty')}</p>
+        ? <ReaderEmpty>{t('kubecode.task.activity.empty')}</ReaderEmpty>
         : (
-          <ol aria-label={t('kubecode.task.activity.history')} className="kubecode-task-timeline">
+          // Each step as an official Item in an ordered list, newest first.
+          <ol aria-label={t('kubecode.task.activity.history')} className="flex flex-col gap-2">
             {steps.map((step, index) => (
               <li key={`${step.kind}-${step.at}-${index}`}>
-                <span>{sentence(t, step)}</span>
-                <small className="kubecode-research-muted">{taskTime(step.at, locale)}</small>
-                {step.excerpt && <q>{step.excerpt}</q>}
-                {step.message_id && (
-                  <Button size="xs" variant="ghost" onClick={() => showInGeneral(step.message_id as string)}>
-                    {t('kubecode.task.showInGeneral')}
-                  </Button>
-                )}
+                <Item size="sm" variant="outline">
+                  <ItemContent className="gap-1">
+                    <ItemTitle className="font-normal [overflow-wrap:anywhere]">{sentence(t, step)}</ItemTitle>
+                    <ItemDescription>{taskTime(step.at, locale)}</ItemDescription>
+                    {step.excerpt && <q className="text-sm [overflow-wrap:anywhere]">{step.excerpt}</q>}
+                  </ItemContent>
+                  {step.message_id && (
+                    <ItemActions>
+                      <Button className="pointer-coarse:min-h-11" size="xs" variant="ghost" onClick={() => showInGeneral(step.message_id as string)}>
+                        {t('kubecode.task.showInGeneral')}
+                      </Button>
+                    </ItemActions>
+                  )}
+                </Item>
               </li>
             ))}
           </ol>
@@ -126,39 +137,59 @@ function RecentInGeneral({ onShow, projectId, taskId }: {
     else setAttempt((value) => value + 1)
   }
   return (
-    <section aria-label={t('kubecode.task.activity.inGeneral')} className="kubecode-task-recent">
-      <h4>{t('kubecode.task.activity.inGeneral')}</h4>
+    <section aria-label={t('kubecode.task.activity.inGeneral')} className="flex flex-col gap-2">
+      <h4 className="text-sm font-semibold">{t('kubecode.task.activity.inGeneral')}</h4>
       {failed ? (
-        <p className="kubecode-research-error" role="alert">
-          {t('kubecode.task.activity.inGeneralFailed')}{' '}
-          <Button size="xs" variant="ghost" onClick={retry}>{t('kubecode.retry')}</Button>
-        </p>
+        <ReaderNotice action={<Button className="pointer-coarse:min-h-11" size="xs" variant="outline" onClick={retry}>{t('kubecode.retry')}</Button>} failed>
+          {t('kubecode.task.activity.inGeneralFailed')}
+        </ReaderNotice>
       ) : list === null ? (
-        <p className="kubecode-research-muted" role="status">{t('kubecode.task.activity.inGeneralLoading')}</p>
+        <ReaderLoading>{t('kubecode.task.activity.inGeneralLoading')}</ReaderLoading>
       ) : list.length === 0
-        ? <p className="kubecode-research-muted">{t('kubecode.task.activity.inGeneralEmpty')}</p>
+        ? <ReaderEmpty>{t('kubecode.task.activity.inGeneralEmpty')}</ReaderEmpty>
         : (
-          <ul>
+          <ItemGroup className="gap-1" role="list">
             {list.map((message) => (
-              <li key={message.id}>
-                <Button className="kubecode-task-recent-message" size="xs" variant="ghost" onClick={() => onShow(message.id)}>
-                  {excerptOf(message.body)}
-                </Button>
-                <small className="kubecode-research-muted">{taskTime(message.created_at, locale)}</small>
-              </li>
+              <div key={message.id} role="listitem">
+                {/* One message, one official Item that is itself the button showing it in General. */}
+                <Item asChild className="w-full text-left" size="sm">
+                  <button type="button" onClick={() => onShow(message.id)}>
+                    <ItemContent className="min-w-0">
+                      <ItemTitle className="block w-full truncate font-normal">{excerptOf(message.body)}</ItemTitle>
+                      <ItemDescription>{taskTime(message.created_at, locale)}</ItemDescription>
+                    </ItemContent>
+                  </button>
+                </Item>
+              </div>
             ))}
-          </ul>
+          </ItemGroup>
         )}
     </section>
   )
 }
 
-/** Shown only once opened, so a Task's details never load every round up front. */
-function useOpened(): [boolean, (event: SyntheticEvent<HTMLDetailsElement>) => void] {
+/**
+ * A record section folded by the official Collapsible (#259). Its body is
+ * read only once opened, so a Task's details never load every round up front,
+ * and it stays mounted once read.
+ */
+function RecordsDisclosure({ children, label }: { label: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false)
   const [opened, setOpened] = useState(false)
-  return [opened, (event) => {
-    if (event.currentTarget.open) setOpened(true)
-  }]
+  return (
+    <Collapsible
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next)
+        if (next) setOpened(true)
+      }}
+    >
+      <TaskDisclosure>{label}</TaskDisclosure>
+      <CollapsibleContent className="flex flex-col gap-2 pt-2" forceMount hidden={!open}>
+        {opened && children}
+      </CollapsibleContent>
+    </Collapsible>
+  )
 }
 
 function ExecutionRecords({ bundle, detail, onBundleChanged }: {
@@ -169,29 +200,30 @@ function ExecutionRecords({ bundle, detail, onBundleChanged }: {
   const services = useInspectorServices()
   const { openSession } = useWorkspaceNavigation()
   const { t } = services
-  const [opened, onToggle] = useOpened()
   const sessions = detail.internal_work.filter((work) => work.conversation_id)
   return (
-    <details className="kubecode-task-records" onToggle={onToggle}>
-      <summary>{t('kubecode.task.activity.execution')}</summary>
-      {opened && (
-        <>
+    <RecordsDisclosure label={t('kubecode.task.activity.execution')}>
           {sessions.length > 0 && (
-            <ul className="kubecode-task-work">
+            <ItemGroup className="gap-1" role="list">
               {sessions.map((work) => (
-                <li key={work.id}>
-                  <span>{work.title}</span>
+                <Item key={work.id} role="listitem" size="sm" variant="outline">
+                  <ItemContent>
+                    <ItemTitle className="[overflow-wrap:anywhere]">{work.title}</ItemTitle>
+                  </ItemContent>
+                  <ItemActions>
                   <Button
                     aria-label={t('kubecode.task.openSessionOf', { title: work.title })}
+                    className="pointer-coarse:min-h-11"
                     size="xs"
                     variant="outline"
                     onClick={() => openSession(work.conversation_id as string)}
                   >
                     {t('kubecode.task.openSession')}
                   </Button>
-                </li>
+                  </ItemActions>
+                </Item>
               ))}
-            </ul>
+            </ItemGroup>
           )}
           {bundle && (
             <ResearchRoundsPanel
@@ -209,9 +241,7 @@ function ExecutionRecords({ bundle, detail, onBundleChanged }: {
               onOpenSession={openSession}
             />
           )}
-        </>
-      )}
-    </details>
+    </RecordsDisclosure>
   )
 }
 
@@ -223,12 +253,8 @@ function LinkedRecords({ bundle, onBundleChanged, projectId, taskId }: {
 }) {
   const { api, connectionState, events, t } = useInspectorServices()
   const { openPlace } = useWorkspaceNavigation()
-  const [opened, onToggle] = useOpened()
   return (
-    <details className="kubecode-task-records" onToggle={onToggle}>
-      <summary>{t('kubecode.task.activity.records')}</summary>
-      {opened && (
-        <>
+    <RecordsDisclosure label={t('kubecode.task.activity.records')}>
           <ResearchThreadsPanel
             api={api}
             connectionState={connectionState}
@@ -240,9 +266,7 @@ function LinkedRecords({ bundle, onBundleChanged, projectId, taskId }: {
             onOpenThread={(threadId) => openPlace({ view: 'general', thread: threadId, filter: null }, { inspector: 'closed' })}
           />
           {bundle && <Imports bundle={bundle} projectId={projectId} taskId={taskId} onBundleChanged={onBundleChanged} />}
-        </>
-      )}
-    </details>
+    </RecordsDisclosure>
   )
 }
 
