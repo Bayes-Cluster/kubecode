@@ -153,6 +153,14 @@ composer reads the coarse pointer through the shared hook.
   In a fixture, keep the raw-HTML attack and the link attack in separate
   paragraphs, or the link assertions test nothing (#278).
 
+- **Timeouts under load are not failures.** The workstation is shared;
+  other jobs push the load average past 12 on 7 cores, and the pre-push
+  gate's Vitest run then times out four or five whole-Workbench route tests
+  that take a second when idle (WorkspaceShell, App, ChannelWorkspace,
+  ProjectFileTree). `testTimeout` is 30 s and testing-library's
+  `asyncUtilTimeout` is 5 s for that reason; check `uptime` before blaming
+  a change, and run the gate when no other heavy agent is building.
+
 ## Validation
 
 Fixture validation only: unit tests, `pnpm test:coverage`, and the Playwright

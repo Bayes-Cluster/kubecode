@@ -72,6 +72,9 @@ export default defineConfig({
     include: ['src/kubecode/**/*.{test,spec}.{ts,tsx}'],
     maxWorkers: process.env.VITEST_MAX_WORKERS ?? 4,
     setupFiles: ['./src/test/setup.ts'],
-    testTimeout: 10_000,
+    // 30 s: a shared, loaded workstation (other jobs at load 12+ on 7 cores) makes
+    // a 10 s limit fail whole-Workbench route tests that take 1 s when idle;
+    // a real hang is still caught well inside the gate's budget.
+    testTimeout: 30_000,
   },
 })
