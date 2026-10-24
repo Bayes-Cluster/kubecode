@@ -179,15 +179,17 @@ describe('AiMessage', () => {
         actions={[]}
         messageId="run-1"
         onNavigateWikilink={onNavigateWikilink}
-        response={'See [[Design Notes|the notes]] and <b>raw</b> [bad](javascript:alert(1)).'}
+        response={'See [[Design Notes|the notes]], **bold** and <b>raw</b> [bad](javascript:alert(1)).'}
         userMessage="Where?"
       />,
     )
 
     const link = await screen.findByRole('link', { name: 'the notes' })
-    // A Badge around the anchor (#278): keyboard-reachable like any link, no legacy chip class.
-    expect(link).toHaveAttribute('data-slot', 'badge')
+    // streamdown's own link (#278): keyboard-reachable like any link, no legacy chip class, no Badge.
+    expect(link).toHaveAttribute('data-streamdown', 'link')
+    expect(link).not.toHaveAttribute('data-slot')
     expect(link).not.toHaveClass('chat-wikilink')
+    expect(screen.getByText('bold').tagName).toBe('STRONG')
     link.focus()
     expect(link).toHaveFocus()
     fireEvent.click(link)
@@ -195,6 +197,8 @@ describe('AiMessage', () => {
     expect(screen.getByTestId('ai-response-block').querySelector('b')).toBeNull()
     // The official MessageResponse owns the typography: no legacy wrapper around it.
     expect(screen.getByTestId('ai-response-block').querySelector('.ai-markdown')).toBeNull()
+    expect(screen.getByTestId('ai-response-block').className).not.toMatch(/kubecode-session-response/)
+    expect(screen.getByTestId('ai-response-content').className).not.toMatch(/kubecode-session-response/)
     expect(screen.queryByRole('link', { name: 'bad' })).toBeNull()
   })
 

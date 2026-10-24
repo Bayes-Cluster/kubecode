@@ -23,6 +23,8 @@ const SOURCE = [
   '',
   'Accuracy $a_1 + b$ held, see [[Design Notes|the notes]] and ![loss curve](https://example.test/x.png).',
   '',
+  'It costs $5 and $10 a run; set `$PATH`, then echo $USER. Between $ 5 $ and $x$2 nothing is math.',
+  '',
   '| model | acc |',
   '| --- | --- |',
   '| base | 0.91 |',
@@ -56,7 +58,12 @@ function expectHardenedAndRendered(root: HTMLElement, { images }: { images: 'bad
   expect(root.innerHTML).not.toContain('javascript:')
   expect(root.textContent).toContain('bad')
   expect(root.querySelector('a[href="https://example.com/a"]')).not.toBeNull()
-  expect(root.querySelectorAll('.katex').length).toBeGreaterThanOrEqual(2)
+  // Exactly the inline formula and the display one: prices, shell variables, spaced or
+  // digit-followed dollars stay text (ADR 0229 §7), on every surface.
+  expect(root.querySelectorAll('.katex')).toHaveLength(2)
+  expect(root.textContent).toContain('It costs $5 and $10 a run; set $PATH, then echo $USER. Between $ 5 $ and $x$2 nothing is math.')
+  // The selection allowlist keys on the adapters' root attribute (ADR 0255 §3).
+  expect(root.closest('[data-prose]') ?? root.querySelector('[data-prose]')).not.toBeNull()
   expect(root.querySelector('table')).not.toBeNull()
   expect(root.querySelectorAll('input[type="checkbox"]')).toHaveLength(2)
   expect(root.textContent).toContain('print(1)')
@@ -140,6 +147,8 @@ describe('one Markdown renderer', () => {
     const inPreview = within(card).getByTestId('conversation-response')
     // The preview is the official user Message, as the researcher's own messages are.
     expect(inPreview.closest('.is-user')).not.toBeNull()
+    // Same root classes too (the General reading-width rule stays until slice D).
+    expect(inPreview.className).toBe(inGeneral.className)
     await waitFor(() => expect(normalise(inPreview)).toBe(normalise(inGeneral)), { timeout: 5000 })
     expectHardenedAndRendered(inPreview, { images: 'badge' })
   })
@@ -167,9 +176,10 @@ describe('one Markdown renderer', () => {
     const segment = screen.getByTestId('ai-response-segment')
     expectHardenedAndRendered(segment, { images: 'render' })
     expect(segment.closest('.ai-markdown')).toBeNull()
-    // A wikilink is a Badge around a real link: reached by Tab, followed by Enter or a click.
+    // A wikilink is streamdown's own link (it owns the look and wraps long titles); only navigation is intercepted.
     const link = screen.getByRole('link', { name: 'the notes' })
-    expect(link).toHaveAttribute('data-slot', 'badge')
+    expect(link).toHaveAttribute('data-streamdown', 'link')
+    expect(link).not.toHaveAttribute('data-slot')
     expect(link).toHaveAttribute('href')
     link.focus()
     expect(link).toHaveFocus()
@@ -180,6 +190,8 @@ describe('one Markdown renderer', () => {
     const record = recordPreview(SOURCE)
     expect(await screen.findByRole('heading', { name: 'Results' })).toBeInTheDocument()
     expectHardenedAndRendered(record.container.querySelector('[data-testid="evidence-viewer"]')!, { images: 'text' })
+    // Long tokens wrap inside the reader instead of widening it.
+    expect(record.container.querySelector('[data-prose]')!.parentElement!.className).toContain('[overflow-wrap:anywhere]')
     expect(record.container.querySelector('[data-testid="evidence-viewer"]')!.innerHTML).not.toContain('example.test')
   })
 })
