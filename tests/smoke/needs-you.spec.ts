@@ -74,7 +74,7 @@ async function send(page: Page, text: string) {
 /** Nothing waits: the navigation counts a quiet zero. */
 async function nothingWaits(page: Page) {
   await expect(needsYouPlace(page).locator('[data-slot="badge"]')).toHaveText('0', { timeout: 20_000 })
-  await expect(needsYouPlace(page).locator('[data-slot="badge"]')).toHaveAttribute('data-tone', 'muted')
+  await expect(needsYouPlace(page).locator('[data-slot="badge"]')).toHaveAttribute('data-variant', 'secondary')
 }
 
 test.describe('on a desktop', () => {

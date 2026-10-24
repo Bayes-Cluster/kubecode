@@ -5,9 +5,8 @@ import { Slot } from "radix-ui"
 
 import { Button } from "@/components/ui/button"
 
-// Kubecode (ADR 0255): an Attachment with a trigger, and its action, are touch-sized targets on a coarse pointer.
 const attachmentVariants = cva(
-  "group/attachment relative flex w-fit max-w-full min-w-0 shrink-0 flex-wrap rounded-xl border bg-card text-card-foreground transition-colors focus-within:ring-1 focus-within:ring-ring/50 has-[>a,>button]:hover:bg-muted/50 has-data-[slot=attachment-trigger]:pointer-coarse:min-h-[44px] data-[state=error]:border-destructive/30 data-[state=idle]:border-dashed",
+  "group/attachment relative flex w-fit max-w-full min-w-0 shrink-0 flex-wrap rounded-xl border bg-card text-card-foreground transition-colors focus-within:ring-1 focus-within:ring-ring/50 has-[>a,>button]:hover:bg-muted/50 data-[state=error]:border-destructive/30 data-[state=idle]:border-dashed",
   {
     variants: {
       size: {
@@ -173,7 +172,8 @@ function AttachmentTrigger({
     <Comp
       data-slot="attachment-trigger"
       type={asChild ? undefined : (type ?? "button")}
-      className={cn("absolute inset-0 z-10 outline-none", className)}
+      // Kubecode (ADR 0255): the covering trigger is a touch-sized target on a coarse pointer.
+      className={cn("absolute inset-0 z-10 outline-none pointer-coarse:min-h-[44px]", className)}
       {...props}
     />
   )

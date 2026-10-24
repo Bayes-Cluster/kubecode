@@ -67,7 +67,7 @@ export function MembersView({
   useScrollMemory(scroller, scrollKey, { ready: true })
   return (
     <section aria-label={t('kubecode.nav.members')} className="kubecode-members-view" ref={scroller}>
-      <DestinationHeader className="-mx-4 mb-2 md:mb-3" description={t('kubecode.members.viewDescription')} destination="members" t={t} />
+      <DestinationHeader className="-mx-(--ws-space-4) mb-(--ws-space-2) md:mb-(--ws-space-3)" description={t('kubecode.members.viewDescription')} destination="members" t={t} />
       <Tabs className="w-full max-w-(--ws-conversation-width) gap-3" value={tab} onValueChange={(value) => setTab(value as typeof tab)}>
         {/* On a phone the two tabs share the width and their labels wrap instead of scrolling out of view. */}
         <TabsList className="h-auto w-full sm:w-fit">

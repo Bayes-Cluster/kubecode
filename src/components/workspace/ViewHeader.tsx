@@ -69,7 +69,7 @@ export function ViewHeader({
           )}
           {icon && <ItemMedia aria-hidden="true">{icon}</ItemMedia>}
           <ItemTitle className="min-w-0 flex-1 basis-[14ch] [overflow-wrap:anywhere]">
-            <Heading>{title}</Heading>
+            <Heading className="min-w-0 flex-1">{title}</Heading>
           </ItemTitle>
           {actions && <ItemActions className="ml-auto max-w-full flex-wrap justify-end gap-1">{actions}</ItemActions>}
           {close && (

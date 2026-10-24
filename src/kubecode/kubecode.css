@@ -1634,7 +1634,7 @@
 /* Jump to latest sits in a strip kept under the thread, so it never covers a
    message (ADR 0239/0242: nothing sits over the readable thread). The strip is
    always there: the thread does not resize as the button comes and goes. */
-.kubecode-message-list > .kubecode-conversation { padding-block-end: calc(2rem + var(--ws-space-2)); }
+.kubecode-message-list > .kubecode-conversation { padding-block-end: calc(var(--ws-touch-target) + var(--ws-space-2)); }
 .kubecode-conversation > .kubecode-scroll-latest {
   bottom: var(--ws-space-1);
   box-shadow: var(--ws-elevation-soft);

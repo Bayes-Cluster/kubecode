@@ -50,7 +50,7 @@ export function DestinationHeader({ actions, className, description, destination
     <div className={cn('flex shrink-0 flex-col', className)}>
       <ViewHeader
         actions={actions}
-        className="p-3 md:px-6 md:py-3"
+        className="p-(--ws-space-3) md:px-(--ws-space-5) md:py-(--ws-space-3)"
         description={description}
         destination={destination}
         icon={<Icon role="navigation" source={GLYPHS[destination].Icon} />}
