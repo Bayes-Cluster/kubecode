@@ -206,7 +206,7 @@ function ReasoningBlock({ locale, text, done, open, onOpenChange }: {
         {done ? <span>{label}</span> : <Shimmer as="span" duration={1}>{label}</Shimmer>}
         <ChevronDown aria-hidden className="kubecode-session-reasoning-caret" size={12} />
       </ReasoningTrigger>
-      <ReasoningContent className="ai-reasoning-markdown" data-testid="reasoning-content">
+      <ReasoningContent data-testid="reasoning-content">
         {text}
       </ReasoningContent>
     </Reasoning>
@@ -367,13 +367,13 @@ function ResponseBlock({
     <Message className="kubecode-session-response" data-testid="ai-response-block" from="assistant">
       <MessageContent className="kubecode-session-response-content">
         {blocks.map((block, index) => (
-          <div className="ai-markdown" data-testid="ai-response-segment" key={block.id}>
-            <SessionMarkdown
-              content={block.text}
-              isAnimating={isStreaming && index === blocks.length - 1}
-              onWikilinkClick={onNavigateWikilink}
-            />
-          </div>
+          <SessionMarkdown
+            content={block.text}
+            data-testid="ai-response-segment"
+            isAnimating={isStreaming && index === blocks.length - 1}
+            key={block.id}
+            onWikilinkClick={onNavigateWikilink}
+          />
         ))}
       </MessageContent>
       <ResponseActions

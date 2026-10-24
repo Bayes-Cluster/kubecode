@@ -1,9 +1,9 @@
 /**
- * Kubecode's streamdown configuration (ADR 0241). Official AI Elements render
- * markdown with streamdown; this keeps the hardening of today's
- * `MarkdownContent`: raw HTML is never rendered, links and images keep only
- * safe protocols, and `$…$`/`$$…$$` math renders with KaTeX. Mermaid is left
- * out: diagrams are not a Workspace feature and the renderer is large.
+ * Kubecode's streamdown configuration (ADR 0241), the one place markdown is
+ * hardened for every surface (#278): raw HTML is never rendered, links and
+ * images keep only safe protocols, and `$…$`/`$$…$$` math renders with
+ * KaTeX. Mermaid is left out: diagrams are not a Workspace feature and the
+ * renderer is large.
  */
 import 'katex/dist/katex.min.css'
 

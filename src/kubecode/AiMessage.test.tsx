@@ -185,9 +185,16 @@ describe('AiMessage', () => {
     )
 
     const link = await screen.findByRole('link', { name: 'the notes' })
+    // A Badge around the anchor (#278): keyboard-reachable like any link, no legacy chip class.
+    expect(link).toHaveAttribute('data-slot', 'badge')
+    expect(link).not.toHaveClass('chat-wikilink')
+    link.focus()
+    expect(link).toHaveFocus()
     fireEvent.click(link)
     expect(onNavigateWikilink).toHaveBeenCalledWith('Design Notes')
     expect(screen.getByTestId('ai-response-block').querySelector('b')).toBeNull()
+    // The official MessageResponse owns the typography: no legacy wrapper around it.
+    expect(screen.getByTestId('ai-response-block').querySelector('.ai-markdown')).toBeNull()
     expect(screen.queryByRole('link', { name: 'bad' })).toBeNull()
   })
 
@@ -198,6 +205,7 @@ describe('AiMessage', () => {
     const toggle = screen.getByTestId('reasoning-toggle')
     expect(toggle).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByTestId('reasoning-content')).toHaveTextContent('Weighing options')
+    expect(screen.getByTestId('reasoning-content')).not.toHaveClass('ai-reasoning-markdown')
     fireEvent.click(toggle)
     expect(toggle).toHaveAttribute('aria-expanded', 'false')
     rerender(

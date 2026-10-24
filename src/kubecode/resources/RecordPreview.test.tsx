@@ -260,7 +260,7 @@ describe('RecordPreview', () => {
     }, { target: { kind: 'file', id: 'README.md' } })
     await waitFor(() => expect(container.querySelector('.kubecode-record-code')).not.toBeNull())
     expect(container.querySelector('.kubecode-record-code')!.textContent).toContain('# Title')
-    expect(container.querySelector('[data-record-markdown]')).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Title' })).toBeNull()
   })
 
   it('never fetches a remote image from a Markdown file preview (review S3)', async () => {
@@ -273,6 +273,21 @@ describe('RecordPreview', () => {
     expect(await screen.findByRole('heading', { name: 'Readme' })).toBeInTheDocument()
     expect(container.querySelector('img')).toBeNull()
     expect(container.innerHTML).not.toContain('attacker.example')
+  })
+
+  it('renders a Markdown file through the one MessageResponse: math, table and code, in a message body (#278)', async () => {
+    const text = '# Plan\n\nLoss $\\ell_2$ and\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n\n```python\nprint(1)\n```'
+    const { container } = mount({
+      readProjectContext: vi.fn().mockResolvedValue(document({
+        ref: { kind: 'file', id: 'plan.md', revision: 'a1' }, title: 'plan.md',
+        sections: [{ heading: 'Content', text, truncated: false }],
+      })),
+    }, { target: { kind: 'file', id: 'plan.md' } })
+    expect(await screen.findByRole('heading', { name: 'Plan' })).toBeInTheDocument()
+    expect(container.querySelector('.katex')).not.toBeNull()
+    expect(container.querySelector('table')).not.toBeNull()
+    expect(container.textContent).toContain('print(1)')
+    expect(container.querySelector('[data-record-markdown], .ai-markdown')).toBeNull()
   })
 
   it('renders a Markdown file through hardened streamdown, never raw HTML or unsafe links', async () => {

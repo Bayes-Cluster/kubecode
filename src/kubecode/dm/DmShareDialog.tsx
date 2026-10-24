@@ -1,6 +1,8 @@
 import { useId, useState } from 'react'
+import type { BundledLanguage } from 'shiki'
 
-import { MarkdownContent } from '@/components/MarkdownContent'
+import { CodeBlock } from '@/components/ai-elements/code-block'
+import { Message, MessageContent } from '@/components/ai-elements/message'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card'
@@ -24,6 +26,7 @@ import type { Translator } from '@/lib/i18n'
 import type { ChannelMessage, DmSharePreview, DmTurn, KubecodeApi, Member, ResearchSummary } from '../api'
 import { ApiError } from '../api'
 import { errorMessage } from '../app/errors'
+import { ConversationResponse } from '../channel/ConversationResponse'
 import { Identity } from '../members/Identity'
 import { canReceive, useMemberDirectory } from '../members/memberDirectory'
 import { memberView, researcherView } from '../members/memberIdentity'
@@ -78,8 +81,13 @@ function DmSharePreviewCard({ preview, research, t }: { preview: DmSharePreview;
           />
         )}
       </CardHeader>
-      <CardContent className="kubecode-message-body px-3">
-        <MarkdownContent content={preview.text} images="text" />
+      <CardContent className="px-3">
+        {/* The researcher's own bubble, rendered by the same response General renders (#278). */}
+        <Message from="user">
+          <MessageContent>
+            <ConversationResponse t={t}>{preview.text}</ConversationResponse>
+          </MessageContent>
+        </Message>
       </CardContent>
       <CardFooter className="flex flex-col items-stretch gap-2 px-3">
         {manager && reachable
@@ -94,7 +102,7 @@ function DmSharePreviewCard({ preview, research, t }: { preview: DmSharePreview;
             <Button size="xs" variant="ghost">{t('kubecode.dm.shareExactText')}</Button>
           </CollapsibleTrigger>
           <CollapsibleContent forceMount hidden={!exact}>
-            <pre className="whitespace-pre-wrap break-words text-xs">{preview.text}</pre>
+            <CodeBlock code={preview.text} language={'text' as BundledLanguage} />
           </CollapsibleContent>
         </Collapsible>
       </CardFooter>

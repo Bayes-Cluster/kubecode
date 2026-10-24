@@ -1008,8 +1008,6 @@
 
 
 .kubecode-message-body { min-width: 0; overflow-wrap: anywhere; }
-.kubecode-message-body .ai-markdown > :first-child { margin-top: 0; }
-.kubecode-message-body .ai-markdown > :last-child { margin-bottom: 0; }
 
 
 
@@ -1021,15 +1019,6 @@
   font: var(--ws-font-meta);
   gap: var(--ws-space-2);
   margin: 0;
-}
-
-
-
-.kubecode-inert-image {
-  border: 1px dashed var(--border-subtle);
-  border-radius: var(--radius-sm, 4px);
-  color: var(--text-secondary);
-  padding: 0 var(--ws-space-1);
 }
 
 

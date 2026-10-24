@@ -32,7 +32,11 @@ describe('ConversationResponse', () => {
   it('never fetches an image an agent points at: it shows its description', () => {
     const { container } = render(<ConversationResponse t={de}>{'![loss curve](https://example.com/track.png)'}</ConversationResponse>)
     expect(container.querySelector('img')).toBeNull()
-    expect(container.querySelector('.kubecode-inert-image')).toHaveTextContent('loss curve')
+    // The description is the official outline Badge (#278), not a project chip.
+    const placeholder = screen.getByText('loss curve')
+    expect(placeholder).toHaveAttribute('data-slot', 'badge')
+    expect(placeholder).toHaveAttribute('data-variant', 'outline')
+    expect(container.querySelector('.kubecode-inert-image')).toBeNull()
   })
 
   it('keeps emphasis as strong and raw HTML as text', () => {
