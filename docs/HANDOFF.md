@@ -161,6 +161,44 @@ composer reads the coarse pointer through the shared hook.
   `asyncUtilTimeout` is 5 s for that reason; check `uptime` before blaming
   a change, and run the gate when no other heavy agent is building.
 
+## UI2 A (#277): pitfalls met on the way
+
+- **A worktree cannot `pnpm add` through a symlinked `node_modules`.** The
+  shadcn CLI runs `pnpm add`, and pnpm refuses a virtual store that lives in
+  another checkout ("Unexpected virtual store location"). Give the worktree
+  its own install first: `rm node_modules && pnpm install --frozen-lockfile
+  --prefer-offline` (seconds from the shared store), then `pnpm dlx
+  shadcn@latest add …`.
+- **Never wrap a Radix `Toggle` (or `ToggleGroupItem`) in a `TooltipTrigger
+  asChild`.** The trigger spreads its own `data-state` and `data-slot` after
+  the toggle's, so `data-[state=on]` styling and tests on `data-slot="toggle"`
+  break. A toggle with a visible label needs no tooltip.
+- **Two AI Elements hosts differ.** `registry.ai-sdk.dev/{name}.json` lacks
+  `file-tree`; `elements.ai-sdk.dev/api/registry/{name}.json` (the redirect
+  target of the legacy URL) has it. The shadcn-hosted elements on
+  `ui.shadcn.com/docs/ai-elements/radix/*` are copy-paste patterns; their
+  `trace`/`code-block` items are not published for the `new-york` style, so
+  `shadcn view @shadcn/trace` fails. `add @ai-elements/<name> --dry-run`
+  first: it offers to overwrite `ui/` files it depends on.
+- **Vitest only collects `src/kubecode/**`.** A test for a `src/components/ui`
+  variant lives in `src/kubecode/components/` (see
+  `officialVariants.test.tsx`) or it never runs.
+- **Test hooks on wrapper internals.** `data-tone`, `.kubecode-view-header`,
+  `.kubecode-member-identity`, `.kubecode-reference-chip` and friends were
+  test selectors. They are now `data-variant`, `header[data-destination]`,
+  `[data-slot="item"]`, `[data-reference-state]`; prefer roles and
+  `data-testid` for new hooks.
+- **Touch sizing lives in the component.** `Button`, `Toggle`, interactive
+  `Item`, `CommandItem` and `Attachment` are 44 px on a coarse pointer from
+  their own classes; the smoke suite runs with `hasTouch: true`, so a new
+  per-call `pointer-coarse:` class is both unnecessary and a lint finding
+  once its slice's baseline entries are gone.
+- **The CSS ownership check reads TSX now.** A class passed as `className`
+  to an official import makes every appearance rule on that class a finding;
+  a rule whose `kubecode-*` class no product file mentions, or a className
+  with no rule, is dead. Regenerate with `node
+  scripts/check-css-ownership.mjs --write-baseline` only to *remove* entries.
+
 ## Validation
 
 Fixture validation only: unit tests, `pnpm test:coverage`, and the Playwright
