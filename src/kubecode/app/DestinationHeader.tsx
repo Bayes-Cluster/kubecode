@@ -42,13 +42,15 @@ export type DestinationHeaderProps = {
  * The header every Workspace destination shares (#231): its glyph and name as
  * a level-2 heading, a description, facts and actions, over the official
  * Separator (ADR 0255). A destination is never "back" anywhere, so there is
- * no Back. The wrapper is the layout container its parent bleeds to the edge.
+ * no Back. The wrapper is the layout container; a parent that bleeds it to
+ * its edges passes the margins as `className`.
  */
 export function DestinationHeader({ actions, className, description, destination, meta, t, title }: DestinationHeaderProps) {
   return (
-    <div className={cn('kubecode-destination-header', className)}>
+    <div className={cn('flex shrink-0 flex-col', className)}>
       <ViewHeader
         actions={actions}
+        className="p-3 md:px-6 md:py-3"
         description={description}
         destination={destination}
         icon={<Icon role="navigation" source={GLYPHS[destination].Icon} />}

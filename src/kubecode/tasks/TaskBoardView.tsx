@@ -119,6 +119,7 @@ export function TaskBoardView({
   return (
     <section aria-label={t('kubecode.nav.board')} className="kubecode-task-board" ref={scroller}>
       <DestinationHeader
+        className="-mx-4"
         actions={(
           <Field className="w-auto" orientation="horizontal">
             <Switch checked={needsYou} id={switchId} onCheckedChange={setNeedsYou} />

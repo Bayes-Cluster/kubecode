@@ -1511,13 +1511,6 @@
 /* One header for General, Kanban, Resources, Needs you and Members. */
 .kubecode-resources,
 .kubecode-members-view { padding-top: 0; }
-.kubecode-destination-header { flex: 0 0 auto; }
-.kubecode-destination-header > .kubecode-view-header { padding: var(--ws-space-3) var(--ws-space-5); }
-.kubecode-resources > .kubecode-destination-header,
-.kubecode-members-view > .kubecode-destination-header { margin: 0 -16px var(--ws-space-3); }
-
-.kubecode-channel-main > .kubecode-destination-header { margin: -12px -16px 0; }
-
 .kubecode-destination-body { max-width: var(--ws-conversation-width); padding: var(--ws-space-3) var(--ws-space-4); width: 100%; }
 
 /* The one inspector: a 360-pixel column beside the view, over a hairline. */
@@ -1533,9 +1526,6 @@
 }
 
 @media (max-width: 760px) {
-  .kubecode-destination-header > .kubecode-view-header { padding: var(--ws-space-3); }
-  .kubecode-resources > .kubecode-destination-header,
-  .kubecode-members-view > .kubecode-destination-header { margin: 0 -16px var(--ws-space-2); }
   .kubecode-destination-body { padding: var(--ws-space-2) var(--ws-space-3); }
 }
 
@@ -1735,7 +1725,6 @@
   overflow: auto;
   padding: 0 var(--ws-space-4) var(--ws-space-3);
 }
-.kubecode-task-board > .kubecode-destination-header { margin: 0 calc(-1 * var(--ws-space-4)); }
 .kubecode-task-empty { max-width: var(--ws-reading-width); }
 .kubecode-task-columns {
   display: grid;
