@@ -30,8 +30,10 @@ function ItemSeparator({
   )
 }
 
+// Kubecode (ADR 0255): an Item that is a link or a button is a touch-sized
+// target on a coarse pointer; `compact` is a row whose list owns the insets.
 const itemVariants = cva(
-  "group/item flex flex-wrap items-center rounded-md border border-transparent text-sm transition-colors duration-100 outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 [a]:transition-colors [a]:hover:bg-accent/50",
+  "group/item flex flex-wrap items-center rounded-md border border-transparent text-sm transition-colors duration-100 outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 [a]:transition-colors [a]:hover:bg-accent/50 [a&]:pointer-coarse:min-h-11 [button&]:pointer-coarse:min-h-11",
   {
     variants: {
       variant: {
@@ -42,6 +44,7 @@ const itemVariants = cva(
       size: {
         default: "gap-4 p-4",
         sm: "gap-2.5 px-4 py-3",
+        compact: "gap-2.5 p-0",
       },
     },
     defaultVariants: {

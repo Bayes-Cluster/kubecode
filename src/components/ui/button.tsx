@@ -4,8 +4,10 @@ import { Slot } from "radix-ui"
 
 import { cn } from "@/lib/utils"
 
+// Kubecode (ADR 0255): every Button is a touch-sized target on a coarse
+// pointer (44px tall; icon sizes 44px wide too); `inline` opts out.
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive pointer-coarse:min-h-11",
   {
     variants: {
       variant: {
@@ -25,10 +27,14 @@ const buttonVariants = cva(
         xs: "h-6 gap-1 rounded-md px-2 text-xs has-[>svg]:px-1.5 [&_svg:not([class*='size-'])]:size-3",
         sm: "h-8 rounded-md gap-1.5 px-3 has-[>svg]:px-2.5",
         lg: "h-10 rounded-md px-6 has-[>svg]:px-4",
-        icon: "size-9",
-        "icon-xs": "size-6 rounded-md [&_svg:not([class*='size-'])]:size-4",
-        "icon-sm": "size-8",
-        "icon-lg": "size-10",
+        icon: "size-9 pointer-coarse:min-w-11",
+        "icon-xs": "size-6 rounded-md [&_svg:not([class*='size-'])]:size-4 pointer-coarse:min-w-11",
+        "icon-sm": "size-8 pointer-coarse:min-w-11",
+        "icon-lg": "size-10 pointer-coarse:min-w-11",
+        // Kubecode (ADR 0255): a text decision that wraps a long translation
+        // instead of overflowing, and a name that is a link inside running text.
+        wrap: "h-auto min-h-8 max-w-full gap-1.5 rounded-md px-3 py-1.5 text-center whitespace-normal has-[>svg]:px-2.5",
+        inline: "h-auto p-0 text-left whitespace-normal [overflow-wrap:anywhere] pointer-coarse:min-h-0",
       },
     },
     defaultVariants: {
