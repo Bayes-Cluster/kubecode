@@ -139,6 +139,15 @@ composer reads the coarse pointer through the shared hook.
   (`id`, `for`, `aria-controls`, `aria-describedby`) differ between trees,
   and shiki highlights asynchronously. Strip those attributes and compare
   inside `waitFor`, as `src/kubecode/markdown/oneRenderer.test.tsx` does.
+- **micromark's `singleDollarTextMath` is not pandoc's rule.** It renders
+  "$5 and $10" and "$x$2" as formulas; the ADR 0229 §7 rules (no space inside
+  the delimiters, no digit after the closing one) live in
+  `src/kubecode/markdown/inlineMath.ts`, which every adapter must run.
+  `@streamdown/math`'s `createMathPlugin` takes no KaTeX options; rebuild its
+  `rehypePlugin` tuple to pass `maxSize`/`maxExpand`/`trust` (#278).
+- **streamdown marks no root or paragraph.** `data-streamdown` sits on links,
+  tables, strong and the like, never on the root `div` or `<p>`, so a
+  selector on it misses prose; the adapters put `data-prose` on the root.
 - **A paragraph that starts with raw HTML is one HTML block to marked**: with
   `skipHtml`, everything on that line (links included) becomes literal text.
   In a fixture, keep the raw-HTML attack and the link attack in separate

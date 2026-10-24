@@ -686,7 +686,10 @@ changes). Dates and times use the app locale's date locale
 (General, DMs, the share preview, the Session, Markdown records) renders
 through the official `MessageResponse` and the hardening in
 `streamdown-hardening.ts` (ADR 0255): `ConversationResponse` adds localized
-copy controls and inert images, `SessionMarkdown` adds wikilinks. `DmPane` keeps a per-member
+copy controls and inert images, `SessionMarkdown` adds wikilinks. Inline
+`$…$` is math only under remark-math's rules (`markdown/inlineMath.ts`: no
+space inside the delimiters, no digit after the closing one) and never in
+code, and the math plugin bounds KaTeX's `maxSize` and `maxExpand`. `DmPane` keeps a per-member
 `PlainDraft` under `placeKey.dm(p, m) + '#draft'` and its unsent messages in the
 same outbox under `… + '#outbox'`, and `DmShareDialog` previews a
 share as General will show it before posting.
