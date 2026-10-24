@@ -337,6 +337,7 @@ test.describe('on a phone', () => {
       await composer(page).press('Enter')
       await expect(composer(page)).toHaveValue('first line\n')
       await composer(page).pressSequentially('second line')
+      await expect(composer(page)).toHaveValue('first line\nsecond line')
       await page.getByRole('button', { name: 'Send', exact: true }).click()
       const sent = row(page, 'second line')
       await expect(sent).toBeVisible()

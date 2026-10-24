@@ -1,5 +1,11 @@
 import '@testing-library/jest-dom/vitest'
+import { configure } from '@testing-library/react'
 import { afterEach, beforeEach, vi } from 'vitest'
+
+// CI runners are two to three times slower than a workstation, and a route test
+// that renders the whole Workbench can take over the 1 s findBy*/waitFor default
+// there. Five seconds absorbs that without hiding a hang (testTimeout is 10 s).
+configure({ asyncUtilTimeout: 5_000 })
 
 // Stub fetch to prevent jsdom@28 + Node 22 undici incompatibility.
 // jsdom's JSDOMDispatcher passes an onError handler that Node 22's bundled
