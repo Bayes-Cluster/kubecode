@@ -1,7 +1,5 @@
 import { useId, useState } from 'react'
-import type { BundledLanguage } from 'shiki'
 
-import { CodeBlock } from '@/components/ai-elements/code-block'
 import { Message, MessageContent } from '@/components/ai-elements/message'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -82,10 +80,11 @@ function DmSharePreviewCard({ preview, research, t }: { preview: DmSharePreview;
         )}
       </CardHeader>
       <CardContent className="px-3">
-        {/* The researcher's own bubble, rendered by the same response General renders (#278). */}
+        {/* The researcher's own bubble, rendered by the same response General renders (#278),
+            with General's root class until slice D removes that rule. */}
         <Message from="user">
           <MessageContent>
-            <ConversationResponse t={t}>{preview.text}</ConversationResponse>
+            <ConversationResponse className="kubecode-message-body" t={t}>{preview.text}</ConversationResponse>
           </MessageContent>
         </Message>
       </CardContent>
@@ -102,7 +101,7 @@ function DmSharePreviewCard({ preview, research, t }: { preview: DmSharePreview;
             <Button size="xs" variant="ghost">{t('kubecode.dm.shareExactText')}</Button>
           </CollapsibleTrigger>
           <CollapsibleContent forceMount hidden={!exact}>
-            <CodeBlock code={preview.text} language={'text' as BundledLanguage} />
+            <Textarea aria-label={t('kubecode.dm.shareExactText')} readOnly rows={8} value={preview.text} />
           </CollapsibleContent>
         </Collapsible>
       </CardFooter>

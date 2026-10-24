@@ -9,17 +9,32 @@ import 'katex/dist/katex.min.css'
 
 import { cjk } from '@streamdown/cjk'
 import { code } from '@streamdown/code'
-import { createMathPlugin } from '@streamdown/math'
+import { createMathPlugin, type MathPlugin } from '@streamdown/math'
 import { harden } from 'rehype-harden'
 import { defaultRehypePlugins, type StreamdownProps } from 'streamdown'
 
 /** Links a reader may follow from agent-written markdown. */
 export const SAFE_LINK_PROTOCOLS = ['http', 'https', 'mailto'] as const
 
+/**
+ * KaTeX bounded as ADR 0229 §7 asks (ADR 0255): a formula cannot cover the
+ * page (`maxSize`), a macro cannot expand without end (`maxExpand`), and
+ * `\href` and friends stay off (`trust`). `createMathPlugin` exposes no KaTeX
+ * options, so its `[rehypeKatex, options]` tuple is rebuilt with them.
+ */
+function boundedMathPlugin(): MathPlugin {
+  const plugin = createMathPlugin({ singleDollarTextMath: true })
+  const [rehypeKatex, options] = plugin.rehypePlugin as [unknown, Record<string, unknown>]
+  return {
+    ...plugin,
+    rehypePlugin: [rehypeKatex, { ...options, maxSize: 10, maxExpand: 100, trust: false }] as MathPlugin['rehypePlugin'],
+  }
+}
+
 export const STREAMDOWN_PLUGINS = {
   cjk,
   code,
-  math: createMathPlugin({ singleDollarTextMath: true }),
+  math: boundedMathPlugin(),
 } satisfies StreamdownProps['plugins']
 
 /** Sanitize, then harden — never `rehype-raw`. */

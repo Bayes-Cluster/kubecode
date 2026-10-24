@@ -364,8 +364,8 @@ function ResponseBlock({
   }, [text])
 
   return (
-    <Message className="kubecode-session-response" data-testid="ai-response-block" from="assistant">
-      <MessageContent className="kubecode-session-response-content">
+    <Message data-testid="ai-response-block" from="assistant">
+      <MessageContent data-testid="ai-response-content">
         {blocks.map((block, index) => (
           <SessionMarkdown
             content={block.text}
