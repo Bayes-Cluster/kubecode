@@ -50,10 +50,262 @@
       "owner": "#255 (app-level exception: no text selection on controls)"
     },
     {
+      "file": "src/index.css",
+      "text": ".ai-markdown .hljs { color: var(--foreground); }",
+      "context": ".ai-markdown .hljs",
+      "kind": "third-party-internal",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/index.css",
+      "text": ".ai-markdown .hljs-comment,",
+      "context": ".ai-markdown .hljs-comment, .ai-markdown .hljs-quote",
+      "kind": "third-party-internal",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/index.css",
+      "text": ".ai-markdown .hljs-quote { color: var(--syntax-highlight-comment); font-style: italic; }",
+      "context": ".ai-markdown .hljs-comment, .ai-markdown .hljs-quote",
+      "kind": "third-party-internal",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/index.css",
+      "text": ".ai-markdown .hljs-keyword,",
+      "context": ".ai-markdown .hljs-keyword, .ai-markdown .hljs-selector-tag",
+      "kind": "third-party-internal",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/index.css",
+      "text": ".ai-markdown .hljs-selector-tag { color: var(--syntax-highlight-keyword); }",
+      "context": ".ai-markdown .hljs-keyword, .ai-markdown .hljs-selector-tag",
+      "kind": "third-party-internal",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/index.css",
+      "text": ".ai-markdown .hljs-string,",
+      "context": ".ai-markdown .hljs-string, .ai-markdown .hljs-addition",
+      "kind": "third-party-internal",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/index.css",
+      "text": ".ai-markdown .hljs-addition { color: var(--syntax-highlight-string); }",
+      "context": ".ai-markdown .hljs-string, .ai-markdown .hljs-addition",
+      "kind": "third-party-internal",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/index.css",
+      "text": ".ai-markdown .hljs-number,",
+      "context": ".ai-markdown .hljs-number, .ai-markdown .hljs-literal",
+      "kind": "third-party-internal",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/index.css",
+      "text": ".ai-markdown .hljs-literal { color: var(--syntax-highlight-number); }",
+      "context": ".ai-markdown .hljs-number, .ai-markdown .hljs-literal",
+      "kind": "third-party-internal",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/index.css",
+      "text": ".ai-markdown .hljs-title,",
+      "context": ".ai-markdown .hljs-title, .ai-markdown .hljs-section",
+      "kind": "third-party-internal",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/index.css",
+      "text": ".ai-markdown .hljs-section { color: var(--syntax-highlight-title); }",
+      "context": ".ai-markdown .hljs-title, .ai-markdown .hljs-section",
+      "kind": "third-party-internal",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/index.css",
+      "text": ".ai-markdown .hljs-built_in,",
+      "context": ".ai-markdown .hljs-built_in, .ai-markdown .hljs-type",
+      "kind": "third-party-internal",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/index.css",
+      "text": ".ai-markdown .hljs-type { color: var(--syntax-highlight-type); }",
+      "context": ".ai-markdown .hljs-built_in, .ai-markdown .hljs-type",
+      "kind": "third-party-internal",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/index.css",
+      "text": ".ai-markdown .hljs-attr,",
+      "context": ".ai-markdown .hljs-attr, .ai-markdown .hljs-name, .ai-markdown .hljs-attribute",
+      "kind": "third-party-internal",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/index.css",
+      "text": ".ai-markdown .hljs-name,",
+      "context": ".ai-markdown .hljs-attr, .ai-markdown .hljs-name, .ai-markdown .hljs-attribute",
+      "kind": "third-party-internal",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/index.css",
+      "text": ".ai-markdown .hljs-attribute { color: var(--syntax-highlight-number); }",
+      "context": ".ai-markdown .hljs-attr, .ai-markdown .hljs-name, .ai-markdown .hljs-attribute",
+      "kind": "third-party-internal",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/index.css",
+      "text": ".ai-markdown .hljs-deletion { color: var(--syntax-highlight-deletion); background: var(--syntax-highlight-deletion-bg); }",
+      "context": ".ai-markdown .hljs-deletion",
+      "kind": "third-party-internal",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/index.css",
+      "text": ".ai-markdown .hljs-meta { color: var(--syntax-highlight-comment); }",
+      "context": ".ai-markdown .hljs-meta",
+      "kind": "third-party-internal",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/index.css",
+      "text": ".ai-markdown p",
+      "context": ".ai-markdown p",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/index.css",
+      "text": ".ai-markdown strong",
+      "context": ".ai-markdown strong",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/index.css",
+      "text": ".ai-markdown h1, .ai-markdown h2, .ai-markdown h3, .ai-markdown h4",
+      "context": ".ai-markdown h1, .ai-markdown h2, .ai-markdown h3, .ai-markdown h4",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/index.css",
+      "text": ".ai-markdown h1",
+      "context": ".ai-markdown h1",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/index.css",
+      "text": ".ai-markdown h2",
+      "context": ".ai-markdown h2",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/index.css",
+      "text": ".ai-markdown h3",
+      "context": ".ai-markdown h3",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/index.css",
+      "text": ".ai-markdown h4",
+      "context": ".ai-markdown h4",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/index.css",
+      "text": ".ai-markdown code",
+      "context": ".ai-markdown code",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/index.css",
+      "text": ".ai-markdown pre",
+      "context": ".ai-markdown pre",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/index.css",
+      "text": ".ai-markdown pre code",
+      "context": ".ai-markdown pre code",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/index.css",
+      "text": ".ai-markdown a",
+      "context": ".ai-markdown a",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/index.css",
+      "text": ".ai-markdown a:hover",
+      "context": ".ai-markdown a:hover",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/index.css",
+      "text": ".ai-markdown hr",
+      "context": ".ai-markdown hr",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/index.css",
+      "text": ".ai-markdown table",
+      "context": ".ai-markdown table",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/index.css",
+      "text": ".ai-markdown th, .ai-markdown td",
+      "context": ".ai-markdown th, .ai-markdown td",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/index.css",
+      "text": ".ai-markdown th",
+      "context": ".ai-markdown th",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": ".kubecode-code-editor > .cm-editor,",
+      "context": ".kubecode-code-editor, .kubecode-code-editor > .cm-editor, .kubecode-terminal-view",
+      "kind": "third-party-internal",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": ".kubecode-terminal-view .xterm { height: 100%; }",
+      "context": ".kubecode-terminal-view .xterm",
+      "kind": "third-party-internal",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
       "file": "src/kubecode/kubecode.css",
       "text": ".kubecode-terminal-view .xterm-viewport { background-color: var(--surface-editor) !important; }",
       "context": ".kubecode-terminal-view .xterm-viewport",
-      "kind": "important",
+      "kind": "third-party-internal",
       "owner": "#262 (specialist exception: xterm viewport)"
     },
     {
@@ -69,6 +321,1049 @@
       "context": "@media (prefers-reduced-motion: reduce) / *, *::before, *::after",
       "kind": "important",
       "owner": "#255, #263 (accessibility exception: prefers-reduced-motion, global so portalled overlays comply)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": ".kubecode-message-body [data-streamdown='table-wrapper'] { max-width: 100%; overflow-x: auto; }",
+      "context": ".kubecode-message-body [data-streamdown='table-wrapper']",
+      "kind": "third-party-internal",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": ".kubecode-app code, .kubecode-app pre",
+      "context": ".kubecode-app code, .kubecode-app pre",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": ".kubecode-git-state svg",
+      "context": ".kubecode-git-state svg",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": ".kubecode-git-state code",
+      "context": ".kubecode-git-state code",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": ".kubecode-git-path code",
+      "context": ".kubecode-git-path code",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": ".kubecode-project-file-tree [role='group']",
+      "context": ".kubecode-project-file-tree [role='group']",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": ".kubecode-file-tree-row svg",
+      "context": ".kubecode-file-tree-row svg",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": ".kubecode-emoji-identity > svg",
+      "context": ".kubecode-emoji-identity > svg",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": ".kubecode-terminal-navigator-row > svg, .kubecode-terminal-navigator-row > img",
+      "context": ".kubecode-terminal-navigator-row > svg, .kubecode-terminal-navigator-row > img",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": ".kubecode-terminal-navigator-close svg",
+      "context": ".kubecode-terminal-navigator-close svg",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": ".kubecode-terminal-navigator-editor > svg, .kubecode-terminal-navigator-editor > img",
+      "context": ".kubecode-terminal-navigator-editor > svg, .kubecode-terminal-navigator-editor > img",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": ".kubecode-terminal-navigator-editor input",
+      "context": ".kubecode-terminal-navigator-editor input",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": ".kubecode-session-title strong",
+      "context": ".kubecode-session-title strong",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": ".kubecode-path-picker-footer button",
+      "context": ".kubecode-path-picker-footer button",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": ".kubecode-session-title > svg",
+      "context": "@media (max-width: 720px) / .kubecode-session-title > svg",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": ".kubecode-channel-thread h3, .kubecode-channel-link",
+      "context": ".kubecode-channel-thread h3, .kubecode-channel-link",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": ".kubecode-channel-filter label",
+      "context": ".kubecode-channel-filter label",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": ".kubecode-detail-pane > header h3",
+      "context": ".kubecode-detail-pane > header h3",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": ".kubecode-detail-pane > h4, .kubecode-detail-pane > p, .kubecode-detail-pane > button",
+      "context": ".kubecode-detail-pane > h4, .kubecode-detail-pane > p, .kubecode-detail-pane > button",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": ".kubecode-work-header h2",
+      "context": ".kubecode-work-header h2",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": ".kubecode-work-header p",
+      "context": ".kubecode-work-header p",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": ".kubecode-work-inspector h3",
+      "context": ".kubecode-work-inspector h3",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": ".kubecode-control-matrix-section h2",
+      "context": ".kubecode-control-matrix-section h2",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": ".kubecode-delivery-failure button",
+      "context": "@media (pointer: coarse) / .kubecode-delivery-failure button",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": ".kubecode-proto-switcher a, .kubecode-proto-places a, .kubecode-proto-link",
+      "context": ".kubecode-proto-switcher a, .kubecode-proto-places a, .kubecode-proto-link",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": ".kubecode-proto-switcher a:hover, .kubecode-proto-places a:hover, .kubecode-proto-link:hover",
+      "context": ".kubecode-proto-switcher a:hover, .kubecode-proto-places a:hover, .kubecode-proto-link:hover",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": ".kubecode-proto-switcher a[aria-current], .kubecode-proto-places a[aria-current]",
+      "context": ".kubecode-proto-switcher a[aria-current], .kubecode-proto-places a[aria-current]",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": ".kubecode-proto a:focus-visible",
+      "context": ".kubecode-proto a:focus-visible",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": ".kubecode-proto-places a",
+      "context": ".kubecode-proto-places a",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": ".kubecode-proto-places a > :last-child:not(span)",
+      "context": ".kubecode-proto-places a > :last-child:not(span)",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": ".kubecode-proto-dm small",
+      "context": ".kubecode-proto-dm small",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": ".kubecode-proto-tabs [role='tabpanel']",
+      "context": ".kubecode-proto-tabs [role='tabpanel']",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": ".kubecode-proto-decision p",
+      "context": ".kubecode-proto-decision p",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": ".kubecode-proto-places a",
+      "context": "@media (max-width: 760px) / .kubecode-proto-places a",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": ".kubecode-message-body :is(th, td)",
+      "context": ".kubecode-message-body :is(th, td)",
+      "kind": "element-reach-in",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "height: 36px;",
+      "context": ".kubecode-git-path",
+      "kind": "appearance-on-official",
+      "component": "Button",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "font-weight: 550;",
+      "context": ".kubecode-file-tree-row[aria-expanded]",
+      "kind": "appearance-on-official",
+      "component": "Button",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "border-radius: 3px;",
+      "context": ".kubecode-terminal-navigator-row",
+      "kind": "appearance-on-official",
+      "component": "Button",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "height: 24px;",
+      "context": ".kubecode-terminal-navigator-row",
+      "kind": "appearance-on-official",
+      "component": "Button",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "padding: 0 22px 0 6px;",
+      "context": ".kubecode-terminal-navigator-row",
+      "kind": "appearance-on-official",
+      "component": "Button",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "background: var(--surface-hover);",
+      "context": ".kubecode-terminal-navigator-row[data-active='true']",
+      "kind": "appearance-on-official",
+      "component": "Button",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "color: var(--text-primary);",
+      "context": ".kubecode-terminal-navigator-row[data-active='true']",
+      "kind": "appearance-on-official",
+      "component": "Button",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "height: 18px;",
+      "context": ".kubecode-terminal-navigator-close",
+      "kind": "appearance-on-official",
+      "component": "Button",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "opacity: 0;",
+      "context": ".kubecode-terminal-navigator-close",
+      "kind": "appearance-on-official",
+      "component": "Button",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "opacity: 1;",
+      "context": ".kubecode-terminal-navigator-row-shell:hover .kubecode-terminal-navigator-close, .kubecode-terminal-navigator-row-shell:focus-within .kubecode-terminal-navigator-close, .kubecode-terminal-navigator-close:focus-visible",
+      "kind": "appearance-on-official",
+      "component": "Button",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "opacity: 1;",
+      "context": "@media (hover: none) / .kubecode-terminal-navigator-close",
+      "kind": "appearance-on-official",
+      "component": "Button",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "padding: 0 4px;",
+      "context": ".kubecode-terminal-navigator[data-narrow='true'] .kubecode-terminal-navigator-row",
+      "kind": "appearance-on-official",
+      "component": "Button",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "max-height: min(360px, 42vh);",
+      "context": ".kubecode-provider-session-list",
+      "kind": "appearance-on-official",
+      "component": "ItemGroup",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "min-height: 150px;",
+      "context": ".kubecode-provider-session-list",
+      "kind": "appearance-on-official",
+      "component": "ItemGroup",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "background: var(--surface-sidebar);",
+      "context": ".kubecode-context-explorer",
+      "kind": "appearance-on-official",
+      "component": "TabsContent",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "background: var(--surface-app);",
+      "context": ".kubecode-explorer-section-content",
+      "kind": "appearance-on-official",
+      "component": "CollapsibleContent",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "max-height: min(300px, 40vh);",
+      "context": ".kubecode-explorer-section:not([data-fill='true']) .kubecode-explorer-section-content",
+      "kind": "appearance-on-official",
+      "component": "CollapsibleContent",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "border-radius: 4px;",
+      "context": ".kubecode-file-tree-row",
+      "kind": "appearance-on-official",
+      "component": "Button",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "font-family: var(--kubecode-code-font, ui-monospace, SFMono-Regular, Menlo, monospace);",
+      "context": ".kubecode-file-tree-row",
+      "kind": "appearance-on-official",
+      "component": "Button",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "font-size: 14px;",
+      "context": ".kubecode-file-tree-row",
+      "kind": "appearance-on-official",
+      "component": "Button",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "font-weight: 400;",
+      "context": ".kubecode-file-tree-row",
+      "kind": "appearance-on-official",
+      "component": "Button",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "height: 26px;",
+      "context": ".kubecode-file-tree-row",
+      "kind": "appearance-on-official",
+      "component": "Button",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "padding-bottom: 0;",
+      "context": ".kubecode-file-tree-row",
+      "kind": "appearance-on-official",
+      "component": "Button",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "padding-left: 7px;",
+      "context": ".kubecode-file-tree-row",
+      "kind": "appearance-on-official",
+      "component": "Button",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "padding-right: 7px;",
+      "context": ".kubecode-file-tree-row",
+      "kind": "appearance-on-official",
+      "component": "Button",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "padding-top: 0;",
+      "context": ".kubecode-file-tree-row",
+      "kind": "appearance-on-official",
+      "component": "Button",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "background: var(--surface-dialog);",
+      "context": ".kubecode-path-picker-dialog",
+      "kind": "appearance-on-official",
+      "component": "DialogContent",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "border-color: var(--border-strong);",
+      "context": ".kubecode-path-picker-dialog",
+      "kind": "appearance-on-official",
+      "component": "DialogContent",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "max-height: min(620px, calc(100vh - 48px));",
+      "context": ".kubecode-path-picker-dialog",
+      "kind": "appearance-on-official",
+      "component": "DialogContent",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "padding: 0;",
+      "context": ".kubecode-path-picker-dialog",
+      "kind": "appearance-on-official",
+      "component": "DialogContent",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "border-bottom: 1px solid var(--border-subtle);",
+      "context": ".kubecode-path-picker-heading",
+      "kind": "appearance-on-official",
+      "component": "DialogHeader",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "padding: 16px 18px 13px;",
+      "context": ".kubecode-path-picker-heading",
+      "kind": "appearance-on-official",
+      "component": "DialogHeader",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "background: var(--surface-subtle);",
+      "context": ".kubecode-channel-select",
+      "kind": "appearance-on-official",
+      "component": "SelectTrigger",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "border: 1px solid var(--border-subtle);",
+      "context": ".kubecode-channel-select",
+      "kind": "appearance-on-official",
+      "component": "SelectTrigger",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "border-radius: var(--radius-md);",
+      "context": ".kubecode-channel-select",
+      "kind": "appearance-on-official",
+      "component": "SelectTrigger",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "color: var(--text-primary);",
+      "context": ".kubecode-channel-select",
+      "kind": "appearance-on-official",
+      "component": "SelectTrigger",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "font-size: var(--kubecode-ui-font-small);",
+      "context": ".kubecode-channel-select",
+      "kind": "appearance-on-official",
+      "component": "SelectTrigger",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "min-height: 28px;",
+      "context": ".kubecode-channel-select",
+      "kind": "appearance-on-official",
+      "component": "SelectTrigger",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "padding: 2px 6px;",
+      "context": ".kubecode-channel-select",
+      "kind": "appearance-on-official",
+      "component": "SelectTrigger",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "color: var(--text-secondary);",
+      "context": ".kubecode-message-delivery",
+      "kind": "appearance-on-official",
+      "component": "Badge",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "font: var(--ws-font-meta);",
+      "context": ".kubecode-message-delivery",
+      "kind": "appearance-on-official",
+      "component": "Badge",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "padding: var(--ws-space-3) var(--ws-space-4);",
+      "context": ".kubecode-proto-tabs",
+      "kind": "appearance-on-official",
+      "component": "Tabs",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "padding: var(--ws-space-2) var(--ws-space-3);",
+      "context": "@media (max-width: 760px) / .kubecode-proto-tabs",
+      "kind": "appearance-on-official",
+      "component": "Tabs",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "box-shadow: var(--shadow-sm, 0 1px 3px rgb(0 0 0 / 12%));",
+      "context": ".kubecode-session-jump",
+      "kind": "appearance-on-official",
+      "component": "Button",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "min-height: 120px;",
+      "context": ".kubecode-message-list > .kubecode-conversation",
+      "kind": "appearance-on-official",
+      "component": "ConversationScroller, Conversation",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "padding: var(--ws-space-3) 0 var(--ws-space-1);",
+      "context": ".kubecode-conversation-thread",
+      "kind": "appearance-on-official",
+      "component": "ConversationContent",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "box-shadow: var(--ws-elevation-soft);",
+      "context": ".kubecode-conversation > .kubecode-scroll-latest",
+      "kind": "appearance-on-official",
+      "component": "ConversationScrollButton",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "height: 2rem;",
+      "context": ".kubecode-conversation > .kubecode-scroll-latest",
+      "kind": "appearance-on-official",
+      "component": "ConversationScrollButton",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "font: var(--ws-font-reading);",
+      "context": ".kubecode-message .kubecode-message-content",
+      "kind": "appearance-on-official",
+      "component": "MessageContent",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "color: var(--text-primary);",
+      "context": ".kubecode-message-body",
+      "kind": "appearance-on-official",
+      "component": "CardContent",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "font: var(--ws-font-reading);",
+      "context": ".kubecode-message-body",
+      "kind": "appearance-on-official",
+      "component": "CardContent",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "color: var(--text-secondary);",
+      "context": ".kubecode-message-action",
+      "kind": "appearance-on-official",
+      "component": "MessageAction",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "max-height: min(40dvh, 18rem);",
+      "context": ".kubecode-composer-textarea",
+      "kind": "appearance-on-official",
+      "component": "PromptInputTextarea",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "min-height: calc(1lh + 2 * var(--ws-space-2));",
+      "context": ".kubecode-composer-textarea",
+      "kind": "appearance-on-official",
+      "component": "PromptInputTextarea",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "padding: var(--ws-space-2) var(--ws-space-3) 0;",
+      "context": ".kubecode-composer-context",
+      "kind": "appearance-on-official",
+      "component": "PromptInputHeader",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/kubecode.css",
+      "text": "padding-bottom: calc(var(--ws-space-2) + env(safe-area-inset-bottom));",
+      "context": "[data-inspector-layout='screen'] .kubecode-task-decisions",
+      "kind": "appearance-on-official",
+      "component": "CardFooter",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/components/AiMessage.tsx",
+      "text": "kubecode-session-prompt-editor",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/components/AiMessage.tsx",
+      "text": "kubecode-session-prompt",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/components/AiMessage.tsx",
+      "text": "kubecode-session-prompt-content",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/components/AiMessage.tsx",
+      "text": "kubecode-session-reasoning",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/components/AiMessage.tsx",
+      "text": "kubecode-session-reasoning-caret",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/components/AiMessage.tsx",
+      "text": "kubecode-session-tool-use",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/components/AiMessage.tsx",
+      "text": "kubecode-session-tool-use-toggle",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/components/AiMessage.tsx",
+      "text": "kubecode-session-tool-use-caret",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/components/AiMessage.tsx",
+      "text": "kubecode-session-response",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/components/AiMessage.tsx",
+      "text": "kubecode-session-response-content",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/components/AiMessage.tsx",
+      "text": "kubecode-session-working",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/components/AiPanelChrome.tsx",
+      "text": "kubecode-message-history",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/components/AiPanelChrome.tsx",
+      "text": "kubecode-session-prompt-input",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/ContextWorkbench.tsx",
+      "text": "kubecode-git-group",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/app/NewSessionDialog.tsx",
+      "text": "kubecode-new-session-dialog",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/app/NewSessionDialog.tsx",
+      "text": "kubecode-new-session-form",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/app/ProjectNavigator.tsx",
+      "text": "kubecode-session-sidebar",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/attention/ExecutionRow.tsx",
+      "text": "kubecode-execution-row",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/attention/ExecutionRow.tsx",
+      "text": "kubecode-execution-queued",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/attention/ExecutionRow.tsx",
+      "text": "kubecode-execution-state",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/attention/ExecutionRow.tsx",
+      "text": "kubecode-execution-title",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/attention/ExecutionRow.tsx",
+      "text": "kubecode-shimmer",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/attention/ExecutionStrip.tsx",
+      "text": "kubecode-execution-strip",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/attention/ExecutionStrip.tsx",
+      "text": "kubecode-execution-rows",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/attention/NeedsYouList.tsx",
+      "text": "kubecode-needs-you-list",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/channel/ActivityGroup.tsx",
+      "text": "kubecode-activity-group",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/channel/ChannelWorkspace.tsx",
+      "text": "kubecode-conversation-alert",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/channel/ConversationComposer.tsx",
+      "text": "kubecode-prompt-input",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/channel/MessageComposer.tsx",
+      "text": "kubecode-add-context",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/channel/MessageItem.tsx",
+      "text": "kubecode-message-recipients-arrow",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/resources/RecordPreview.tsx",
+      "text": "kubecode-record-code",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/session/PromptQueueDock.tsx",
+      "text": "kubecode-session-queue-text",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/session/RevisionNavigator.tsx",
+      "text": "kubecode-revision-navigator",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/session/RevisionNavigator.tsx",
+      "text": "kubecode-recreated-context",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/session/SessionComposer.tsx",
+      "text": "kubecode-read-only-session",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/session/SessionMarkdown.tsx",
+      "text": "kubecode-session-markdown",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/session/SessionPlanSummary.tsx",
+      "text": "kubecode-session-plan",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/tasks/TaskBoardView.tsx",
+      "text": "kubecode-task-drafts",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/tasks/TaskBoardView.tsx",
+      "text": "kubecode-task-stages",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/tasks/TaskBoardView.tsx",
+      "text": "kubecode-task-archived",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/tasks/TaskWork.tsx",
+      "text": "kubecode-task-waiting",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/team/TeamProposalView.tsx",
+      "text": "kubecode-team-proposal",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/team/TeamStatusView.tsx",
+      "text": "kubecode-team-attention",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/team/TeamStatusView.tsx",
+      "text": "kubecode-team-user-input",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/team/TeamTasksView.tsx",
+      "text": "kubecode-team-detail-tabs",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/team/TeamTasksView.tsx",
+      "text": "kubecode-team-activity-list",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/team/TeamTasksView.tsx",
+      "text": "kubecode-team-dependency-list",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/team/TeamTasksView.tsx",
+      "text": "kubecode-team-task-dialog",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/team/TeamVerificationView.tsx",
+      "text": "kubecode-team-verification",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
+    },
+    {
+      "file": "src/kubecode/work/WorkBoard.tsx",
+      "text": "kubecode-work-filter",
+      "context": "",
+      "kind": "dead-class",
+      "owner": "unassigned (#276, a later slice)"
     }
   ]
 }
