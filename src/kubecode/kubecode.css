@@ -840,13 +840,6 @@
   margin: 0;
 }
 
-/* Shared Workspace controls (ADR 0222): one icon button, one composer, one send. */
-.kubecode-icon-button { flex-shrink: 0; }
-/* Stopping one named run: an outlined control apart from send, named in text on touch screens. */
-.kubecode-stop-button-text { display: none; }
-@media (pointer: coarse) {
-  .kubecode-stop-button-text { display: inline; white-space: nowrap; }
-}
 .kubecode-composer {
   display: flex;
   flex: 0 0 auto;
@@ -1288,17 +1281,6 @@
   --ws-font-meta: 400 var(--kubecode-ui-font-small, 13px) / 1.4 var(--kubecode-ui-font, system-ui, sans-serif);
 }
 
-/* Every Workspace control: a touch-sized target (the official Button draws focus). */
-@media (pointer: coarse) {
-  .kubecode-icon-button,
-  .kubecode-send-button,
-  .kubecode-stop-button,
-  .kubecode-pause-button {
-    min-height: var(--ws-touch-target);
-    min-width: var(--ws-touch-target);
-  }
-}
-
 .kubecode-member-identity {
   align-items: center;
   display: inline-flex;
@@ -1419,7 +1401,6 @@
 
 /* Review follow-ups to the vocabulary (ADR 0227). */
 .kubecode-view-header { padding: 0 0 var(--ws-space-2); }
-.kubecode-view-header-row > .kubecode-icon-button:first-child { align-self: flex-start; }
 .kubecode-view-header[data-level='3'] .kubecode-view-header-title { font: var(--ws-font-subtitle); }
 .kubecode-view-header-meta {
   align-items: center;

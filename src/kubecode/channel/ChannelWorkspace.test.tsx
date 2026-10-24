@@ -454,7 +454,7 @@ describe('ChannelWorkspace Tasks and references', () => {
     const onOpenReference = vi.fn()
     view(s, { props: { conversations: [{ id: 's9', project_id: 'p1', title: 'Sweep run' } as Conversation], onOpenReference } })
     await screen.findByText('See these')
-    const chips = row(1).querySelectorAll('.kubecode-reference-chip')
+    const chips = row(1).querySelectorAll('[data-reference-state]')
     expect([...chips].map((chip) => chip.textContent?.trim())).toEqual(['Task Pruning', 'Session Sweep run', 'Artifact Artifact (no title)'])
     expect(row(1)).not.toHaveTextContent('064a23dd')
     fireEvent.click(within(row(1)).getByRole('button', { name: 'Session Sweep run' }))

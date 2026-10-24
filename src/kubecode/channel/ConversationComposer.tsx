@@ -9,7 +9,6 @@ import {
   type ReactNode,
   type Ref,
 } from 'react'
-import { Popover as PopoverPrimitive } from 'radix-ui'
 
 import {
   PromptInput,
@@ -25,7 +24,7 @@ import {
   PromptInputTextarea,
   PromptInputTools,
 } from '@/components/ai-elements/prompt-input'
-import { Popover, PopoverContent } from '@/components/ui/popover'
+import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { MemberAvatar } from '@/components/workspace/MemberIdentity'
 import { filterMentions, insertMention, mentionQueryAt, type MentionOption } from '@/components/workspace/mentions'
@@ -230,7 +229,7 @@ export function ConversationComposer({
         if (!next) setDismissed(typing?.start ?? null)
       }}
     >
-    <PopoverPrimitive.Anchor asChild>
+    <PopoverAnchor asChild>
     <div className={cn('kubecode-composer', className)}>
       {menuOpen && (
         <PopoverContent
@@ -310,9 +309,9 @@ export function ConversationComposer({
           <PromptInputTools className="kubecode-composer-controls">
             {tools}
             {stop && (
-              <PromptInputButton aria-label={stop.label} className="kubecode-stop-button" size="sm" variant="outline" onClick={stop.onStop}>
+              <PromptInputButton aria-label={stop.label} size="sm" variant="outline" onClick={stop.onStop}>
                 <Icon role="status" source={WORKSPACE_COMMAND_ICONS.stopRun.Icon} />
-                <span aria-hidden="true" className="kubecode-stop-button-text">{stop.shortLabel ?? stop.label}</span>
+                <span aria-hidden="true" className="pointer-fine:sr-only">{stop.shortLabel ?? stop.label}</span>
               </PromptInputButton>
             )}
           </PromptInputTools>
@@ -320,8 +319,6 @@ export function ConversationComposer({
           <PromptInputSubmit
             aria-describedby={reason ? reasonId : undefined}
             aria-label={sendLabel}
-            className="kubecode-send-button"
-            data-can-send={ready}
             disabled={!ready}
             title={sendLabel}
             type="button"
@@ -334,7 +331,7 @@ export function ConversationComposer({
         {notices && <div className="flex flex-col gap-1 self-stretch px-3 pb-2">{notices}</div>}
       </PromptInput>
     </div>
-    </PopoverPrimitive.Anchor>
+    </PopoverAnchor>
     </Popover>
     </TooltipProvider>
   )

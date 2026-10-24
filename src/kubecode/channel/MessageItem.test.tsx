@@ -108,7 +108,7 @@ describe('MessageItem', () => {
   it('renders the body as Markdown and shows the Task once, as a chip that opens it', () => {
     const { article, on } = item()
     expect(within(article).getByText('prune').tagName).toBe('STRONG')
-    const chips = article.querySelectorAll('.kubecode-reference-chip')
+    const chips = article.querySelectorAll('[data-reference-state]')
     expect(chips).toHaveLength(1)
     fireEvent.click(within(article).getByRole('button', { name: 'Task Structured pruning' }))
     expect(on.openTask).toHaveBeenCalled()
@@ -116,7 +116,7 @@ describe('MessageItem', () => {
 
   it('drops the Task chip while General shows only that Task, so it is not repeated under every message', () => {
     const { article } = item({ filtered: true })
-    expect(article.querySelectorAll('.kubecode-reference-chip')).toHaveLength(0)
+    expect(article.querySelectorAll('[data-reference-state]')).toHaveLength(0)
     expect(within(article).queryByRole('button', { name: 'Task Structured pruning' })).not.toBeInTheDocument()
   })
 

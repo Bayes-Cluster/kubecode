@@ -1,9 +1,11 @@
 import { useId, useMemo, useState, type ReactNode } from 'react'
 
+import { PromptInputSubmit } from '@/components/ai-elements/prompt-input'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { FieldDescription } from '@/components/ui/field'
 import { Spinner } from '@/components/ui/spinner'
+import { Toggle } from '@/components/ui/toggle'
 import { Icon } from '@/kubecode/icons'
 import {
   WORKSPACE_COMMAND_ICONS,
@@ -20,7 +22,6 @@ import { MemberIdentity } from './MemberIdentity'
 import { MoreActions } from './MoreActions'
 import { OfficialComponentMatrix } from './OfficialComponentMatrix'
 import { ReferenceChip } from './ReferenceChip'
-import { PauseButton, SendButton, StopButton } from './SendButton'
 import { ViewHeader } from './ViewHeader'
 
 function Row({ children, label }: { children: ReactNode; label: string }) {
@@ -118,16 +119,27 @@ export function ControlMatrix({ t }: { t: Translator }) {
 
       <Section title={t('kubecode.matrix.section.sendStop')}>
         <Row label={t('kubecode.matrix.state.default')}>
-          <SendButton canSend label={t('kubecode.vocab.command.send')} onSend={() => undefined} />
-          <StopButton label={t('kubecode.matrix.sample.stopAnalyst')} shortLabel={t('kubecode.vocab.command.stopRun')} onStop={() => undefined} />
-          <PauseButton label={t('kubecode.matrix.sample.pauseWork')} paused={paused} onToggle={() => setPaused(!paused)} />
+          <PromptInputSubmit aria-label={t('kubecode.vocab.command.send')} data-testid="matrix-send" title={t('kubecode.vocab.command.send')} type="button">
+            <Icon role="command" source={WORKSPACE_COMMAND_ICONS.send.Icon} />
+          </PromptInputSubmit>
+          <Button aria-label={t('kubecode.matrix.sample.stopAnalyst')} data-testid="matrix-stop" size="sm" variant="outline">
+            <Icon role="status" source={WORKSPACE_COMMAND_ICONS.stopRun.Icon} />
+            <span aria-hidden="true" className="pointer-fine:sr-only" data-testid="matrix-stop-text">{t('kubecode.vocab.command.stopRun')}</span>
+          </Button>
+          <Toggle aria-label={t('kubecode.matrix.sample.pauseWork')} data-testid="matrix-pause" pressed={paused} size="sm" variant="outline" onPressedChange={setPaused}>
+            <Icon role="command" source={paused ? WORKSPACE_COMMAND_ICONS.resumeOrchestration.Icon : WORKSPACE_COMMAND_ICONS.pauseOrchestration.Icon} />
+          </Toggle>
         </Row>
         <Row label={t('kubecode.matrix.state.disabled')}>
-          <SendButton canSend={false} label={t('kubecode.vocab.command.send')} onSend={() => undefined} />
+          <PromptInputSubmit aria-label={t('kubecode.vocab.command.send')} disabled title={t('kubecode.vocab.command.send')} type="button">
+            <Icon role="command" source={WORKSPACE_COMMAND_ICONS.send.Icon} />
+          </PromptInputSubmit>
         </Row>
         <Row label={t('kubecode.matrix.state.busy')}>
-          <SendButton busy canSend label={t('kubecode.vocab.command.send')} onSend={() => undefined} />
-          <PauseButton busy label={t('kubecode.matrix.sample.pauseWork')} paused={false} onToggle={() => undefined} />
+          <PromptInputSubmit aria-busy aria-disabled aria-label={t('kubecode.vocab.command.send')} status="submitted" title={t('kubecode.vocab.command.send')} type="button" />
+          <Toggle aria-busy aria-disabled aria-label={t('kubecode.matrix.sample.pauseWork')} pressed={false} size="sm" variant="outline">
+            <Spinner aria-hidden="true" />
+          </Toggle>
         </Row>
       </Section>
 

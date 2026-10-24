@@ -9,10 +9,10 @@ import { expect, test, type Page } from '@playwright/test'
  * touch targets, and long translations that wrap instead of overflowing.
  */
 const CONTROLS = [
-  '.kubecode-icon-button:not(:disabled)',
-  '.kubecode-send-button:not(:disabled)',
-  '.kubecode-stop-button',
-  '.kubecode-pause-button',
+  '[data-size^="icon-"]:not(:disabled)',
+  '[data-testid="matrix-send"]',
+  '[data-testid="matrix-stop"]',
+  '[data-testid="matrix-pause"]',
   '[data-size="wrap"]:not(:disabled)',
   '[data-reference-chip-action="open"]:is(button)',
   '[data-reference-chip-action="remove"]',
@@ -132,7 +132,7 @@ test.describe('on a phone', () => {
       .map(({ box, name }) => `${name}: ${Math.round(box.width)}x${Math.round(box.height)}`))
     expect(small).toEqual([])
     // On touch, a stop says in text what it stops.
-    await expect(page.locator('.kubecode-stop-button-text').first()).toBeVisible()
+    await expect(page.getByTestId('matrix-stop-text')).toBeVisible()
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
     expect(await overflowing(page)).toEqual([])
     expect(await unnamedControls(page)).toEqual([])
