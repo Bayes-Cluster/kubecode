@@ -538,18 +538,6 @@
 
 .kubecode-session-wechat-marker { color: var(--accent-green); flex-shrink: 0; }
 
-.kubecode-system-message-host {
-  bottom: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-width: min(450px, calc(100vw - 24px));
-  position: fixed;
-  right: 12px;
-  width: 450px;
-  z-index: 70;
-}
-
 .kubecode-provider-session-list {
   max-height: min(360px, 42vh);
   min-height: 150px;

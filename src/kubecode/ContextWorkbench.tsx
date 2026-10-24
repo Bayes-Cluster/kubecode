@@ -1,18 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import {
-  ChevronDown,
-  File,
-  Folder,
-  GitCommitHorizontal,
-  GitCompare,
-  Minus,
-  Plus,
-  RotateCw,
-  Search,
-  Trash2,
-  TriangleAlert,
-  X
-} from 'lucide-react'
+import { ChevronDown, CircleAlert, File, Folder, GitCommitHorizontal, GitCompare, Minus, Plus, RotateCw, Search, Trash2, TriangleAlert, X } from 'lucide-react'
 import { Virtuoso } from 'react-virtuoso'
 
 import { IconButton } from '@/components/workspace/IconButton'
@@ -69,7 +56,6 @@ import {
   type FileTreeInvalidation,
 } from './fileTreeInvalidation'
 import { searchProjectEntries } from './projectPathSearch'
-import { SystemMessageNotice } from './SystemMessageNotice'
 import { useSystemMessages } from './systemMessages'
 import { useGitStatusController } from './useGitStatusController'
 import { GitDiffView } from './GitDiffView'
@@ -635,13 +621,13 @@ export function ContextWorkbench({
         )}
       </Tabs>
       {error && (
-        <SystemMessageNotice
-          detailsLabel={t('kubecode.details')}
-          dismissLabel={t('window.close')}
-          level="error"
-          message={error}
-          onDismiss={() => setError(null)}
-        />
+<Alert variant="destructive">
+          <CircleAlert />
+          <AlertDescription className="[overflow-wrap:anywhere] whitespace-pre-wrap">{error}</AlertDescription>
+          <Button aria-label={t('window.close')} className="absolute top-1.5 right-1.5" size="icon-xs" variant="ghost" onClick={() => setError(null)}>
+            <X />
+          </Button>
+        </Alert>
       )}
       <EntryDialog
         api={api}

@@ -1,13 +1,9 @@
 import { useEffect, useState } from 'react'
-import {
-  Download,
-  Plus,
-  User,
-  Users,
-} from 'lucide-react'
+import { CircleAlert, Download, Plus, User, Users, X } from 'lucide-react'
 import { trackEvent } from '@/lib/telemetry'
 
 import { AiAgentIcon } from '@/components/AiAgentIcon'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -59,7 +55,6 @@ import {
   type ProviderSessionInfo,
   type TeamSnapshot,
 } from '../api'
-import { SystemMessageNotice } from '../SystemMessageNotice'
 import { errorMessage } from './errors'
 import type { Translator } from '@/lib/i18n'
 
@@ -325,28 +320,28 @@ export function NewSessionDialog({
                 <Empty><EmptyHeader><EmptyDescription>{t('kubecode.noProviderSessions')}</EmptyDescription></EmptyHeader></Empty>
               )}
               {providerError && (
-                <SystemMessageNotice
-                  detailsLabel={t('kubecode.details')}
-                  dismissLabel={t('window.close')}
-                  level="error"
-                  message={providerError}
-                  onDismiss={() => setProviderError(null)}
-                />
+<Alert variant="destructive">
+          <CircleAlert />
+          <AlertDescription className="[overflow-wrap:anywhere] whitespace-pre-wrap">{providerError}</AlertDescription>
+          <Button aria-label={t('window.close')} className="absolute top-1.5 right-1.5" size="icon-xs" variant="ghost" onClick={() => setProviderError(null)}>
+            <X />
+          </Button>
+        </Alert>
               )}
             </ItemGroup>
           )}
           {createError && (
             <div className="flex flex-col gap-2">
-              <SystemMessageNotice
-                detailsLabel={t('kubecode.details')}
-                dismissLabel={t('window.close')}
-                level="error"
-                message={createError}
-                onDismiss={() => {
-                  setCreateError(null)
-                  setCreateFailure(null)
-                }}
-              />
+<Alert variant="destructive">
+          <CircleAlert />
+          <AlertDescription className="[overflow-wrap:anywhere] whitespace-pre-wrap">{createError}</AlertDescription>
+          <Button aria-label={t('window.close')} className="absolute top-1.5 right-1.5" size="icon-xs" variant="ghost" onClick={() => {
+            setCreateError(null)
+            setCreateFailure(null)
+          }}>
+            <X />
+          </Button>
+        </Alert>
               {createFailure && (
                 <code className="text-xs text-muted-foreground">
                   {createFailure.code}

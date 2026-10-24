@@ -36,7 +36,7 @@ describe('ContextWorkbench', () => {
     )
 
     const alert = await screen.findByRole('alert')
-    expect(alert).toHaveAttribute('title', message)
+    expect(alert).toHaveAttribute('data-slot', 'alert')
     expect(alert).toHaveTextContent(message)
     expect(alert.closest('[data-testid="context-workbench"]')).toBeInTheDocument()
 

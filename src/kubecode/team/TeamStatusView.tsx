@@ -1,16 +1,8 @@
 import { useState } from 'react'
 import type { ReactNode } from 'react'
-import {
-  ArrowRight,
-  CircleAlert,
-  CircleCheck,
-  Clock,
-  LoaderCircle,
-  Pause,
-  Play,
-  Users,
-} from 'lucide-react'
+import { ArrowRight, CircleAlert, CircleCheck, Clock, LoaderCircle, Pause, Play, TriangleAlert, Users, X } from 'lucide-react'
 
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
@@ -29,7 +21,6 @@ import type { TranslationKey, Translator } from '@/lib/i18n'
 
 import type { KubecodeApi, TeamSnapshot } from '../api'
 import { TEAM_STATUS_ICONS } from '../icons/statusIcons'
-import { SystemMessageNotice } from '../SystemMessageNotice'
 import { statusToneVariant, type StatusTone } from '../statusTone'
 
 export function TeamStatusView({
@@ -129,21 +120,19 @@ export function TeamStatusView({
       </header>
 
       {error && (
-        <SystemMessageNotice
-          detailsLabel={t('kubecode.details')}
-          dismissLabel={t('window.close')}
-          level="error"
-          message={error}
-          onDismiss={() => setError(null)}
-        />
+<Alert variant="destructive">
+          <CircleAlert />
+          <AlertDescription className="[overflow-wrap:anywhere] whitespace-pre-wrap">{error}</AlertDescription>
+          <Button aria-label={t('window.close')} className="absolute top-1.5 right-1.5" size="icon-xs" variant="ghost" onClick={() => setError(null)}>
+            <X />
+          </Button>
+        </Alert>
       )}
       {snapshot.team.mode_fallback && (
-        <SystemMessageNotice
-          detailsLabel={t('kubecode.details')}
-          dismissLabel={t('window.close')}
-          level="warning"
-          message={`${t('kubecode.teamYoloFallback')}: ${snapshot.team.mode_fallback.reason}`}
-        />
+<Alert variant="warning">
+          <TriangleAlert />
+          <AlertDescription className="[overflow-wrap:anywhere] whitespace-pre-wrap">{`${t('kubecode.teamYoloFallback')}: ${snapshot.team.mode_fallback.reason}`}</AlertDescription>
+        </Alert>
       )}
 
       <ItemGroup className="kubecode-team-metrics">

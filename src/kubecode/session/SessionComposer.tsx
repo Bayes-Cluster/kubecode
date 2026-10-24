@@ -1,4 +1,4 @@
-import { LockKeyhole, ShieldAlert } from 'lucide-react'
+import { CircleAlert, LockKeyhole, ShieldAlert, TriangleAlert, X } from 'lucide-react'
 
 import { AiPanelComposer } from '@/components/AiPanelChrome'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -16,7 +16,6 @@ import { ComposerAddMenu } from '../ComposerAddMenu'
 import { ComposerContextInput } from '../ComposerContextInput'
 import { composerDraftHasStaleContext } from '../composerDraft'
 import { SideQuestionPanel, type SideQuestionItem } from '../SideQuestionPanel'
-import { SystemMessageNotice } from '../SystemMessageNotice'
 import type { TerminalContextSource } from '../TerminalWorkspace'
 import { SessionPlanSummary, type SessionPlanEntry } from './SessionPlanSummary'
 import {
@@ -138,22 +137,22 @@ export function SessionComposer({
     >
       <SideQuestionPanel items={sideQuestions} t={t} />
       {error && (
-        <SystemMessageNotice
-          detailsLabel={t('kubecode.details')}
-          dismissLabel={t('window.close')}
-          level="error"
-          message={error}
-          onDismiss={onDismissError}
-        />
+<Alert variant="destructive">
+          <CircleAlert />
+          <AlertDescription className="[overflow-wrap:anywhere] whitespace-pre-wrap">{error}</AlertDescription>
+          <Button aria-label={t('window.close')} className="absolute top-1.5 right-1.5" size="icon-xs" variant="ghost" onClick={onDismissError}>
+            <X />
+          </Button>
+        </Alert>
       )}
       {workspaceWarning && (
-        <SystemMessageNotice
-          detailsLabel={t('kubecode.details')}
-          dismissLabel={t('window.close')}
-          level="warning"
-          message={workspaceWarning}
-          onDismiss={onDismissWorkspaceWarning}
-        />
+<Alert variant="warning">
+          <TriangleAlert />
+          <AlertDescription className="[overflow-wrap:anywhere] whitespace-pre-wrap">{workspaceWarning}</AlertDescription>
+          <Button aria-label={t('window.close')} className="absolute top-1.5 right-1.5" size="icon-xs" variant="ghost" onClick={onDismissWorkspaceWarning}>
+            <X />
+          </Button>
+        </Alert>
       )}
       {pendingPermission && (
         <PermissionPrompt

@@ -17,16 +17,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import {
-  ChevronDown,
-  PanelLeft,
-  Plus,
-  SquareSplitHorizontal,
-  SquareSplitVertical,
-  SquareTerminal,
-  Trash2,
-  X
-} from 'lucide-react'
+import { ChevronDown, CircleAlert, PanelLeft, Plus, SquareSplitHorizontal, SquareSplitVertical, SquareTerminal, Trash2, X } from 'lucide-react'
 
 import { AiAgentIcon } from '@/components/AiAgentIcon'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -49,7 +40,6 @@ import type { Translator } from '@/lib/i18n'
 import type { AgentDescriptor, AgentId, KubecodeApi, TerminalInfo, TerminalKind } from './api'
 import { removeTerminalSnapshot } from './terminalSnapshots'
 import { TerminalView } from './TerminalView'
-import { SystemMessageNotice } from './SystemMessageNotice'
 import { useSystemMessages } from './systemMessages'
 import {
   activateTerminalLeaf,
@@ -381,14 +371,13 @@ export function TerminalWorkspace({
         </div>
       </div>
       {error && (
-        <SystemMessageNotice
-          className="kubecode-terminal-error"
-          detailsLabel={t('kubecode.details')}
-          dismissLabel={t('window.close')}
-          level="error"
-          message={error}
-          onDismiss={() => setError(null)}
-        />
+<Alert className="kubecode-terminal-error" variant="destructive">
+          <CircleAlert />
+          <AlertDescription className="[overflow-wrap:anywhere] whitespace-pre-wrap">{error}</AlertDescription>
+          <Button aria-label={t('window.close')} className="absolute top-1.5 right-1.5" size="icon-xs" variant="ghost" onClick={() => setError(null)}>
+            <X />
+          </Button>
+        </Alert>
       )}
       <ResizablePanelGroup className="kubecode-terminal-body" id="kubecode-terminal-body" orientation="horizontal">
         <ResizablePanel className="kubecode-terminal-canvas" id="terminal-canvas" minSize={120}>

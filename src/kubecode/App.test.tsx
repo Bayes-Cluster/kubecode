@@ -675,9 +675,9 @@ describe('Kubecode workspace', () => {
         run_id: 'run-live', payload: {}, created_at: 'now',
       }))
       const enable = await screen.findByRole('button', { name: 'Enable notifications' })
-      const alert = enable.closest('[data-slot="alert"]') as HTMLElement
+      // ADR 0255: onboarding is one official toast with its action and its cancel.
+      const alert = enable.closest('[data-sonner-toast]') as HTMLElement
       expect(alert).not.toBeNull()
-      expect(alert).toHaveAttribute('role', 'status')
       expect(within(alert).getByRole('button', { name: 'Not now' })).toBeInTheDocument()
       fireEvent.click(within(alert).getByRole('button', { name: 'Not now' }))
       await waitFor(() => expect(screen.queryByRole('button', { name: 'Enable notifications' })).toBeNull())
