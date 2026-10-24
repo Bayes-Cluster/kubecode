@@ -398,7 +398,7 @@ function ImportReview({
                         id={controlId}
                         onCheckedChange={(checked) => toggle(index, checked === true)}
                       />
-                      <FieldLabel className="flex-wrap font-normal [overflow-wrap:anywhere]" htmlFor={controlId}>
+                      <FieldLabel className="flex-wrap [overflow-wrap:anywhere]" variant="option" htmlFor={controlId}>
                         <span>{candidate.text}</span>
                         <span className="text-muted-foreground">
                           {t('kubecode.research.import.line', { line: candidate.line })}

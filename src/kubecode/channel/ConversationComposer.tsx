@@ -255,7 +255,7 @@ export function ConversationComposer({
               <PromptInputCommandGroup>
                 {candidates.map((option) => (
                   <PromptInputCommandItem
-                    className="pointer-coarse:min-h-11"
+                   
                     key={option.id}
                     value={option.id}
                     // Keep focus in the text box while choosing.

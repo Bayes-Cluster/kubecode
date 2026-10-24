@@ -1291,7 +1291,6 @@
 /* Every Workspace control: a touch-sized target (the official Button draws focus). */
 @media (pointer: coarse) {
   .kubecode-icon-button,
-  .kubecode-touch-target,
   .kubecode-send-button,
   .kubecode-stop-button,
   .kubecode-pause-button,

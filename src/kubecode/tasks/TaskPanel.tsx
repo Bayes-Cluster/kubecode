@@ -128,7 +128,7 @@ export function TaskPanel({ entry, projectId }: InspectorPanelProps<Extract<Insp
   if (status === 'error') {
     return (
       <InspectorPanel icon={<TaskIcon />} title={t('kubecode.nav.taskDetail')}>
-        <ReaderNotice action={<Button className="pointer-coarse:min-h-11" size="xs" variant="outline" onClick={reload}>{t('kubecode.retry')}</Button>} failed>
+        <ReaderNotice action={<Button size="xs" variant="outline" onClick={reload}>{t('kubecode.retry')}</Button>} failed>
           {t('kubecode.task.loadFailed')}
         </ReaderNotice>
       </InspectorPanel>

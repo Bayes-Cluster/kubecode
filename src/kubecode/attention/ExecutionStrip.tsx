@@ -127,7 +127,7 @@ function FailureRow({ failure, onDismiss, t }: { failure: ExecutionFailure; onDi
           {/* The member's profile holds what fixes a failing turn: its Session, its setup. */}
           {navigation && (
             <Button
-              className="pointer-coarse:min-h-11"
+             
               size="xs"
               variant="outline"
               onClick={() => navigation.openPlace({ view: 'members' }, { inspect: { kind: 'member', id: failure.member.id } })}
@@ -135,7 +135,7 @@ function FailureRow({ failure, onDismiss, t }: { failure: ExecutionFailure; onDi
               {t('kubecode.execution.openMember', { name: failure.member.name })}
             </Button>
           )}
-          <Button className="pointer-coarse:min-h-11" size="xs" variant="ghost" onClick={onDismiss}>{t('kubecode.execution.dismiss')}</Button>
+          <Button size="xs" variant="ghost" onClick={onDismiss}>{t('kubecode.execution.dismiss')}</Button>
         </AlertDescription>
       </Alert>
     </li>

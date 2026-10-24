@@ -162,7 +162,7 @@ export function DisableWorkspacesDialog({
             )
           })}
           {preview?.worktrees.length === 0 && !active && (
-            <Empty className="p-4 md:p-6">
+            <Empty size="compact">
               <EmptyHeader>
                 <EmptyDescription>{t('kubecode.noWorktreesToMigrate')}</EmptyDescription>
               </EmptyHeader>

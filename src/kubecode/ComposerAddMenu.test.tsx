@@ -500,7 +500,8 @@ describe('ComposerAddMenu', () => {
       />,
     )
     fireEvent.click(screen.getByRole('button', { name: 'Add context' }))
+    // ADR 0255: an interactive Item is touch-sized by the component, not the call site.
     expect(screen.getByRole('button', { name: /Reference terminal output/i }).className)
-      .toContain('pointer-coarse:min-h-11')
+      .toContain('[button&]:pointer-coarse:min-h-11')
   })
 })

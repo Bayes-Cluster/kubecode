@@ -263,7 +263,7 @@ function RuntimeConnectionMenu({
         <Button
           aria-label={t('kubecode.runtimeConnectionState', { state: stateLabel })}
           data-state-value={connectionState}
-          className="kubecode-touch-target" size="icon-xs"
+          size="icon-xs"
           variant="ghost"
         >
           <Circle

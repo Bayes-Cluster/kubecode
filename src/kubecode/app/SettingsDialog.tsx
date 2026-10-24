@@ -593,7 +593,7 @@ export function SettingsDialog({
       )
     }
     return (
-      <Empty className="border">
+      <Empty variant="outline">
         <EmptyHeader>
           <EmptyMedia variant="icon"><TerminalSquare /></EmptyMedia>
           <EmptyDescription>{t('kubecode.settingsComingSoon')}</EmptyDescription>

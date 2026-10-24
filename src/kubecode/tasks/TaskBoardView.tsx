@@ -132,7 +132,7 @@ export function TaskBoardView({
         <Alert variant="destructive">
           <AlertDescription className="flex flex-wrap items-center gap-2">
             <span>{t('kubecode.task.loadFailed')}</span>
-            <Button className="pointer-coarse:min-h-11" size="xs" variant="outline" onClick={onReload}>{t('kubecode.retry')}</Button>
+            <Button size="xs" variant="outline" onClick={onReload}>{t('kubecode.retry')}</Button>
           </AlertDescription>
         </Alert>
       )}
@@ -214,7 +214,7 @@ export function TaskBoardView({
                       <Badge variant="secondary">{column.length}</Badge>
                     </h3>
                     {column.length === 0 ? (
-                      <Empty className="border p-4 md:p-4">
+                      <Empty size="compact" variant="outline">
                         <EmptyHeader>
                           <EmptyDescription>{t('kubecode.task.columnEmpty')}</EmptyDescription>
                         </EmptyHeader>

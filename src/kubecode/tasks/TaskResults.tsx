@@ -98,7 +98,7 @@ export function TaskResults({ bundle = null, detail, onBundleChanged, onChanged,
                   : t('kubecode.task.decided.returned')}
             </span>
             {decided.messageId && (
-              <Button className="pointer-coarse:min-h-11" size="xs" variant="outline" onClick={() => showInGeneral(decided.messageId as string)}>
+              <Button size="xs" variant="outline" onClick={() => showInGeneral(decided.messageId as string)}>
                 {t('kubecode.task.showInGeneral')}
               </Button>
             )}
@@ -128,7 +128,7 @@ export function TaskResults({ bundle = null, detail, onBundleChanged, onChanged,
           <h4 className="text-sm font-semibold">{t('kubecode.task.acceptedEvidence')}</h4>
           <EvidenceSources label={t('kubecode.task.acceptedEvidence')}>
             {acceptedEvidence.map((row) => (
-              <Item className="p-0" key={row.key} role="listitem" size="sm">
+              <Item key={row.key} role="listitem" size="compact">
                 <EvidenceChip evidence={row} />
               </Item>
             ))}
@@ -192,7 +192,7 @@ function ReviewSummary({ locale, onShow, review, t }: {
       </ItemContent>
       {review.general_message_id && (
         <ItemActions>
-          <Button className="pointer-coarse:min-h-11" size="xs" variant="ghost" onClick={() => onShow(review.general_message_id as string)}>
+          <Button size="xs" variant="ghost" onClick={() => onShow(review.general_message_id as string)}>
             {t('kubecode.task.showInGeneral')}
           </Button>
         </ItemActions>
@@ -390,7 +390,7 @@ function OpenReview({ detail, onChanged, onDecided, projectId, request }: {
           {removed && (
             <Field orientation="horizontal">
               <Checkbox checked={ackRemoved} id={ackId} onCheckedChange={(checked) => setAckRemoved(checked === true)} />
-              <FieldLabel className="font-normal" htmlFor={ackId}>{t('kubecode.task.ackRemoved')}</FieldLabel>
+              <FieldLabel variant="option" htmlFor={ackId}>{t('kubecode.task.ackRemoved')}</FieldLabel>
             </Field>
           )}
           <FieldSet>
@@ -474,7 +474,7 @@ function OutcomeChoice({ idPrefix, t, value }: {
     <Field orientation="horizontal">
       <RadioGroupItem aria-describedby={`${id}-hint`} id={id} value={value} />
       <FieldContent>
-        <FieldLabel className="font-normal" htmlFor={id}>{outcomeLabel(t, value)}</FieldLabel>
+        <FieldLabel variant="option" htmlFor={id}>{outcomeLabel(t, value)}</FieldLabel>
         <FieldDescription id={`${id}-hint`}>{t(`kubecode.task.outcomeHint.${value}`)}</FieldDescription>
       </FieldContent>
     </Field>
@@ -497,12 +497,12 @@ function EvidenceRow({ busy, check, evidence, onAccept, settle }: {
     if (settle && !changed) row.current?.querySelector<HTMLElement>('button')?.focus({ preventScroll: true })
   }, [changed, settle])
   return (
-    <Item className="flex-col items-stretch p-0" data-status={evidence.status} ref={row} role="listitem" size="sm">
+    <Item className="flex-col items-stretch" data-status={evidence.status} ref={row} role="listitem" size="compact">
       <EvidenceChip evidence={evidence} />
       {changed && (
         <ItemActions className="flex-wrap items-start">
           {open && (
-            <Button data-focus-key={`evidence:${evidence.key}`} className="pointer-coarse:min-h-11" size="sm" variant="outline" onClick={open}>
+            <Button data-focus-key={`evidence:${evidence.key}`} size="sm" variant="outline" onClick={open}>
               {t('kubecode.task.lookAtIt')}
             </Button>
           )}

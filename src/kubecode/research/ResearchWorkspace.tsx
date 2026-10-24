@@ -212,7 +212,7 @@ export function ResearchWorkspace({
           <Alert role="status">
             <CircleAlert />
             <AlertDescription>
-              <Button className="h-auto p-0" size="sm" variant="link" onClick={() => setTab('findings')}>
+              <Button size="inline" variant="link" onClick={() => setTab('findings')}>
                 {t('kubecode.research.pendingDecisions', { count: pendingDecisions })}
               </Button>
             </AlertDescription>

@@ -64,19 +64,19 @@ export function TaskOverview({
         <section aria-label={t('kubecode.task.waitingOnYou')} className="flex flex-col gap-2">
           <h4 className="text-sm font-semibold">{t('kubecode.task.waitingOnYou')}</h4>
           {review && (
-            <Waiting action={<Button className="pointer-coarse:min-h-11" size="xs" variant="outline" onClick={onOpenResults}>{t('kubecode.task.openResults')}</Button>}>
+            <Waiting action={<Button size="xs" variant="outline" onClick={onOpenResults}>{t('kubecode.task.openResults')}</Button>}>
               {t('kubecode.task.reviewReady')}
             </Waiting>
           )}
           {questions && <TaskQuestions detail={detail} projectId={projectId} onChanged={onChanged} />}
           {suggestions && (
-            <Waiting action={<Button className="pointer-coarse:min-h-11" size="xs" variant="outline" onClick={onOpenResults}>{t('kubecode.task.goToResults')}</Button>}>
+            <Waiting action={<Button size="xs" variant="outline" onClick={onOpenResults}>{t('kubecode.task.goToResults')}</Button>}>
               {t('kubecode.task.suggestionsWaiting')}
             </Waiting>
           )}
           {approval && (
             <Waiting
-              action={<Button className="pointer-coarse:min-h-11" size="xs" variant="outline" onClick={onDiscuss}>{t('kubecode.task.discuss')}</Button>}
+              action={<Button size="xs" variant="outline" onClick={onDiscuss}>{t('kubecode.task.discuss')}</Button>}
               focusKey={`brief:${detail.id}:${detail.revision}`}
             >
               {t('kubecode.task.staleApproval', { approved: detail.approved_revision })}
@@ -108,7 +108,7 @@ export function TaskOverview({
                 ? t('kubecode.task.workingRevision', { approved: detail.approved_revision })
                 : bundle ? t('kubecode.task.revision', { revision: bundle.detail.revision }) : null}
               {!archived && (
-                <Button disabled={editing} className="pointer-coarse:min-h-11" size="xs" variant="ghost" onClick={onEdit}>{t('kubecode.research.editBrief')}</Button>
+                <Button disabled={editing} size="xs" variant="ghost" onClick={onEdit}>{t('kubecode.research.editBrief')}</Button>
               )}
             </p>
             {edited && detail && detail.revision > detail.approved_revision && (
@@ -186,7 +186,7 @@ function Provenance({ detail, t }: { detail: TaskDetail; t: Translator }) {
       </ItemContent>
       <ItemActions>
         <Button
-          className="pointer-coarse:min-h-11"
+         
           size="xs"
           variant="ghost"
           // Narrowed to the Task when the message is in its scope; otherwise all of General.

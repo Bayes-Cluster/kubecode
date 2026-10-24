@@ -20,6 +20,7 @@ import { Identity } from '../members/Identity'
 import { memberView } from '../members/memberIdentity'
 import type { NeedsYouEntry } from './location/needsYou'
 import type { ViewKey } from './location/workspaceLocation'
+import { useSidebarMenuSize } from './useSidebarMenuSize'
 
 export type WorkspaceNavDestination = 'general' | 'board' | 'resources' | 'needs-you' | 'members'
 
@@ -73,12 +74,14 @@ export function WorkspaceNav({
     { view: 'members', icon: DESTINATIONS.members.Icon, label: t('kubecode.nav.members') },
   ] as const
   const waiting = needsYou.length
+  const menuSize = useSidebarMenuSize()
   const destination = (entry: typeof places[number]) => (
     <SidebarMenuItem key={entry.view}>
       <SidebarMenuButton
         aria-current={active === entry.view ? 'page' : undefined}
-        className="pointer-coarse:min-h-(--ws-touch-target) h-auto min-h-8"
+        className="h-auto min-h-8"
         isActive={active === entry.view}
+        size={menuSize}
         onClick={() => onOpen(entry.view)}
       >
         <Icon role="navigation" size="secondary" source={entry.icon} />
@@ -146,9 +149,10 @@ export function WorkspaceNav({
             {direct.map((member) => (
               <SidebarMenuItem key={member.id}>
                 <SidebarMenuButton
-                  className="pointer-coarse:min-h-(--ws-touch-target)"
+                 
                   aria-current={active === `dm:${member.id}` ? 'page' : undefined}
                   isActive={active === `dm:${member.id}`}
+                  size={menuSize}
                   onClick={() => onOpenDm(member.id)}
                 >
                   <MemberAvatar name={member.name} role={roleKind(member)} size="sm" />

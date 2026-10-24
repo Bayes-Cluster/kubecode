@@ -32,7 +32,7 @@ export function ConversationIdentity({ className, from, meta, size = 'md', view 
     ? () => navigation.inspect({ kind: 'member', id: memberId }, from ? { from } : undefined)
     : undefined
   const name = open ? (
-    <Button className="kubecode-member-identity-name h-auto p-0" size="sm" type="button" variant="link" onClick={open}>{view.name}</Button>
+    <Button className="kubecode-member-identity-name" size="inline" type="button" variant="link" onClick={open}>{view.name}</Button>
   ) : (
     <span className="kubecode-member-identity-name">{view.name}</span>
   )

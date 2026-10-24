@@ -38,7 +38,7 @@ export function GitDiffView({ state, onClose, onRetry, t }: GitDiffViewProps) {
         <IconButton icon={<X />} label={t('kubecode.closeDiff')} onClick={onClose} />
       </div>
       {state.kind === 'loading' && (
-        <Empty className="p-6" role="status">
+        <Empty role="status" size="compact">
           <EmptyHeader>
             <EmptyMedia><Spinner /></EmptyMedia>
             <EmptyTitle className="text-sm font-normal text-muted-foreground">{t('kubecode.gitDiffLoading')}</EmptyTitle>
@@ -49,7 +49,7 @@ export function GitDiffView({ state, onClose, onRetry, t }: GitDiffViewProps) {
         <pre className="kubecode-diff-text">{state.content}</pre>
       )}
       {state.kind === 'ready' && !state.content && (
-        <Empty className="p-6" role="status">
+        <Empty role="status" size="compact">
           <EmptyHeader>
             <EmptyTitle className="text-sm font-normal text-muted-foreground">
               {gitDiffUnavailableMessage(state.unavailableReason, t)}

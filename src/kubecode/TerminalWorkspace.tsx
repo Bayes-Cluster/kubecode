@@ -333,7 +333,7 @@ export function TerminalWorkspace({
           <Button
             aria-label={t('kubecode.newTerminal')}
             disabled={creating}
-            className="kubecode-touch-target" size="icon-xs"
+            size="icon-xs"
             variant="ghost"
             onClick={() => void create('regular')}
           ><Plus  size={16}/></Button>
@@ -341,7 +341,7 @@ export function TerminalWorkspace({
           <Button
             aria-label={t('kubecode.splitRight')}
             disabled={!activeTerminal || creating}
-            className="kubecode-touch-target" size="icon-xs"
+            size="icon-xs"
             variant="ghost"
             onClick={() => void create(
               activeTerminal?.kind ?? 'regular',
@@ -353,7 +353,7 @@ export function TerminalWorkspace({
           <Button
             aria-label={t('kubecode.splitDown')}
             disabled={!activeTerminal || creating}
-            className="kubecode-touch-target" size="icon-xs"
+            size="icon-xs"
             variant="ghost"
             onClick={() => void create(
               activeTerminal?.kind ?? 'regular',
@@ -365,7 +365,7 @@ export function TerminalWorkspace({
           <Button
             aria-label={t('kubecode.closeTerminal')}
             disabled={!activeTerminal}
-            className="kubecode-touch-target" size="icon-xs"
+            size="icon-xs"
             variant="ghost"
             onClick={() => activeTerminal && void closeLeaf(activeTerminal.id)}
           ><Trash2  size={16}/></Button>
@@ -373,7 +373,7 @@ export function TerminalWorkspace({
             <Button
               aria-label={t('kubecode.collapse')}
               aria-pressed={!navigatorNarrow}
-              className="kubecode-touch-target" size="icon-xs"
+              size="icon-xs"
               variant="ghost"
               onClick={toggleNavigator}
             ><PanelLeft  size={16}/></Button>
@@ -414,7 +414,7 @@ export function TerminalWorkspace({
               visible={open}
             />
           ) : (
-            <Empty className="h-full p-4">
+            <Empty className="h-full" size="compact">
               <EmptyHeader>
                 {creating && <EmptyMedia><Spinner /></EmptyMedia>}
                 <EmptyTitle className="text-sm font-normal text-muted-foreground">
@@ -649,7 +649,7 @@ function TerminalProfileMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button aria-label={t('kubecode.terminalProfiles')} disabled={disabled} className="kubecode-touch-target" size="icon-xs" variant="ghost">
+        <Button aria-label={t('kubecode.terminalProfiles')} disabled={disabled} size="icon-xs" variant="ghost">
           <ChevronDown  size={16}/>
         </Button>
       </DropdownMenuTrigger>

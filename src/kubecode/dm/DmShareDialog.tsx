@@ -210,7 +210,7 @@ export function DmShareDialog({
                     id={id}
                     onCheckedChange={() => toggle(turn.run_id)}
                   />
-                  <FieldLabel className="min-w-0 font-normal [overflow-wrap:anywhere]" htmlFor={id}>
+                  <FieldLabel className="min-w-0 [overflow-wrap:anywhere]" variant="option" htmlFor={id}>
                     {turn.user.slice(0, 120) || turn.run_id.slice(0, 8)}
                   </FieldLabel>
                 </Field>

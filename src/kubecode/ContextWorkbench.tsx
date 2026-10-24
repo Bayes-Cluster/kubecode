@@ -439,7 +439,7 @@ export function ContextWorkbench({
             section="changes"
           >
             {!gitStatus?.is_repository ? (
-              <Empty className="p-4 md:p-6">
+              <Empty size="compact">
                 <EmptyHeader>
                   <EmptyMedia variant="icon"><GitCompare /></EmptyMedia>
                   <EmptyTitle>{t('kubecode.createGitRepository')}</EmptyTitle>
@@ -450,7 +450,7 @@ export function ContextWorkbench({
                 </EmptyContent>
               </Empty>
             ) : gitStatus.files.length === 0 ? (
-              <Empty className="p-4">
+              <Empty size="compact">
                 <EmptyHeader>
                   <EmptyTitle>{t('kubecode.noChanges')}</EmptyTitle>
                   <EmptyDescription>{t('kubecode.reviewDescription')}</EmptyDescription>

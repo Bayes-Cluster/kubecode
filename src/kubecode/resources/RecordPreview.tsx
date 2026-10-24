@@ -196,7 +196,7 @@ export function RecordPreview({
           {citedVersion && <span className="text-xs text-muted-foreground">{t('kubecode.work.evidence.pinned', { revision: citedVersion })}</span>}
         </div>
       ) : (
-      <Item className="p-0" size="sm">
+      <Item size="compact">
         <ItemMedia variant="icon">
           <Icon role="identity" size="secondary" source={WORKSPACE_OBJECT_ICONS[objectKindOf(target.kind)].Icon} />
         </ItemMedia>

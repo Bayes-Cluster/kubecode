@@ -101,7 +101,7 @@ export function NeedsYouList({ entries, incomplete, onOpenTarget, onRetryLoad, s
         </div>
       )}
       {status === 'ready' && !incomplete && entries.length === 0 && (
-        <Empty className="p-6 md:p-6">
+        <Empty size="compact">
           <EmptyHeader>
             <EmptyDescription>{t('kubecode.nav.needsYouNone')}</EmptyDescription>
           </EmptyHeader>
@@ -109,7 +109,7 @@ export function NeedsYouList({ entries, incomplete, onOpenTarget, onRetryLoad, s
       )}
       {failed && (
         <ReaderNotice
-          action={<Button className="pointer-coarse:min-h-11" size="xs" variant="outline" onClick={onRetryLoad}>{t('kubecode.vocab.command.retry')}</Button>}
+          action={<Button size="xs" variant="outline" onClick={onRetryLoad}>{t('kubecode.vocab.command.retry')}</Button>}
           live={false}
         >
           {t('kubecode.nav.needsYouIncomplete')}

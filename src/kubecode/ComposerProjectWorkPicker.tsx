@@ -259,7 +259,7 @@ export function ComposerProjectWorkPicker({
               const enabled = selectable(item)
               return (
                 <CommandItem
-                  className="items-start gap-3 py-2 pointer-coarse:min-h-11"
+                  className="items-start gap-3 py-2"
                   disabled={!enabled}
                   data-focus-key={`resource:${item.ref.kind}:${item.ref.id}`}
                   data-scroll-anchor={`resource:${item.ref.kind}:${item.ref.id}`}

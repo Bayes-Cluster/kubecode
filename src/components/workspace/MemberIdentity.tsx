@@ -84,7 +84,7 @@ export function MemberIdentity({
       <MemberAvatar name={name} role={role} size={size} />
       <span className="kubecode-member-identity-text">
         {onOpen ? (
-          <Button className="kubecode-member-identity-name h-auto p-0" size="sm" type="button" variant="link" onClick={onOpen}>{name}</Button>
+          <Button className="kubecode-member-identity-name" size="inline" type="button" variant="link" onClick={onOpen}>{name}</Button>
         ) : (
           <span className="kubecode-member-identity-name">{name}</span>
         )}

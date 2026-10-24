@@ -16,6 +16,7 @@ import { Spinner } from '@/components/ui/spinner'
 import type { Translator } from '@/lib/i18n'
 
 import type { ResearchSummary } from '../api'
+import { useSidebarMenuSize } from '../app/useSidebarMenuSize'
 import type { ResearchLoadStatus } from './useResearch'
 
 export type ResearchNavigatorProps = {
@@ -42,6 +43,7 @@ export function ResearchNavigator({
   status,
   t,
 }: ResearchNavigatorProps) {
+  const menuSize = useSidebarMenuSize()
   return (
     <SidebarGroup aria-label={t('kubecode.research.title')} className="p-0" role="region">
       <SidebarGroupLabel>{t('kubecode.research.title')}</SidebarGroupLabel>
@@ -71,9 +73,10 @@ export function ResearchNavigator({
             {items.map((item) => (
               <SidebarMenuItem key={item.id}>
                 <SidebarMenuButton
-                  className="pointer-coarse:min-h-(--ws-touch-target)"
+                 
                   aria-current={item.id === activeResearchId ? 'true' : undefined}
                   isActive={item.id === activeResearchId}
+                  size={menuSize}
                   onClick={() => onSelect(item.id)}
                 >
                   <FlaskConical aria-hidden="true" />

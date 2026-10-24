@@ -22,7 +22,7 @@ export function ReaderLoading({ children }: { children: ReactNode }) {
 /** Nothing to show; never an error. */
 export function ReaderEmpty({ children }: { children: ReactNode }) {
   return (
-    <Empty className="p-4 md:p-6" role="status">
+    <Empty role="status" size="compact">
       <EmptyHeader>
         <EmptyDescription>{children}</EmptyDescription>
       </EmptyHeader>

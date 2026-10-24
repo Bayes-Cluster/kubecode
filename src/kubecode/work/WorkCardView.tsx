@@ -42,7 +42,7 @@ export function WorkCardView({
   return (
     // The official Card is the frame and owns the surface; one native button opens the item
     // and shows focus and the inspected item as a ring (the TaskCardView pattern, #259).
-    <Card className="kubecode-work-card gap-0 overflow-hidden py-0">
+    <Card className="kubecode-work-card overflow-hidden" size="compact">
     <button
       aria-current={selected ? 'true' : undefined}
       className="flex w-full min-w-0 flex-col items-start gap-1.5 rounded-[inherit] p-2.5 text-left outline-none ring-inset focus-visible:ring-[3px] focus-visible:ring-ring aria-[current=true]:ring-2 aria-[current=true]:ring-primary"

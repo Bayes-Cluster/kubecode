@@ -173,7 +173,7 @@ export function OfficialComponentMatrix({ t }: { t: Translator }) {
           <AlertTitle>{say('kubecode.proto.notDelivered')}</AlertTitle>
           <AlertDescription>{say('kubecode.proto.notDeliveredHint')}</AlertDescription>
         </Alert>
-        <Empty className="border">
+        <Empty variant="outline">
           <EmptyHeader>
             <EmptyTitle>{say('kubecode.proto.review.emptyTitle')}</EmptyTitle>
             <EmptyDescription>{say('kubecode.proto.review.emptyDescription')}</EmptyDescription>

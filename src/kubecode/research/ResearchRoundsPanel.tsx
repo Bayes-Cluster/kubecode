@@ -261,7 +261,7 @@ export function ResearchRoundsPanel({
                               return next
                             })}
                           />
-                          <FieldLabel className="flex-wrap font-normal" htmlFor={controlId}>
+                          <FieldLabel className="flex-wrap" variant="option" htmlFor={controlId}>
                             <span>{sourceKindLabel(t, source.kind)}</span>
                             <code className="[overflow-wrap:anywhere]">{source.id}</code>
                           </FieldLabel>
@@ -292,7 +292,7 @@ export function ResearchRoundsPanel({
                             })}
                           />
                           <FieldContent>
-                            <FieldLabel className="font-normal" htmlFor={controlId}>{item.label}</FieldLabel>
+                            <FieldLabel variant="option" htmlFor={controlId}>{item.label}</FieldLabel>
                             {item.stale && (
                               <FieldDescription>
                                 {t('kubecode.research.import.stale', {
@@ -323,7 +323,7 @@ export function ResearchRoundsPanel({
                     setAllowExecution(checked === true)
                   }}
                 />
-                <FieldLabel className="font-normal" htmlFor={`${fieldId}-allow-execution`}>{t('kubecode.research.exec.allowExecution')}</FieldLabel>
+                <FieldLabel variant="option" htmlFor={`${fieldId}-allow-execution`}>{t('kubecode.research.exec.allowExecution')}</FieldLabel>
               </Field>
               {allowExecution && (
                 <ExecutionEnvelopeFields

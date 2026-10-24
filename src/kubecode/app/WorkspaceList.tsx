@@ -21,6 +21,7 @@ import { cn } from '@/lib/utils'
 
 import type { Conversation, Project } from '../api'
 import { projectStatusLabel, sessionsRunState } from '../runStatusLabels'
+import { useSidebarMenuSize } from './useSidebarMenuSize'
 
 export type WorkspaceListProps = {
   activeProjectId: string | null
@@ -63,9 +64,10 @@ export function WorkspaceList({
   onProjectWorkspacesToggle,
   onWorkspaceSelect,
 }: WorkspaceListProps) {
+  const menuSize = useSidebarMenuSize()
   if (projects.length === 0) {
     return (
-      <Empty className="p-4">
+      <Empty size="compact">
         <EmptyHeader>
           <EmptyDescription>{t('kubecode.selectProject')}</EmptyDescription>
         </EmptyHeader>
@@ -85,11 +87,12 @@ export function WorkspaceList({
           return (
             <SidebarMenuItem key={project.id}>
               <SidebarMenuButton
-                className="pointer-coarse:min-h-(--ws-touch-target)"
+               
                 aria-current={active ? 'true' : undefined}
                 data-session-status={status ?? undefined}
                 data-workspaces-enabled={project.workspaces_enabled}
                 isActive={active}
+                size={menuSize}
                 title={project.name}
                 onClick={() => onWorkspaceSelect(project.id)}
               >
@@ -109,8 +112,7 @@ export function WorkspaceList({
                 <DropdownMenuTrigger asChild>
                   <SidebarMenuAction
                     aria-label={t('kubecode.projectActionsFor', { name: project.name })}
-                    // Centred on the taller touch-sized row.
-                    className="pointer-coarse:translate-y-[calc((var(--ws-touch-target)-2rem)/2)]"
+                   
                     showOnHover
                   >
                     <Ellipsis aria-hidden="true" />

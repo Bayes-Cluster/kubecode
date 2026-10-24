@@ -78,7 +78,7 @@ export function SideQuestionPanel({
                   <Button
                     aria-label={t('kubecode.copySideQuestionAnswer')}
                     onClick={() => void navigator.clipboard.writeText(item.answer ?? '')}
-                    className="kubecode-touch-target" size="icon-xs"
+                    size="icon-xs"
                     title={t('kubecode.copySideQuestionAnswer')}
                     type="button"
                     variant="ghost"

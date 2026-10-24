@@ -61,7 +61,7 @@ function DeliveryIssue({ issue, onChanged, projectId }: { issue: SourceDelivery;
         <AlertDescription className="flex flex-wrap items-center gap-2">
           <span>{t('kubecode.delivery.decisionFailed', { name })}</span>
           {issue.route.retryable && (
-            <Button aria-busy={busy || undefined} className="pointer-coarse:min-h-11" size="xs" variant="outline" onClick={() => void retry()}>
+            <Button aria-busy={busy || undefined} size="xs" variant="outline" onClick={() => void retry()}>
               <Icon role="command" size="secondary" source={WORKSPACE_COMMAND_ICONS.retry.Icon} />
               {t('kubecode.delivery.retry', { name })}
             </Button>
@@ -111,7 +111,7 @@ export function TaskWork({ detail, onChanged, projectId }: { detail: TaskDetail;
                   {navigation && (
                     <Button
                       aria-label={t('kubecode.attention.showRequest', { name })}
-                      className="pointer-coarse:min-h-11"
+                     
                       size="xs"
                       variant="outline"
                       onClick={() => {
