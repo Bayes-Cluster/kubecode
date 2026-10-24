@@ -4,8 +4,8 @@ import { describe, expect, it } from 'vitest'
 import { MessageResponse } from '@/components/ai-elements/message'
 import { Reasoning, ReasoningContent } from '@/components/ai-elements/reasoning'
 
-// ADR 0241: official streamdown rendering keeps today's MarkdownContent
-// hardening — no raw HTML, only safe link protocols — and KaTeX math.
+// ADR 0241 / ADR 0255: the one hardened streamdown configuration — no raw
+// HTML, only safe link protocols — and KaTeX math.
 describe('hardened streamdown', () => {
   it('never renders raw HTML from the markdown', () => {
     const { container } = render(
