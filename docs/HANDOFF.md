@@ -104,6 +104,27 @@ composer reads the coarse pointer through the shared hook.
   room in the Team view at 320 px. Moving the Session controls out of the
   title bar on phones is a design change for a later issue.
 
+## Pitfalls met on the way
+
+- **The Session view is a lazy chunk.** `AgentSessionWorkspace.tsx` loads
+  `session/SessionWorkspace` on first open. In Vitest a cold import takes
+  about two seconds, longer than the one second a `findBy*` waits, so the
+  first test in a file that opens a Session fails on a loaded machine (the
+  pre-push gate, CI under coverage) and passes alone. Warm the chunk in a
+  `beforeAll` (`await import('../session/SessionWorkspace')`) as
+  `WorkspaceShell.test.tsx` does; do not raise the per-call timeout.
+- **Smoke and walkthroughs must run a server built from the branch.** The
+  #254 closeout walkthrough first ran against a prebuilt
+  `kubecode-server` and reported the member-Session fix as still broken,
+  because the new `GET /projects/{id}/sessions/{id}` route was not in that
+  binary. Build with `cargo build --manifest-path server/Cargo.toml` from the
+  worktree under test and point `KUBECODE_SERVER_BIN` at that output.
+- **One gated push at a time.** The pre-push gate detaches the shared
+  checkout at the branch under test. Two gates at once pushed one branch's
+  commits under the other branch's name (PR #264). Run gates serially and
+  compare `git ls-remote origin refs/heads/<branch>` with the intended
+  commit before opening the PR.
+
 ## Validation
 
 Fixture validation only: unit tests, `pnpm test:coverage`, and the Playwright

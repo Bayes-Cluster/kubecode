@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { KubecodeApp } from '../App'
 
@@ -227,6 +227,11 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('Workspace navigation and routes', () => {
+  // The Session view is a lazy chunk (AgentSessionWorkspace.tsx). Cold, its
+  // import takes longer than the 1 s a findBy* waits, so the first test to
+  // open a Session would fail on a loaded machine. Warm it once here.
+  beforeAll(async () => { await import('../session/SessionWorkspace') })
+
   it('opens General, the board, Resources, and Members from one navigation and names each in the URL hash', async () => {
     render(<KubecodeApp api={api()} />)
     const nav = await screen.findByRole('region', { name: 'Workspace' })

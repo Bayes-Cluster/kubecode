@@ -112,6 +112,7 @@ test.describe('on a desktop', () => {
       await composer(page).press('Enter')
       await expect(composer(page)).toHaveValue('@analyst ')
       await composer(page).pressSequentially('please size the sweep')
+      await expect(composer(page)).toHaveValue('@analyst please size the sweep')
       await page.getByRole('button', { name: 'Send', exact: true }).click()
       await expect(log(page).getByText('@analyst please size the sweep')).toBeVisible()
       await expect(row(page, '@analyst please size the sweep').locator('.kubecode-message-recipients')).toContainText('Analyst')
@@ -141,10 +142,17 @@ test.describe('on a desktop', () => {
       // half the pane and centred, the researcher's messages on the right and members' on the left.
       {
         await page.setViewportSize({ width: 1440, height: 900 })
-        const pane = (await page.locator('.kubecode-channel-main').boundingBox())!
-        const dock = (await page.locator('.kubecode-conversation-dock').boundingBox())!
-        expect(dock.width).toBeLessThanOrEqual(Math.max(pane.width * 0.5, 480) + 1)
-        expect(Math.abs((dock.x - pane.x) - (pane.x + pane.width - dock.x - dock.width))).toBeLessThanOrEqual(2)
+        // The panes settle a frame or two after the viewport changes; read both boxes together until they agree.
+        const boxes = async () => ({
+          pane: (await page.locator('.kubecode-channel-main').boundingBox())!,
+          dock: (await page.locator('.kubecode-conversation-dock').boundingBox())!,
+        })
+        await expect.poll(async () => {
+          const { pane, dock } = await boxes()
+          return dock.width <= Math.max(pane.width * 0.5, 480) + 1
+            && Math.abs((dock.x - pane.x) - (pane.x + pane.width - dock.x - dock.width)) <= 2
+        }, { message: 'composer dock at most half the pane and centred' }).toBe(true)
+        const { pane } = await boxes()
         const threadWidth = await log(page).locator('.kubecode-channel-messages').evaluate((element) => {
           const style = getComputedStyle(element)
           return element.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)
@@ -158,12 +166,18 @@ test.describe('on a desktop', () => {
 
         // At 2560px (ADR 0240) the card fills the dock, both centred, and the last message ends above the dock.
         await page.setViewportSize({ width: 2560, height: 1440 })
-        const widePane = (await page.locator('.kubecode-channel-main').boundingBox())!
-        const wideDock = (await page.locator('.kubecode-conversation-dock').boundingBox())!
-        const card = (await page.locator('.kubecode-conversation-dock .kubecode-prompt-input').boundingBox())!
-        expect(card.width).toBeLessThanOrEqual(960)
-        expect(Math.abs((card.x - widePane.x) - (widePane.x + widePane.width - card.x - card.width))).toBeLessThanOrEqual(2)
-        expect(Math.abs((wideDock.x - widePane.x) - (widePane.x + widePane.width - wideDock.x - wideDock.width))).toBeLessThanOrEqual(2)
+        const wideBoxes = async () => ({
+          widePane: (await page.locator('.kubecode-channel-main').boundingBox())!,
+          wideDock: (await page.locator('.kubecode-conversation-dock').boundingBox())!,
+          card: (await page.locator('.kubecode-conversation-dock .kubecode-prompt-input').boundingBox())!,
+        })
+        await expect.poll(async () => {
+          const { widePane, wideDock, card } = await wideBoxes()
+          return card.width <= 960
+            && Math.abs((card.x - widePane.x) - (widePane.x + widePane.width - card.x - card.width)) <= 2
+            && Math.abs((wideDock.x - widePane.x) - (widePane.x + widePane.width - wideDock.x - wideDock.width)) <= 2
+        }, { message: 'composer card at most 960px, card and dock centred' }).toBe(true)
+        const { wideDock } = await wideBoxes()
         await log(page).locator('.kubecode-channel-messages').evaluate((element) => { element.scrollTop = element.scrollHeight })
         const last = (await page.locator('article[data-message-id]').last().boundingBox())!
         expect(last.y + last.height).toBeLessThanOrEqual(wideDock.y + 1)
@@ -179,6 +193,7 @@ test.describe('on a desktop', () => {
       await expect(page.getByText('Replying to Analyst: Sweep sized: twelve runs.')).toBeVisible()
       await expect(composer(page)).toHaveValue('@analyst ')
       await composer(page).pressSequentially('run all twelve')
+      await expect(composer(page)).toHaveValue('@analyst run all twelve')
       await page.getByRole('button', { name: 'Send', exact: true }).click()
       await expect(log(page).getByText('@analyst run all twelve')).toBeVisible()
       await waitForPrompt(newAnalystSession, (text) => text.includes('run all twelve') && text.includes('It replies to message'))
