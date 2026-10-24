@@ -4,6 +4,7 @@ import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
 import { Confirmation, ConfirmationActions, ConfirmationTitle } from '@/components/ai-elements/confirmation'
 import { Sources } from '@/components/ai-elements/sources'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -41,7 +42,6 @@ import type { ResearchBundle } from '../research/useResearch'
 import { ReaderEmpty, ReaderNotice } from '../resources/ReaderStates'
 import { evidenceKind, outcomeLabel, recordKindOf, taskTime } from './taskLabels'
 import { useShowInGeneral } from './taskNavigation'
-import { StatusBadge } from '@/components/workspace/StatusBadge'
 import { acceptBlocker, repinsFor, reviewEvidence, versionCheck, type VersionCheck } from './taskReview'
 
 const OUTCOMES: Exclude<WorkOutcome, 'unknown'>[] = ['supported', 'refuted', 'inconclusive']
@@ -182,10 +182,10 @@ function ReviewSummary({ locale, onShow, review, t }: {
     <Item role="listitem" size="sm" variant="outline">
       <ItemContent className="gap-1">
         <ItemTitle className="flex flex-wrap items-center gap-1">
-          <StatusBadge tone={review.accepted ? 'ok' : 'warn'}>
+          <Badge variant={review.accepted ? 'success' : 'warning'}>
             {review.accepted ? t('kubecode.task.accepted') : t('kubecode.task.returned')}
-          </StatusBadge>
-          {outcome && <StatusBadge tone="info">{outcome}</StatusBadge>}
+          </Badge>
+          {outcome && <Badge variant="info">{outcome}</Badge>}
         </ItemTitle>
         <ItemDescription>{t('kubecode.task.decidedAt', { time: taskTime(review.created_at, locale) })}</ItemDescription>
         {review.reason && <q className="text-sm [overflow-wrap:anywhere]">{review.reason}</q>}

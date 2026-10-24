@@ -1,15 +1,16 @@
 import { useId, useState } from 'react'
 
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyDescription, EmptyHeader } from '@/components/ui/empty'
 import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from '@/components/ui/item'
 import { Spinner } from '@/components/ui/spinner'
 import type { Translator } from '@/lib/i18n'
 
-import { StatusBadge } from '@/components/workspace/StatusBadge'
 
 import type { NeedsYouEntry, NeedsYouTarget } from '../app/location/needsYou'
 import { ReaderNotice } from '../resources/ReaderStates'
+import { statusToneVariant } from '../statusTone'
 
 const SHOWN = 6
 
@@ -61,7 +62,7 @@ function Rows({ entries, label, onOpenTarget, t }: {
                   <ItemActions>
                     {resolving
                       ? <Spinner aria-hidden aria-label={undefined} className="motion-reduce:animate-none" role={undefined} />
-                      : <StatusBadge tone={entry.reason.tone}>{entry.reason.label}</StatusBadge>}
+                      : <Badge variant={statusToneVariant(entry.reason.tone)}>{entry.reason.label}</Badge>}
                   </ItemActions>
                 </button>
               </Item>

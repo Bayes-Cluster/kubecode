@@ -10,7 +10,7 @@ import {
   type MentionOption,
 } from '@/components/workspace/mentions'
 import { PauseButton, SendButton, StopButton } from '@/components/workspace/SendButton'
-import { StatusBadge } from '@/components/workspace/StatusBadge'
+import { statusToneVariant } from '@/kubecode/statusTone'
 
 const members: MentionOption[] = [
   { id: 's-general', handle: 'general', label: 'General' },
@@ -40,7 +40,7 @@ describe('mention helpers', () => {
   })
 })
 
-describe('IconButton and StatusBadge', () => {
+describe('IconButton and status tones', () => {
   it('names an icon-only button, runs it, and waits while busy', () => {
     const onClick = vi.fn()
     const { rerender } = render(<IconButton icon={<svg />} label="Remove Analyst" onClick={onClick} />)
@@ -61,25 +61,18 @@ describe('IconButton and StatusBadge', () => {
     expect(onClick).toHaveBeenCalledTimes(1)
   })
 
-  it('renders a status with its tone but always with its words', () => {
-    render(<StatusBadge tone="warn" title="Needs attention">Needs setup</StatusBadge>)
-    const badge = screen.getByText('Needs setup')
-    expect(badge).toHaveAttribute('data-tone', 'warn')
-    expect(badge).toHaveAttribute('title', 'Needs attention')
-    // ADR 0247: the official Badge owns its appearance; the tone picks a variant.
-    expect(badge).toHaveAttribute('data-slot', 'badge')
-    expect(badge).toHaveAttribute('data-variant', 'warning')
-  })
-
   it.each([
     ['ok', 'success'],
     ['info', 'info'],
     ['warn', 'warning'],
     ['danger', 'destructive'],
     ['muted', 'secondary'],
-  ] as const)('maps the %s tone onto the official %s Badge variant', (tone, variant) => {
-    render(<StatusBadge tone={tone}>State</StatusBadge>)
-    expect(screen.getByText('State')).toHaveAttribute('data-variant', variant)
+  ] as const)('maps the %s tone onto the official %s Badge variant (ADR 0255)', (tone, variant) => {
+    expect(statusToneVariant(tone)).toBe(variant)
+  })
+
+  it('reads a status as muted when no tone is given', () => {
+    expect(statusToneVariant()).toBe('secondary')
   })
 })
 

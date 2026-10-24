@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyDescription } from '@/components/ui/empty'
 import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from '@/components/ui/item'
@@ -13,7 +14,6 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import { StatusBadge } from '@/components/workspace/StatusBadge'
 import type { Translator } from '@/lib/i18n'
 
 import type {
@@ -25,10 +25,10 @@ import type {
   ResearchEntry,
 } from '../api'
 import { newClientMessageId } from '../session/sessionModel'
-import { agentLabel, authorLabel, entryKindLabel } from './researchLabels'
+import { agentLabel, authorLabel, availabilityLabel, availabilityVariant, entryKindLabel } from './researchLabels'
 import { ResearchPanel, ResearchSection } from './ResearchLayout'
-import { AvailabilityBadge } from './SourceBadge'
 import { useAction } from './useAction'
+import { statusToneVariant } from '../statusTone'
 
 export function ResearchDiscussionPanel({
   agents,
@@ -133,9 +133,9 @@ export function ResearchDiscussionPanel({
                   {(link.agent_id || link.availability !== 'available' || link.state === 'archived') && (
                     <ItemDescription className="flex flex-wrap items-center gap-2">
                       {link.agent_id && <span>{agentLabel(link.agent_id)}</span>}
-                      {link.availability !== 'available' && <AvailabilityBadge availability={link.availability} t={t} />}
+                      {link.availability !== 'available' && <Badge variant={availabilityVariant(link.availability)}>{availabilityLabel(t, link.availability)}</Badge>}
                       {link.state === 'archived' && (
-                        <StatusBadge tone="muted">{t('kubecode.research.sessionArchived')}</StatusBadge>
+                        <Badge variant="secondary">{t('kubecode.research.sessionArchived')}</Badge>
                       )}
                     </ItemDescription>
                   )}
@@ -224,9 +224,9 @@ export function ResearchDiscussionPanel({
               <Item data-kind={item.kind} key={item.id} role="listitem" size="sm" variant={item.kind === 'decision' ? 'outline' : 'muted'}>
                 <ItemContent>
                   <ItemDescription className="flex flex-wrap items-center gap-2">
-                    <StatusBadge tone={item.kind === 'decision' ? 'ok' : 'muted'}>
+                    <Badge variant={statusToneVariant(item.kind === 'decision' ? 'ok' : 'muted')}>
                       {entryKindLabel(t, item.kind)}
-                    </StatusBadge>
+                    </Badge>
                     <span>
                       {authorLabel(t, item.author_kind)} · {t('kubecode.research.revisionShort', { revision: item.brief_revision })}
                     </span>

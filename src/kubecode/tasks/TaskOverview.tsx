@@ -2,6 +2,7 @@ import { type ReactNode, useState } from 'react'
 
 import { Plan, PlanContent } from '@/components/ai-elements/plan'
 import { Task, TaskContent, TaskItem } from '@/components/ai-elements/task'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Item, ItemActions, ItemContent, ItemDescription, ItemTitle } from '@/components/ui/item'
 import { MemberIdentity } from '@/components/workspace/MemberIdentity'
@@ -16,7 +17,6 @@ import { conditionLabel } from './taskLabels'
 import { hasOpenReview, progressOf } from './taskLifecycle'
 import { useGeneralFromTask } from './taskNavigation'
 import { TaskQuestions } from './TaskQuestions'
-import { StatusBadge } from '@/components/workspace/StatusBadge'
 
 export type TaskOverviewProps = {
   /** An admitted Task; null for a proposal, which shows only its goal. */
@@ -245,8 +245,8 @@ function Progress({ detail, t }: { detail: TaskDetail; t: Translator }) {
               return (
                 <TaskItem className="flex flex-wrap items-center gap-2" key={work.id} role="listitem">
                   <strong className="text-foreground [overflow-wrap:anywhere]">{work.title}</strong>
-                  <StatusBadge>{t(`kubecode.work.stage.${work.stage}`)}</StatusBadge>
-                  {condition && <StatusBadge tone="warn">{condition}</StatusBadge>}
+                  <Badge variant="secondary">{t(`kubecode.work.stage.${work.stage}`)}</Badge>
+                  {condition && <Badge variant="warning">{condition}</Badge>}
                   {work.assignee && <small>@{work.assignee.handle}</small>}
                   <small>
                     {t('kubecode.task.workCounts', { attempts: work.attempts, experiments: work.experiments })}

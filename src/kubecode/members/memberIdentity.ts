@@ -1,5 +1,5 @@
 import type { MemberRoleKind } from '@/components/workspace/MemberIdentity'
-import type { StatusTone } from '@/components/workspace/StatusBadge'
+import type { StatusTone } from '../statusTone'
 import type { Translator } from '@/lib/i18n'
 
 import type { ChannelMessage, Conversation, Member } from '../api'

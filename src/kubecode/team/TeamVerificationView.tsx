@@ -1,5 +1,6 @@
 import { CircleCheck } from 'lucide-react'
 
+import { Badge } from '@/components/ui/badge'
 import {
   Item,
   ItemActions,
@@ -8,10 +9,10 @@ import {
   ItemGroup,
   ItemTitle,
 } from '@/components/ui/item'
-import { StatusBadge, type StatusTone } from '@/components/workspace/StatusBadge'
 import type { TranslationKey, Translator } from '@/lib/i18n'
 
 import type { TeamDiscriminationRound } from '../api'
+import { statusToneVariant, type StatusTone } from '../statusTone'
 
 const ROUND_LABELS = {
   error: 'kubecode.teamVerificationStatus.error',
@@ -46,9 +47,9 @@ export function TeamVerificationView({ rounds, t }: {
               {round.verdict && <ItemDescription>{round.verdict}</ItemDescription>}
             </ItemContent>
             <ItemActions>
-              <StatusBadge tone={ROUND_TONES[round.status]}>
+              <Badge variant={statusToneVariant(ROUND_TONES[round.status])}>
                 {t(ROUND_LABELS[round.status])}
-              </StatusBadge>
+              </Badge>
             </ItemActions>
           </Item>
         ))}

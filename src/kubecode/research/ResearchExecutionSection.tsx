@@ -11,13 +11,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyDescription } from '@/components/ui/empty'
 import { Field, FieldError, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Item, ItemGroup, ItemTitle } from '@/components/ui/item'
 import { Spinner } from '@/components/ui/spinner'
-import { StatusBadge } from '@/components/workspace/StatusBadge'
 import type { Translator } from '@/lib/i18n'
 
 import { ApiError } from '../api'
@@ -36,12 +36,13 @@ import type {
   WorkspaceEvent,
 } from '../api'
 import type { WorkspaceConnectionState } from '../useWorkspaceEventStream'
+import { availabilityLabel, availabilityVariant } from './researchLabels'
 import { ExecutionEnvelopeFields } from './ExecutionEnvelopeFields'
 import { draftFromLimits, limitsFromDraft, type EnvelopeDraft } from './executionEnvelope'
-import { AvailabilityBadge } from './SourceBadge'
 import { useAction } from './useAction'
 import { useResearchExecution } from './useResearch'
 import { ReaderLoading, ReaderNotice } from '../resources/ReaderStates'
+import { statusToneVariant } from '../statusTone'
 
 const STATE_LABELS: Record<ExperimentState, Parameters<Translator>[0]> = {
   reserved: 'kubecode.research.exec.state.reserved',
@@ -163,9 +164,9 @@ export function ResearchExecutionSection({
         <h4 className="m-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t('kubecode.research.exec.title')}</h4>
         {envelope && (
           <>
-            <StatusBadge tone={envelope.state === 'active' ? 'ok' : 'warn'}>
+            <Badge variant={statusToneVariant(envelope.state === 'active' ? 'ok' : 'warn')}>
               {t(`kubecode.research.exec.envelopeState.${envelope.state}` as Parameters<Translator>[0])}
-            </StatusBadge>
+            </Badge>
             <span className="text-xs text-muted-foreground">
               {t('kubecode.research.exec.policyRevision', { revision: envelope.revision })}
             </span>
@@ -549,17 +550,17 @@ function ExperimentCard({
     <Item className="flex-col items-stretch gap-2" data-state={experiment.state} role="listitem" size="sm" variant="outline">
       <div className="flex flex-wrap items-center gap-2">
         <ItemTitle className="[overflow-wrap:anywhere]">{title}</ItemTitle>
-        <StatusBadge tone={experiment.state === 'unknown' ? 'warn' : experiment.state === 'running' ? 'ok' : 'muted'}>
+        <Badge variant={statusToneVariant(experiment.state === 'unknown' ? 'warn' : experiment.state === 'running' ? 'ok' : 'muted')}>
           {t(STATE_LABELS[experiment.state])}
-        </StatusBadge>
+        </Badge>
         {(experiment.analysis !== 'none' || isActive(experiment.state)) && (
-          <StatusBadge tone={experiment.analysis === 'pending' ? 'warn' : 'muted'}>
+          <Badge variant={statusToneVariant(experiment.analysis === 'pending' ? 'warn' : 'muted')}>
             {experiment.analysis === 'pending'
               ? t('kubecode.research.exec.awaitingAnalysis')
               : experiment.analysis === 'analyzed'
                 ? t('kubecode.research.exec.analyzed')
                 : t('kubecode.research.exec.notYetAnalyzable')}
-          </StatusBadge>
+          </Badge>
         )}
         <span className="text-xs text-muted-foreground">
           {t('kubecode.research.exec.policyRevision', { revision: experiment.policy_revision })}
@@ -626,7 +627,7 @@ function ExperimentCard({
           {experiment.artifact_state.map((artifact) => (
             <li className="flex flex-wrap items-center gap-1.5" key={artifact.path}>
               <code className="[overflow-wrap:anywhere]">{artifact.path}</code>
-              <AvailabilityBadge availability={artifact.availability} t={t} />
+              <Badge variant={availabilityVariant(artifact.availability)}>{availabilityLabel(t, artifact.availability)}</Badge>
             </li>
           ))}
         </ul>
@@ -635,7 +636,7 @@ function ExperimentCard({
         <ul className="m-0 flex list-none flex-col gap-1 p-0 text-sm" aria-label={t('kubecode.research.exec.decisions')}>
           {decisions.map((decision) => (
             <li className="[overflow-wrap:anywhere]" key={decision.id}>
-              <StatusBadge tone="ok">{t(DECISION_LABELS[decision.kind])}</StatusBadge>{' '}
+              <Badge variant="success">{t(DECISION_LABELS[decision.kind])}</Badge>{' '}
               {decision.rationale}
             </li>
           ))}

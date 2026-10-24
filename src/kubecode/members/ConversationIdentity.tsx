@@ -7,7 +7,7 @@ import { MemberAvatar } from '@/components/workspace/MemberIdentity'
 import { cn } from '@/lib/utils'
 
 import { WorkspaceNavigationContext } from '../app/location/WorkspaceNavigation'
-import { statusBadgeVariant } from '../channel/statusBadge'
+import { statusToneVariant } from '../statusTone'
 import type { IdentityView } from './memberIdentity'
 
 export type ConversationIdentityProps = {
@@ -52,7 +52,7 @@ export function ConversationIdentity({ className, from, meta, size = 'md', view 
         ) : name}
         {view.handle && <span className="kubecode-member-identity-handle">@{view.handle}</span>}
         {view.roleLabel && <span className="kubecode-member-identity-role">{view.roleLabel}</span>}
-        {view.attention && <Badge variant={statusBadgeVariant(view.attention.tone)}>{view.attention.label}</Badge>}
+        {view.attention && <Badge variant={statusToneVariant(view.attention.tone)}>{view.attention.label}</Badge>}
         {meta && <span className="kubecode-member-identity-meta">{meta}</span>}
       </span>
     </span>

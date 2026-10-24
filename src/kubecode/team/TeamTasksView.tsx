@@ -18,6 +18,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -46,12 +47,12 @@ import {
   ItemTitle,
 } from '@/components/ui/item'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { StatusBadge, type StatusTone } from '@/components/workspace/StatusBadge'
 import type { Translator } from '@/lib/i18n'
 
 import type { KubecodeApi, TeamMember, TeamSnapshot, TeamTask, WorkBoardFilter, WorkspaceEvent } from '../api'
 import { TEAM_TASK_STATUS_ICONS, type TeamTaskStatusState } from '../icons/statusIcons'
 import { WorkBoard } from '../work/WorkBoard'
+import { statusToneVariant, type StatusTone } from '../statusTone'
 
 export function TeamTasksView({
   api,
@@ -397,13 +398,13 @@ function TaskStatus({ status, t }: { status: string; t: Translator }) {
   const entry = status in TEAM_TASK_STATUS_ICONS
     ? TEAM_TASK_STATUS_ICONS[status as TeamTaskStatusState]
     : null
-  if (!entry) return <StatusBadge>{status}</StatusBadge>
+  if (!entry) return <Badge variant="secondary">{status}</Badge>
   const StatusIcon = entry.Icon
   return (
-    <StatusBadge tone={TASK_TONES[status as TeamTaskStatusState] ?? 'muted'}>
+    <Badge variant={statusToneVariant(TASK_TONES[status as TeamTaskStatusState] ?? 'muted')}>
       <StatusIcon aria-hidden="true" />
       {t(entry.labelKey)}
-    </StatusBadge>
+    </Badge>
   )
 }
 

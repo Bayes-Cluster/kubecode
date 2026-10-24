@@ -1,11 +1,12 @@
 import type { ReactNode } from 'react'
 
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 import { initialsOf } from './memberInitials'
-import { StatusBadge, type StatusTone } from './StatusBadge'
+import { statusToneVariant, type StatusTone } from '@/kubecode/statusTone'
 
 /** Who someone is in a Workspace conversation. It tones the avatar; the words say it. */
 export type MemberRoleKind = 'manager' | 'specialist' | 'researcher' | 'system'
@@ -89,7 +90,7 @@ export function MemberIdentity({
         )}
         {handle && <span className="kubecode-member-identity-handle">@{handle}</span>}
         {roleLabel && <span className="kubecode-member-identity-role">{roleLabel}</span>}
-        {attention && <StatusBadge tone={attention.tone}>{attention.label}</StatusBadge>}
+        {attention && <Badge variant={statusToneVariant(attention.tone)}>{attention.label}</Badge>}
         {activity && <span className="kubecode-member-identity-activity">{activity}</span>}
         {meta && <span className="kubecode-member-identity-meta">{meta}</span>}
       </span>

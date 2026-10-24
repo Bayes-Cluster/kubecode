@@ -63,7 +63,7 @@ describe('TeamSessionOverview', () => {
       </TooltipProvider>,
     )
 
-    expect(screen.getByText('Idle').closest('[data-slot="badge"]')).toHaveAttribute('data-tone', 'muted')
-    expect(screen.getByText('Working').closest('[data-slot="badge"]')).toHaveAttribute('data-tone', 'info')
+    expect(screen.getByText('Idle').closest('[data-slot="badge"]')).toHaveAttribute('data-variant', 'secondary')
+    expect(screen.getByText('Working').closest('[data-slot="badge"]')).toHaveAttribute('data-variant', 'info')
   })
 })

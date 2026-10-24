@@ -1,10 +1,11 @@
-import { StatusBadge } from '@/components/workspace/StatusBadge'
+import { Badge } from '@/components/ui/badge'
 import type { Translator } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
 import type { TaskCard } from '../api'
 import { conditionTone, requiredActionOf } from './taskLifecycle'
 import { conditionLabel, conditionReason, outcomeLabel, stageLabel } from './taskLabels'
+import { statusToneVariant } from '../statusTone'
 
 export type TaskStatusBadgesProps = {
   t: Translator
@@ -33,22 +34,22 @@ export function TaskStatusBadges({ archived = false, compact = false, draft = fa
   const outcome = task?.stage === 'done' ? outcomeLabel(t, task.outcome) : null
   return (
     <span className="flex flex-wrap items-center gap-1">
-      {draft && <StatusBadge tone="muted">{t('kubecode.task.draftBadge')}</StatusBadge>}
+      {draft && <Badge variant="secondary">{t('kubecode.task.draftBadge')}</Badge>}
       {task && !compact && (
-        <StatusBadge tone={task.stage === 'done' ? 'ok' : 'info'}>{stageLabel(t, task.stage)}</StatusBadge>
+        <Badge variant={statusToneVariant(task.stage === 'done' ? 'ok' : 'info')}>{stageLabel(t, task.stage)}</Badge>
       )}
-      {archived && <StatusBadge tone="muted">{t('kubecode.task.archivedBadge')}</StatusBadge>}
+      {archived && <Badge variant="secondary">{t('kubecode.task.archivedBadge')}</Badge>}
       {action && (
-        <StatusBadge tone={action === 'review' ? 'info' : 'warn'}>
+        <Badge variant={statusToneVariant(action === 'review' ? 'info' : 'warn')}>
           {action === 'review' ? t('kubecode.task.action.review') : t('kubecode.task.action.answer')}
-        </StatusBadge>
+        </Badge>
       )}
-      {task && condition && <StatusBadge tone={conditionTone(task.condition)}>{condition}</StatusBadge>}
+      {task && condition && <Badge variant={statusToneVariant(conditionTone(task.condition))}>{condition}</Badge>}
       {reason && <span className={cn('text-xs text-muted-foreground [overflow-wrap:anywhere]', compact && 'basis-full')}>{reason}</span>}
       {task && task.revision > task.approved_revision && (
-        <StatusBadge tone="warn">{t('kubecode.task.briefChanged')}</StatusBadge>
+        <Badge variant="warning">{t('kubecode.task.briefChanged')}</Badge>
       )}
-      {outcome && <StatusBadge tone="ok">{outcome}</StatusBadge>}
+      {outcome && <Badge variant="success">{outcome}</Badge>}
     </span>
   )
 }

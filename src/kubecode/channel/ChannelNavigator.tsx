@@ -1,5 +1,6 @@
 import { Hash } from 'lucide-react'
 
+import { Badge } from '@/components/ui/badge'
 import {
   SidebarGroup,
   SidebarGroupLabel,
@@ -7,7 +8,6 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@/components/ui/sidebar'
-import { StatusBadge } from '@/components/workspace/StatusBadge'
 import type { Translator } from '@/lib/i18n'
 
 import type { ChannelThread } from '../api'
@@ -43,9 +43,9 @@ export function ChannelNavigator({ active, onOpen, onOpenThread, t, threads, thr
             <SidebarMenuButton className="pointer-coarse:min-h-(--ws-touch-target)" onClick={() => onOpenThread(thread.id)}>
               <span className="min-w-0 flex-1 truncate">{thread.title}</span>
               {thread.research_id && (
-                <StatusBadge tone="ok">
+                <Badge variant="success">
                   {t('kubecode.channel.linkedBadge')}
-                </StatusBadge>
+                </Badge>
               )}
             </SidebarMenuButton>
           </SidebarMenuItem>

@@ -1,15 +1,16 @@
 import { useId } from 'react'
 
+import { Badge } from '@/components/ui/badge'
 import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from '@/components/ui/item'
-import type { StatusTone } from '@/components/workspace/StatusBadge'
+import type { StatusTone } from '../statusTone'
 import type { Translator } from '@/lib/i18n'
 
 import type { ManagerDecision } from '../api'
 
 import { DestinationHeader } from '../app/DestinationHeader'
 import type { NeedsYouEntry, NeedsYouTarget } from '../app/location/needsYou'
-import { StatusBadge } from '@/components/workspace/StatusBadge'
 import { NeedsYouList } from './NeedsYouList'
+import { statusToneVariant } from '../statusTone'
 
 export type NeedsYouViewProps = {
   entries: NeedsYouEntry[]
@@ -63,9 +64,9 @@ function ManagerDecisions({ decisions, t }: { decisions: ManagerDecision[]; t: T
               </ItemDescription>
             </ItemContent>
             <ItemActions>
-              <StatusBadge tone={DECISION_TONE[decision.decision]}>
+              <Badge variant={statusToneVariant(DECISION_TONE[decision.decision])}>
                 {t(`kubecode.needsYou.managerDecisions.${decision.decision}`)}
-              </StatusBadge>
+              </Badge>
             </ItemActions>
           </Item>
         ))}

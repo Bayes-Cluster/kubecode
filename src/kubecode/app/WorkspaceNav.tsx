@@ -1,5 +1,6 @@
 import { useId } from 'react'
 
+import { Badge } from '@/components/ui/badge'
 import {
   SidebarGroup,
   SidebarGroupLabel,
@@ -9,7 +10,6 @@ import {
   SidebarMenuItem,
 } from '@/components/ui/sidebar'
 import { MemberAvatar, type MemberRoleKind } from '@/components/workspace/MemberIdentity'
-import { StatusBadge } from '@/components/workspace/StatusBadge'
 import type { Translator } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
@@ -84,13 +84,13 @@ export function WorkspaceNav({
         <Icon role="navigation" size="secondary" source={entry.icon} />
         <span className="min-w-0 flex-1 truncate">{entry.label}</span>
         {entry.view === 'board' && taskCount > 0 && (
-          <StatusBadge tone="muted">{taskCount}</StatusBadge>
+          <Badge variant="secondary">{taskCount}</Badge>
         )}
         {entry.view === 'needs-you' && (
-          <StatusBadge tone={waiting > 0 ? 'warn' : 'muted'}>{waiting}</StatusBadge>
+          <Badge variant={waiting > 0 ? 'warning' : 'secondary'}>{waiting}</Badge>
         )}
         {entry.view === 'general' && undeliveredGeneral > 0 && (
-          <StatusBadge tone="danger">{t('kubecode.nav.notDelivered', { count: undeliveredGeneral })}</StatusBadge>
+          <Badge variant="destructive">{t('kubecode.nav.notDelivered', { count: undeliveredGeneral })}</Badge>
         )}
       </SidebarMenuButton>
     </SidebarMenuItem>

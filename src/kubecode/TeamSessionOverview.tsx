@@ -1,6 +1,7 @@
 import { Users } from 'lucide-react'
 
 import { AiAgentIcon } from '@/components/AiAgentIcon'
+import { Badge } from '@/components/ui/badge'
 import {
   Item,
   ItemActions,
@@ -9,11 +10,11 @@ import {
   ItemMedia,
   ItemTitle,
 } from '@/components/ui/item'
-import { StatusBadge, type StatusTone } from '@/components/workspace/StatusBadge'
 import type { Translator } from '@/lib/i18n'
 
 import type { TeamSnapshot } from './api'
 import { TEAM_MEMBER_STATUS_ICONS } from './icons/statusIcons'
+import { statusToneVariant, type StatusTone } from './statusTone'
 
 type MemberStatusValue = TeamSnapshot['members'][number]['status']
 
@@ -76,9 +77,9 @@ function MemberStatus({ status, t }: { status: MemberStatusValue; t: Translator 
   const entry = TEAM_MEMBER_STATUS_ICONS[status]
   const StatusIcon = entry.Icon
   return (
-    <StatusBadge tone={teamMemberTone(status)}>
+    <Badge variant={statusToneVariant(teamMemberTone(status))}>
       <StatusIcon aria-hidden="true" />
       {t(entry.labelKey)}
-    </StatusBadge>
+    </Badge>
   )
 }

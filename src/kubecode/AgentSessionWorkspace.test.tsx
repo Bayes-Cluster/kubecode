@@ -2800,7 +2800,7 @@ describe('AgentSessionWorkspace', () => {
     expect(await screen.findByText('Write file')).toBeInTheDocument()
     const status = container.querySelector('.kubecode-session-status')
     expect(status).toHaveTextContent('Permission required')
-    expect(status?.querySelector('[data-slot="badge"]')).toHaveAttribute('data-tone', 'warn')
+    expect(status?.querySelector('[data-slot="badge"]')).toHaveAttribute('data-variant', 'warning')
     fireEvent.click(screen.getByRole('button', { name: 'Allow' }))
     await waitFor(() => {
       expect(api.resolvePermission).toHaveBeenCalledWith('permission-restored', 'allow')

@@ -1,8 +1,8 @@
 import { CircleAlert, Info, Lock, MessageCircle, Plus, RotateCw, Trash2, UserRound } from 'lucide-react'
 import { useId, useState } from 'react'
 
+import { Badge } from '@/components/ui/badge'
 import { IconButton } from '@/components/workspace/IconButton'
-import { StatusBadge } from '@/components/workspace/StatusBadge'
 
 import { AiAgentIcon } from '@/components/AiAgentIcon'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -39,6 +39,7 @@ import { Identity } from './Identity'
 import { ProviderSelect } from './ProviderSelect'
 import { memberView } from './memberIdentity'
 import { useMembers } from './useMembers'
+import { statusToneVariant } from '../statusTone'
 
 export type MemberRosterProps = {
   agents: AgentDescriptor[]
@@ -346,7 +347,7 @@ export function MemberRoster({
             <ItemContent className="min-w-60">
               <Identity
                 activity={activity ? (
-                  <StatusBadge tone={activity === 'running' ? 'info' : 'warn'}>{t(ACTIVITY_LABELS[activity])}</StatusBadge>
+                  <Badge variant={statusToneVariant(activity === 'running' ? 'info' : 'warn')}>{t(ACTIVITY_LABELS[activity])}</Badge>
                 ) : undefined}
                 meta={(
                   <span className="inline-flex items-center gap-1">

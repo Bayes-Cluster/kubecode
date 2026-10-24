@@ -3,9 +3,9 @@ import { Lock } from 'lucide-react'
 
 import { AiAgentIcon } from '@/components/AiAgentIcon'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Field, FieldGroup, FieldTitle } from '@/components/ui/field'
-import { StatusBadge } from '@/components/workspace/StatusBadge'
 import { Icon } from '@/kubecode/icons'
 import { WORKSPACE_COMMAND_ICONS, WORKSPACE_DESTINATION_ICONS } from '@/kubecode/icons/workspaceIcons'
 
@@ -18,6 +18,7 @@ import { agentName } from '../session/sessionModel'
 import { Identity } from './Identity'
 import { memberView } from './memberIdentity'
 import { ACTIVITY_LABELS, memberActivity, STATE_LABELS, TEMPLATE_LABELS } from './memberModel'
+import { statusToneVariant } from '../statusTone'
 
 /** Instructions longer than this start collapsed. */
 const LONG_INSTRUCTIONS = 280
@@ -66,13 +67,13 @@ export function MemberPanel({ entry }: InspectorPanelProps<Extract<InspectorEntr
           {member.state !== 'active' && (
             <Field orientation="horizontal">
               <FieldTitle>{t('kubecode.members.profile.membership')}</FieldTitle>
-              <StatusBadge tone="warn">{t(STATE_LABELS[member.state])}</StatusBadge>
+              <Badge variant="warning">{t(STATE_LABELS[member.state])}</Badge>
             </Field>
           )}
           <Field orientation="horizontal">
             <FieldTitle>{t('kubecode.members.profile.execution')}</FieldTitle>
             {activity
-              ? <StatusBadge tone={activity === 'running' ? 'info' : 'warn'}>{t(ACTIVITY_LABELS[activity])}</StatusBadge>
+              ? <Badge variant={statusToneVariant(activity === 'running' ? 'info' : 'warn')}>{t(ACTIVITY_LABELS[activity])}</Badge>
               : <span className="text-sm">{t('kubecode.members.profile.idle')}</span>}
           </Field>
         </FieldGroup>

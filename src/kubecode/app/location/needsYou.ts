@@ -5,7 +5,7 @@
  * server's attention projection (`attention/attentionTargets.ts`).
  */
 
-import type { StatusTone } from '@/components/workspace/StatusBadge'
+import type { StatusTone } from '../../statusTone'
 
 import type { InspectorEntry } from './inspector'
 import type { PlaceTarget } from './workspaceLocation'

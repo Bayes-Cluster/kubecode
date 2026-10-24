@@ -1,5 +1,6 @@
 import { useId, useMemo, useState, type ReactNode } from 'react'
 
+import { Badge } from '@/components/ui/badge'
 import { Icon } from '@/kubecode/icons'
 import {
   WORKSPACE_COMMAND_ICONS,
@@ -18,7 +19,6 @@ import { MoreActions } from './MoreActions'
 import { OfficialComponentMatrix } from './OfficialComponentMatrix'
 import { ReferenceChip } from './ReferenceChip'
 import { PauseButton, SendButton, StopButton } from './SendButton'
-import { StatusBadge } from './StatusBadge'
 import { ViewHeader } from './ViewHeader'
 
 function Row({ children, label }: { children: ReactNode; label: string }) {
@@ -170,11 +170,11 @@ export function ControlMatrix({ t }: { t: Translator }) {
 
       <Section title={t('kubecode.matrix.section.status')}>
         <Row label={t('kubecode.matrix.state.default')}>
-          <StatusBadge tone="muted">{t('kubecode.matrix.sample.muted')}</StatusBadge>
-          <StatusBadge tone="info">{t('kubecode.matrix.sample.info')}</StatusBadge>
-          <StatusBadge tone="ok">{t('kubecode.matrix.sample.ok')}</StatusBadge>
-          <StatusBadge tone="warn">{t('kubecode.matrix.sample.needsSetup')}</StatusBadge>
-          <StatusBadge tone="danger">{t('kubecode.matrix.sample.danger')}</StatusBadge>
+          <Badge variant="secondary">{t('kubecode.matrix.sample.muted')}</Badge>
+          <Badge variant="info">{t('kubecode.matrix.sample.info')}</Badge>
+          <Badge variant="success">{t('kubecode.matrix.sample.ok')}</Badge>
+          <Badge variant="warning">{t('kubecode.matrix.sample.needsSetup')}</Badge>
+          <Badge variant="destructive">{t('kubecode.matrix.sample.danger')}</Badge>
         </Row>
       </Section>
 
@@ -288,7 +288,7 @@ export function ControlMatrix({ t }: { t: Translator }) {
         <ViewHeader
           close={{ label: t('kubecode.vocab.command.close'), onClose: () => undefined }}
           level={3}
-          meta={<StatusBadge tone="info">{t('kubecode.matrix.sample.info')}</StatusBadge>}
+          meta={<Badge variant="info">{t('kubecode.matrix.sample.info')}</Badge>}
           title="Structured pruning"
         />
         <div className="kubecode-control-matrix-narrow">

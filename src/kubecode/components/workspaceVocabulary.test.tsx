@@ -61,7 +61,7 @@ describe('MemberIdentity (ADR 0227)', () => {
         roleLabel="Project manager"
       />,
     )
-    expect(screen.getByText('Needs setup')).toHaveAttribute('data-tone', 'warn')
+    expect(screen.getByText('Needs setup')).toHaveAttribute('data-variant', 'warning')
   })
 
   it('derives initials from one word, many words, and symbols', () => {

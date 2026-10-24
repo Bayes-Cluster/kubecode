@@ -1,6 +1,7 @@
 import { FlaskConical, Plus } from 'lucide-react'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   SidebarGroup,
@@ -12,7 +13,6 @@ import {
   SidebarMenuItem,
 } from '@/components/ui/sidebar'
 import { Spinner } from '@/components/ui/spinner'
-import { StatusBadge } from '@/components/workspace/StatusBadge'
 import type { Translator } from '@/lib/i18n'
 
 import type { ResearchSummary } from '../api'
@@ -79,10 +79,10 @@ export function ResearchNavigator({
                   <FlaskConical aria-hidden="true" />
                   <span className="min-w-0 flex-1 truncate">{item.title}</span>
                   {item.archived && (
-                    <StatusBadge tone="muted">{t('kubecode.research.status.archived')}</StatusBadge>
+                    <Badge variant="secondary">{t('kubecode.research.status.archived')}</Badge>
                   )}
                   {item.status === 'resolved' && (
-                    <StatusBadge tone="muted">{t('kubecode.research.status.resolved')}</StatusBadge>
+                    <Badge variant="secondary">{t('kubecode.research.status.resolved')}</Badge>
                   )}
                 </SidebarMenuButton>
               </SidebarMenuItem>

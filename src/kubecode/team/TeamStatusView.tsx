@@ -25,12 +25,12 @@ import {
   ItemTitle,
 } from '@/components/ui/item'
 import { Textarea } from '@/components/ui/textarea'
-import { StatusBadge, type StatusTone } from '@/components/workspace/StatusBadge'
 import type { TranslationKey, Translator } from '@/lib/i18n'
 
 import type { KubecodeApi, TeamSnapshot } from '../api'
 import { TEAM_STATUS_ICONS } from '../icons/statusIcons'
 import { SystemMessageNotice } from '../SystemMessageNotice'
+import { statusToneVariant, type StatusTone } from '../statusTone'
 
 export function TeamStatusView({
   api,
@@ -94,10 +94,10 @@ export function TeamStatusView({
           </div>
         </div>
         <div className="kubecode-team-settings">
-          <StatusBadge tone={teamStatusTone(snapshot.team.status)}>
+          <Badge variant={statusToneVariant(teamStatusTone(snapshot.team.status))}>
             <StatusIcon aria-hidden="true" />
             {teamStatusLabel(snapshot.team.status, t)}
-          </StatusBadge>
+          </Badge>
           <Badge data-mode={snapshot.team.mode} variant={snapshot.team.mode === 'yolo' ? 'warning' : 'outline'}>
             {snapshot.team.mode === 'yolo' ? t('kubecode.teamYolo') : t('kubecode.teamStandard')}
           </Badge>

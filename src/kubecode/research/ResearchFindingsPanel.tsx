@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyDescription } from '@/components/ui/empty'
 import { FieldDescription, FieldGroup } from '@/components/ui/field'
@@ -16,7 +17,6 @@ import {
 import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from '@/components/ui/item'
 import { Textarea } from '@/components/ui/textarea'
 import { DecisionButton } from '@/components/workspace/DecisionButton'
-import { StatusBadge } from '@/components/workspace/StatusBadge'
 import type { Translator } from '@/lib/i18n'
 
 import type {
@@ -29,10 +29,10 @@ import type {
   ResearchRound,
 } from '../api'
 import { newClientMessageId } from '../session/sessionModel'
-import { authorLabel, findingKindLabel, sourceKindLabel } from './researchLabels'
+import { authorLabel, availabilityLabel, availabilityVariant, findingKindLabel, sourceKindLabel } from './researchLabels'
 import { ResearchPanel, ResearchSection } from './ResearchLayout'
-import { AvailabilityBadge, StaleBadge } from './SourceBadge'
 import { useAction } from './useAction'
+import { statusToneVariant } from '../statusTone'
 
 const FINDING_KINDS: ResearchFindingKind[] = ['finding', 'attempt', 'limitation', 'open_question']
 
@@ -164,16 +164,16 @@ export function ResearchFindingsPanel({
             <Item key={finding.id} data-basis={finding.basis} role="listitem" size="sm" variant="outline">
               <ItemContent className="gap-1.5">
               <div className="flex flex-wrap items-center gap-2">
-                <StatusBadge tone="muted">{findingKindLabel(t, finding.kind)}</StatusBadge>
-                <StatusBadge
-                  tone={finding.basis === 'observation' ? 'ok' : 'warn'}
+                <Badge variant="secondary">{findingKindLabel(t, finding.kind)}</Badge>
+                <Badge
+                  variant={statusToneVariant(finding.basis === 'observation' ? 'ok' : 'warn')}
                   title={finding.basis === 'interpretation' ? t('kubecode.research.interpretationHint') : undefined}
                 >
                   {finding.basis === 'observation'
                     ? t('kubecode.research.basis.observation')
                     : t('kubecode.research.basis.interpretation')}
-                </StatusBadge>
-                {finding.stale && <StaleBadge t={t} />}
+                </Badge>
+                {finding.stale && <Badge title={t('kubecode.research.staleHint')} variant="warning">{t('kubecode.research.stale')}</Badge>}
               </div>
               <p className="m-0 whitespace-pre-wrap text-sm [overflow-wrap:anywhere]">{finding.statement}</p>
               <ItemDescription>
@@ -187,7 +187,7 @@ export function ResearchFindingsPanel({
                   {finding.producer_state.map((source) => (
                     <li className={SOURCE_ROW} key={`${source.kind}:${source.id}`}>
                       <span>{t('kubecode.research.producedByItem', { kind: sourceKindLabel(t, source.kind) })}</span>
-                      <AvailabilityBadge availability={source.availability} t={t} />
+                      <Badge variant={availabilityVariant(source.availability)}>{availabilityLabel(t, source.availability)}</Badge>
                     </li>
                   ))}
                 </ul>
@@ -198,7 +198,7 @@ export function ResearchFindingsPanel({
                     <li className={SOURCE_ROW} key={`${source.kind}:${source.id}`}>
                       <span>{sourceKindLabel(t, source.kind)}</span>
                       <code className="[overflow-wrap:anywhere]">{source.id}</code>
-                      <AvailabilityBadge availability={source.availability} t={t} />
+                      <Badge variant={availabilityVariant(source.availability)}>{availabilityLabel(t, source.availability)}</Badge>
                     </li>
                   ))}
                 </ul>
@@ -221,11 +221,11 @@ export function ResearchFindingsPanel({
                 <ItemContent>
                   <p className="m-0 whitespace-pre-wrap text-sm [overflow-wrap:anywhere]">{proposal.entry.body}</p>
                 </ItemContent>
-                <StatusBadge tone={proposal.review?.decision === 'accepted' ? 'ok' : 'muted'}>
+                <Badge variant={statusToneVariant(proposal.review?.decision === 'accepted' ? 'ok' : 'muted')}>
                   {proposal.review?.decision === 'accepted'
                     ? t('kubecode.research.accepted')
                     : t('kubecode.research.rejected')}
-                </StatusBadge>
+                </Badge>
               </Item>
             ))}
           </ItemGroup>

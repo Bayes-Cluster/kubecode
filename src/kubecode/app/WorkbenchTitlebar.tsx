@@ -9,7 +9,6 @@ import {
   SquareTerminal,
 } from 'lucide-react'
 
-import { StatusBadge } from '@/components/workspace/StatusBadge'
 import { Badge } from '@/components/ui/badge'
 import {
   Breadcrumb,
@@ -38,6 +37,7 @@ import type { NeedsYouEntry, NeedsYouTarget } from './location/needsYou'
 import type { WorkspaceConnectionState } from '../useWorkspaceEventStream'
 import { togglePanel } from './panelToggles'
 import type { Translator } from '@/lib/i18n'
+import { statusToneVariant } from '../statusTone'
 
 /** What waits on the researcher: this Workspace's decisions, and counts for the others (ADR 0232). */
 export type TitlebarAttention = {
@@ -204,7 +204,7 @@ export function WorkbenchTitlebar({
                           <span className="truncate text-xs text-muted-foreground">{entry.detail}</span>
                         )}
                       </div>
-                      <StatusBadge tone={entry.reason.tone}>{entry.reason.label}</StatusBadge>
+                      <Badge variant={statusToneVariant(entry.reason.tone)}>{entry.reason.label}</Badge>
                     </DropdownMenuItem>
                   ))}
                   {attention.current.length > BELL_ENTRIES && project && (

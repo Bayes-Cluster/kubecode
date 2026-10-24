@@ -12,7 +12,6 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Spinner } from '@/components/ui/spinner'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import { StatusBadge } from '@/components/workspace/StatusBadge'
 import type { Translator } from '@/lib/i18n'
 import { trackEvent } from '@/lib/telemetry'
 import { cn } from '@/lib/utils'
@@ -94,9 +93,9 @@ export function SessionTitlebar({
         </ToggleGroup>
       )}
       <div className="kubecode-session-status">
-        <StatusBadge
+        <Badge
           className={cn('kubecode-session-status-badge', !waitingForInput && !active && 'is-idle')}
-          tone={waitingForInput ? 'warn' : active ? 'info' : 'muted'}
+          variant={waitingForInput ? 'warning' : active ? 'info' : 'secondary'}
         >
           {waitingForInput ? <TriangleAlert aria-hidden="true" /> : active && <Spinner aria-hidden="true" aria-label={undefined} role={undefined} />}
           <span className="kubecode-session-status-label">
@@ -108,7 +107,7 @@ export function SessionTitlebar({
                   : 'kubecode.permissionRequired')
               : active ? t('kubecode.running') : t('kubecode.ready')}
           </span>
-        </StatusBadge>
+        </Badge>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button aria-label={t('kubecode.sessionActions')} className="kubecode-touch-target" size="icon-xs" variant="ghost">

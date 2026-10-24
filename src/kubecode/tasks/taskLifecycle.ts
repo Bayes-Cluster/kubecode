@@ -5,7 +5,7 @@
  * say the same thing. Pure.
  */
 
-import type { StatusTone } from '@/components/workspace/StatusBadge'
+import type { StatusTone } from '../statusTone'
 
 import type { TaskBoard, TaskCard, TaskCondition, TaskDetail, TaskStage, TaskWorkRollup } from '../api'
 

@@ -14,6 +14,11 @@ export function availabilityLabel(t: Translator, availability: ResearchSourceAva
   return t('kubecode.research.availability.available')
 }
 
+/** The Badge variant of a source's availability: anything but available is called out. */
+export function availabilityVariant(availability: ResearchSourceAvailability): 'success' | 'warning' {
+  return availability === 'available' ? 'success' : 'warning'
+}
+
 export function findingKindLabel(t: Translator, kind: ResearchFindingKind): string {
   switch (kind) {
     case 'attempt': return t('kubecode.research.findingKind.attempt')
