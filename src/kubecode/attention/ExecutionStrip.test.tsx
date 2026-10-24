@@ -145,7 +145,7 @@ describe('ExecutionStrip', () => {
     const list = await screen.findByRole('dialog', { name: 'Working now' })
     // The list is the official Queue (ADR 0242): one section, each piece of work an Item with its Stop.
     expect(within(list).getByRole('button', { name: /3 running/ })).toHaveAttribute('data-state', 'open')
-    expect(list.querySelectorAll('li [data-slot="item"]')).toHaveLength(3)
+    expect(list.querySelectorAll('li > [data-slot="item"]')).toHaveLength(3)
     expect(within(list).getByText('Coder')).toBeInTheDocument()
     expect(within(list).getByRole('button', { name: 'Stop Structured pruning' })).toBeInTheDocument()
     expect(within(list).getByRole('button', { name: 'Stop Quantization' })).toBeInTheDocument()

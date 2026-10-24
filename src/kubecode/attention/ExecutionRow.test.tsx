@@ -30,8 +30,8 @@ describe('ExecutionRow', () => {
 
   it('keeps a member name on one line in a narrow strip instead of breaking it letter by letter (#263)', () => {
     const item = row()
-    const identity = item.querySelector('.kubecode-member-identity') as HTMLElement
-    expect(identity).toHaveClass('whitespace-nowrap', 'min-w-0', 'truncate')
+    const identity = item.querySelector('[data-slot="item"] [data-slot="item"]') as HTMLElement
+    expect(identity).toHaveClass('whitespace-nowrap', 'min-w-0', 'overflow-hidden')
   })
 
   it('shows queued messages as a small count', () => {

@@ -16,7 +16,7 @@ const CONTROLS = [
   '[data-size="wrap"]:not(:disabled)',
   '[data-reference-chip-action="open"]:is(button)',
   '[data-reference-chip-action="remove"]',
-  'button.kubecode-member-identity-name',
+  'button[data-size="inline"]',
 ].join(', ')
 
 function catalog(locale: string): Record<string, string> {
@@ -124,7 +124,7 @@ test.describe('on a phone', () => {
     await expect(page.locator('html')).toHaveAttribute('lang', 'de-DE')
     expect(await page.evaluate(() => window.matchMedia('(pointer: coarse)').matches)).toBe(true)
     // A member's name is inline text that opens the profile; inline targets are exempt from the size rule.
-    const targets = CONTROLS.replaceAll(':not(:disabled)', '').replace(', button.kubecode-member-identity-name', '')
+    const targets = CONTROLS.replaceAll(':not(:disabled)', '').replace(', button[data-size="inline"]', '')
     const small = await page.locator(targets).evaluateAll((elements) => elements
       .map((element) => ({ box: element.getBoundingClientRect(), name: element.getAttribute('aria-label') ?? element.textContent }))
       .filter(({ box }) => box.width < 44 || box.height < 44)

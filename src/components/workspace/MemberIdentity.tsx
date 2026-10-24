@@ -3,10 +3,11 @@ import type { ReactNode } from 'react'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Item, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@/components/ui/item'
+import { statusToneVariant, type StatusTone } from '@/kubecode/statusTone'
 import { cn } from '@/lib/utils'
 
 import { initialsOf } from './memberInitials'
-import { statusToneVariant, type StatusTone } from '@/kubecode/statusTone'
 
 /** Who someone is in a Workspace conversation. It tones the avatar; the words say it. */
 export type MemberRoleKind = 'manager' | 'specialist' | 'researcher' | 'system'
@@ -19,14 +20,15 @@ export type MemberAvatarProps = {
 }
 
 /**
- * The initials avatar of a member, the researcher, or Kubecode. It repeats the
- * name shown beside it, so assistive technology skips it.
+ * The initials avatar of a member, the researcher, or Kubecode: the official
+ * Avatar in its own sizes. It repeats the name shown beside it, so assistive
+ * technology skips it.
  */
 export function MemberAvatar({ className, name, role, size = 'md' }: MemberAvatarProps) {
   return (
     <Avatar
       aria-hidden="true"
-      className={cn('kubecode-member-avatar', className)}
+      className={className}
       data-role={role}
       data-testid="member-avatar"
       size={size === 'sm' ? 'sm' : 'default'}
@@ -59,13 +61,18 @@ export type MemberIdentityProps = {
   /** Opens the member's profile; the name becomes the control. */
   onOpen?: () => void
   size?: 'sm' | 'md'
+  /** Layout only: where the identity sits and how much room it may take. */
   className?: string
 }
 
 /**
  * One presentation of who someone is, shared by messages, the roster,
- * mentions, and profiles (ADR 0227): avatar, name, handle, and role in words, on the official
- * Avatar, Button and Badge (ADR 0247).
+ * mentions, and profiles (ADR 0227): the official Item with the Avatar as
+ * its media, the name as its title (a link Button when it opens the
+ * profile), and the handle, role, attention, activity and details as its
+ * description (ADR 0255). It is a pass-through with no appearance of its
+ * own; it carries the contract that the avatar is hidden from assistive
+ * technology and that membership is never shown as activity.
  */
 export function MemberIdentity({
   activity,
@@ -79,21 +86,28 @@ export function MemberIdentity({
   roleLabel,
   size = 'md',
 }: MemberIdentityProps) {
+  const details = handle || roleLabel || attention || activity || meta
   return (
-    <span className={cn('kubecode-member-identity', className)} data-size={size}>
-      <MemberAvatar name={name} role={role} size={size} />
-      <span className="kubecode-member-identity-text">
-        {onOpen ? (
-          <Button className="kubecode-member-identity-name" size="inline" type="button" variant="link" onClick={onOpen}>{name}</Button>
-        ) : (
-          <span className="kubecode-member-identity-name">{name}</span>
+    <Item className={cn('w-fit max-w-full flex-nowrap', className)} data-size={size} size="compact">
+      <ItemMedia>
+        <MemberAvatar name={name} role={role} size={size} />
+      </ItemMedia>
+      <ItemContent className="min-w-0 flex-row flex-wrap items-baseline gap-x-2 gap-y-0">
+        <ItemTitle className="min-w-0 [overflow-wrap:anywhere]">
+          {onOpen ? <Button size="inline" type="button" variant="link" onClick={onOpen}>{name}</Button> : name}
+        </ItemTitle>
+        {details && (
+          <ItemDescription>
+            <span className="inline-flex max-w-full flex-wrap items-center gap-x-2 gap-y-0 [overflow-wrap:anywhere]">
+              {handle && <span>@{handle}</span>}
+              {roleLabel && <span>{roleLabel}</span>}
+              {attention && <Badge variant={statusToneVariant(attention.tone)}>{attention.label}</Badge>}
+              {activity && <span>{activity}</span>}
+              {meta && <span>{meta}</span>}
+            </span>
+          </ItemDescription>
         )}
-        {handle && <span className="kubecode-member-identity-handle">@{handle}</span>}
-        {roleLabel && <span className="kubecode-member-identity-role">{roleLabel}</span>}
-        {attention && <Badge variant={statusToneVariant(attention.tone)}>{attention.label}</Badge>}
-        {activity && <span className="kubecode-member-identity-activity">{activity}</span>}
-        {meta && <span className="kubecode-member-identity-meta">{meta}</span>}
-      </span>
-    </span>
+      </ItemContent>
+    </Item>
   )
 }

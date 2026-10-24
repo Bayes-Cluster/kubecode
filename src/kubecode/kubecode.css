@@ -1281,27 +1281,6 @@
   --ws-font-meta: 400 var(--kubecode-ui-font-small, 13px) / 1.4 var(--kubecode-ui-font, system-ui, sans-serif);
 }
 
-.kubecode-member-identity {
-  align-items: center;
-  display: inline-flex;
-  gap: var(--ws-space-2);
-  min-width: 0;
-}
-.kubecode-member-identity-text {
-  align-items: baseline;
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 0 var(--ws-space-2);
-  min-width: 0;
-}
-.kubecode-member-identity-name { overflow-wrap: anywhere; }
-.kubecode-member-identity-handle,
-.kubecode-member-identity-role {
-  color: var(--text-secondary);
-  font: var(--ws-font-meta);
-  overflow-wrap: anywhere;
-}
-
 /* The one header of a Workspace view or detail. */
 .kubecode-view-header {
   display: flex;
@@ -1407,11 +1386,6 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--ws-space-1) var(--ws-space-2);
-}
-.kubecode-member-identity-activity,
-.kubecode-member-identity-meta {
-  color: var(--text-secondary);
-  font: var(--ws-font-meta);
 }
 
 /* Text in the danger color must read at 4.5:1; the bright error red is for icons and borders. */
@@ -1781,9 +1755,7 @@
 .kubecode-message[data-from='self'] .kubecode-message-self-meta > :not(.kubecode-message-recipients) { flex: none; white-space: nowrap; }
 .kubecode-message[data-from='self'] .kubecode-message-recipients { flex: 0 1 auto; flex-wrap: nowrap; overflow: hidden; }
 .kubecode-message[data-from='self'] .kubecode-message-recipients > * { flex: none; }
-.kubecode-message[data-from='self'] .kubecode-message-recipients > .kubecode-member-identity:last-child { flex: 0 1 auto; min-width: 0; }
-.kubecode-message[data-from='self'] .kubecode-message-recipients .kubecode-member-identity-text { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.kubecode-message[data-from='self'] .kubecode-message-recipients .kubecode-member-identity-text > * + * { margin-inline-start: var(--ws-space-2); }
+.kubecode-message[data-from='self'] .kubecode-message-recipients > :last-child { flex: 0 1 auto; min-width: 0; }
 .kubecode-message[data-from='self'] .kubecode-message-inner > :not(.kubecode-message-header) {
   background: var(--ws-surface-self);
   border-radius: var(--ws-radius-md);
@@ -1797,13 +1769,6 @@
 /* Cells keep words whole on a phone; the table scrolls inside its box instead (#229). */
 .kubecode-message-body :is(th, td) { overflow-wrap: normal; word-break: normal; }
 .kubecode-message-action { color: var(--text-secondary); }
-
-/* Identity: the official Avatar, toned by who someone is; the words say it. */
-.kubecode-conversation-avatar { flex: none; }
-.kubecode-member-identity[data-size='md'] > .kubecode-conversation-avatar { height: var(--ws-avatar-md); width: var(--ws-avatar-md); }
-.kubecode-member-identity[data-size='sm'] > .kubecode-conversation-avatar { height: var(--ws-avatar-sm); width: var(--ws-avatar-sm); }
-.kubecode-identity-card { display: flex; flex-direction: column; gap: 2px; width: auto; max-width: 20rem; }
-.kubecode-identity-card-name { color: var(--text-primary); font: var(--ws-font-subtitle); }
 
 /* The composer: the official Prompt Input card, one line over its tools when empty (ADR 0240). */
 .kubecode-composer { display: flex; flex-direction: column; gap: 2px; position: relative; }
