@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -15,8 +15,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from '@/components/ui/item'
+import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
-import { DecisionButton } from '@/components/workspace/DecisionButton'
 import type { Translator } from '@/lib/i18n'
 
 import type {
@@ -60,6 +60,7 @@ export function ResearchFindingsPanel({
   const pendingOutcomes = outcomes.filter((outcome) => outcome.status === 'pending')
   const review = useAction(t)
   const [deciding, setDeciding] = useState<string | null>(null)
+  const heldId = useId()
   const decline = useAction(t)
   const roundNumber = (roundId: string | null) => rounds.find((round) => round.id === roundId)?.round ?? null
 
@@ -94,22 +95,25 @@ export function ResearchFindingsPanel({
                   </ItemContent>
                   {!detail.archived && (
                     <ItemActions aria-label={proposal.entry.body.slice(0, 60)} className="flex-wrap" role="group">
-                      <DecisionButton
-                        busy={deciding === `${proposal.entry.id}:accepted`}
-                        disabledReason={deciding === `${proposal.entry.id}:accepted` ? undefined : held}
-                        variant="primary"
-                        onDecide={() => decide('accepted')}
-                      >
-                        {t('kubecode.research.agree')}
-                      </DecisionButton>
-                      <DecisionButton
-                        busy={deciding === `${proposal.entry.id}:rejected`}
-                        disabledReason={deciding === `${proposal.entry.id}:rejected` ? undefined : held}
-                        variant="secondary"
-                        onDecide={() => decide('rejected')}
-                      >
-                        {t('kubecode.research.decline')}
-                      </DecisionButton>
+                      {(['accepted', 'rejected'] as const).map((verdict) => {
+                        const busy = deciding === `${proposal.entry.id}:${verdict}`
+                        return (
+                          <Button
+                            aria-busy={busy || undefined}
+                            aria-describedby={held && !busy ? `${heldId}-${proposal.entry.id}` : undefined}
+                            aria-disabled={busy || undefined}
+                            disabled={Boolean(held) && !busy}
+                            key={verdict}
+                            size="wrap"
+                            variant={verdict === 'accepted' ? 'default' : 'outline'}
+                            onClick={busy ? undefined : () => decide(verdict)}
+                          >
+                            {busy && <Spinner aria-hidden="true" data-icon="inline-start" />}
+                            {verdict === 'accepted' ? t('kubecode.research.agree') : t('kubecode.research.decline')}
+                          </Button>
+                        )
+                      })}
+                      {held && <FieldDescription className="basis-full" id={`${heldId}-${proposal.entry.id}`}>{held}</FieldDescription>}
                     </ItemActions>
                   )}
                 </Item>

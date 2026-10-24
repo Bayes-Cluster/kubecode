@@ -2,7 +2,6 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 import type { ComponentType } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
-import { DecisionButton } from '@/components/workspace/DecisionButton'
 import { MemberAvatar, MemberIdentity } from '@/components/workspace/MemberIdentity'
 import { MoreActions } from '@/components/workspace/MoreActions'
 import { ReferenceChip } from '@/components/workspace/ReferenceChip'
@@ -183,32 +182,6 @@ describe('ViewHeader (ADR 0227)', () => {
     expect(screen.queryByRole('button', { name: 'Back' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Close details' }))
     expect(onClose).toHaveBeenCalledTimes(1)
-  })
-})
-
-describe('DecisionButton (ADR 0227)', () => {
-  it('decides in words, says why it cannot, and keeps focus while it records', () => {
-    const onDecide = vi.fn()
-    const { rerender } = render(<DecisionButton variant="primary" onDecide={onDecide}>Accept results</DecisionButton>)
-    fireEvent.click(screen.getByRole('button', { name: 'Accept results' }))
-    expect(onDecide).toHaveBeenCalledTimes(1)
-    expect(screen.getByRole('button', { name: 'Accept results' })).toHaveAttribute('data-variant', 'primary')
-    rerender(<DecisionButton variant="destructive" onDecide={onDecide}>Discard</DecisionButton>)
-    expect(screen.getByRole('button', { name: 'Discard' })).toHaveAttribute('data-variant', 'destructive')
-    rerender(<DecisionButton onDecide={onDecide}>Send back</DecisionButton>)
-    expect(screen.getByRole('button', { name: 'Send back' })).toHaveAttribute('data-variant', 'secondary')
-    rerender(<DecisionButton disabledReason="Look at the changed evidence first." onDecide={onDecide}>Accept results</DecisionButton>)
-    const blocked = screen.getByRole('button', { name: 'Accept results' })
-    expect(blocked).toBeDisabled()
-    expect(blocked).toHaveAccessibleDescription('Look at the changed evidence first.')
-    rerender(<DecisionButton busy onDecide={onDecide}>Accept results</DecisionButton>)
-    const busy = screen.getByRole('button', { name: 'Accept results' })
-    expect(busy.querySelector('.animate-spin')).not.toBeNull()
-    busy.focus()
-    expect(busy).toHaveFocus()
-    expect(busy).toHaveAttribute('aria-busy', 'true')
-    fireEvent.click(busy)
-    expect(onDecide).toHaveBeenCalledTimes(1)
   })
 })
 

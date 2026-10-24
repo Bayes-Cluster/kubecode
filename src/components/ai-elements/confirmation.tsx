@@ -164,6 +164,8 @@ export const ConfirmationActions = ({
 
 export type ConfirmationActionProps = ComponentProps<typeof Button>;
 
-export const ConfirmationAction = (props: ConfirmationActionProps) => (
-  <Button className="h-8 px-3 text-sm" type="button" {...props} />
+// Kubecode (ADR 0255): a Button size (sm by default) instead of a fixed
+// className, so a decision can take the wrapping size.
+export const ConfirmationAction = ({ size = "sm", ...props }: ConfirmationActionProps) => (
+  <Button size={size} type="button" {...props} />
 );

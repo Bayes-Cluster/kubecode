@@ -13,7 +13,7 @@ const CONTROLS = [
   '.kubecode-send-button:not(:disabled)',
   '.kubecode-stop-button',
   '.kubecode-pause-button',
-  '.kubecode-decision-button:not(:disabled)',
+  '[data-size="wrap"]:not(:disabled)',
   '[data-reference-chip-action="open"]:is(button)',
   '[data-reference-chip-action="remove"]',
   'button.kubecode-member-identity-name',
@@ -58,7 +58,7 @@ async function overflowing(page: Page): Promise<string[]> {
 
 /** A decision whose words do not fit wraps onto more lines instead of being cut. */
 async function wrapsDecision(page: Page): Promise<boolean> {
-  return page.getByTestId('decision-wrap-sample').locator('.kubecode-decision-button').evaluate((element) => {
+  return page.getByTestId('decision-wrap-sample').locator('[data-size="wrap"]').evaluate((element) => {
     const lineHeight = Number.parseFloat(getComputedStyle(element).lineHeight) || 20
     return element.getBoundingClientRect().height > lineHeight * 1.8
   })

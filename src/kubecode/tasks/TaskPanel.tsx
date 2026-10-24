@@ -16,7 +16,6 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Spinner } from '@/components/ui/spinner'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { DecisionButton } from '@/components/workspace/DecisionButton'
 import { MoreActions, type MoreActionItem } from '@/components/workspace/MoreActions'
 import { Icon } from '@/kubecode/icons'
 import { WORKSPACE_DESTINATION_ICONS, WORKSPACE_OBJECT_ICONS } from '@/kubecode/icons/workspaceIcons'
@@ -198,9 +197,10 @@ export function TaskPanel({ entry, projectId }: InspectorPanelProps<Extract<Insp
         {/* An accepted (Done) Task has no work left to run, pause or stop (#229). */}
         {detail && !archived && detail.stage !== 'done' && <TaskWork detail={detail} projectId={projectId} onChanged={changed} />}
         {archived && (
-          <DecisionButton busy={busy} variant="secondary" onDecide={() => void setArchived(false)}>
+          <Button aria-busy={busy || undefined} aria-disabled={busy || undefined} size="wrap" variant="outline" onClick={busy ? undefined : () => void setArchived(false)}>
+            {busy && <Spinner aria-hidden="true" data-icon="inline-start" />}
             {t('kubecode.task.restore')}
-          </DecisionButton>
+          </Button>
         )}
         {draft || !detail ? overview : (
           <Tabs className="min-w-0" value={tab} onValueChange={(value) => setTab(value as TaskTab)}>

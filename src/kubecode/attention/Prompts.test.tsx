@@ -40,7 +40,7 @@ describe('PermissionPrompt', () => {
     expect(card).toHaveTextContent('pytest -q')
     expect(screen.getByTestId('permission-countdown')).toHaveTextContent('2m expires')
     expect(screen.getByRole('button', { name: 'Allow all' })).toHaveAttribute('title', '1 — Always Allow all Bash')
-    expect(screen.getByRole('button', { name: 'Reject' })).toHaveAttribute('data-variant', 'secondary')
+    expect(screen.getByRole('button', { name: 'Reject' })).toHaveAttribute('data-variant', 'outline')
     fireEvent.keyDown(card, { key: '2' })
     await waitFor(() => expect(onResolve).toHaveBeenCalledWith('allow'))
   })

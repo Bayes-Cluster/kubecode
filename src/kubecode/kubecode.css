@@ -1293,23 +1293,10 @@
   .kubecode-icon-button,
   .kubecode-send-button,
   .kubecode-stop-button,
-  .kubecode-pause-button,
-  .kubecode-decision-button {
+  .kubecode-pause-button {
     min-height: var(--ws-touch-target);
     min-width: var(--ws-touch-target);
   }
-}
-
-/* A text-labelled research decision: it wraps a long translation instead of overflowing. */
-.kubecode-decision-button {
-  height: auto;
-  max-width: 100%;
-  min-height: 32px;
-  text-align: center;
-  white-space: normal;
-}
-@media (pointer: coarse) {
-  .kubecode-decision-button { min-height: var(--ws-touch-target); }
 }
 
 .kubecode-member-identity {
@@ -1440,17 +1427,6 @@
   flex-wrap: wrap;
   gap: var(--ws-space-1) var(--ws-space-2);
 }
-.kubecode-decision {
-  align-items: flex-start;
-  display: inline-flex;
-  flex-direction: column;
-  gap: 2px;
-  max-width: 100%;
-}
-.kubecode-decision-reason {
-  color: var(--text-secondary);
-  font: var(--ws-font-meta);
-}
 .kubecode-member-identity-activity,
 .kubecode-member-identity-meta {
   color: var(--text-secondary);
@@ -1481,7 +1457,6 @@
    the researcher is capped and scrolls. */
 
 @media (pointer: coarse) {
-  .kubecode-delivery-failure .kubecode-decision-button,
   .kubecode-delivery-failure button { min-height: var(--ws-touch-target); }
 }
 

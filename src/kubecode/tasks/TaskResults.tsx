@@ -1,7 +1,7 @@
 import { CircleCheck } from 'lucide-react'
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
 
-import { Confirmation, ConfirmationActions, ConfirmationTitle } from '@/components/ai-elements/confirmation'
+import { Confirmation, ConfirmationAction, ConfirmationActions, ConfirmationTitle } from '@/components/ai-elements/confirmation'
 import { Sources } from '@/components/ai-elements/sources'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -19,8 +19,8 @@ import {
 } from '@/components/ui/field'
 import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from '@/components/ui/item'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
-import { DecisionButton } from '@/components/workspace/DecisionButton'
 import { ReferenceChip } from '@/components/workspace/ReferenceChip'
 import type { Translator } from '@/lib/i18n'
 
@@ -267,6 +267,7 @@ function OpenReview({ detail, onChanged, onDecided, projectId, request }: {
   const ackId = useId()
   const legendId = useId()
   const choiceId = useId()
+  const reasonId = useId()
 
   const { other, review } = reviewEvidence(detail)
   const rows = [...review, ...other.filter((row) => row.status === 'changed' || row.status === 'removed')]
@@ -429,23 +430,37 @@ function OpenReview({ detail, onChanged, onDecided, projectId, request }: {
           state="approval-requested"
         >
           <ConfirmationTitle>{t('kubecode.task.acceptsShownVersions')}</ConfirmationTitle>
-          <ConfirmationActions className="flex-wrap justify-start">
-            <DecisionButton
-              busy={busy === 'accept'}
-              disabledReason={acceptReason}
-              variant="primary"
-              onDecide={() => decide(true)}
-            >
-              {t('kubecode.task.acceptResults')}
-            </DecisionButton>
-            <DecisionButton
-              busy={busy === 'return'}
-              disabledReason={returnReason}
-              variant="secondary"
-              onDecide={() => decide(false)}
-            >
-              {t('kubecode.task.sendBack')}
-            </DecisionButton>
+          <ConfirmationActions className="flex-wrap items-start justify-start">
+            {/* Each decision says in words why it cannot be made yet; a busy one keeps focus (ADR 0227). */}
+            <span className="flex max-w-full flex-col items-start gap-1">
+              <ConfirmationAction
+                aria-busy={busy === 'accept' || undefined}
+                aria-describedby={acceptReason ? `${reasonId}-accept` : undefined}
+                aria-disabled={busy === 'accept' || undefined}
+                disabled={Boolean(acceptReason) && busy !== 'accept'}
+                size="wrap"
+                onClick={busy === 'accept' ? undefined : () => decide(true)}
+              >
+                {busy === 'accept' && <Spinner aria-hidden="true" data-icon="inline-start" />}
+                {t('kubecode.task.acceptResults')}
+              </ConfirmationAction>
+              {acceptReason && <FieldDescription id={`${reasonId}-accept`}>{acceptReason}</FieldDescription>}
+            </span>
+            <span className="flex max-w-full flex-col items-start gap-1">
+              <ConfirmationAction
+                aria-busy={busy === 'return' || undefined}
+                aria-describedby={returnReason ? `${reasonId}-return` : undefined}
+                aria-disabled={busy === 'return' || undefined}
+                disabled={Boolean(returnReason) && busy !== 'return'}
+                size="wrap"
+                variant="outline"
+                onClick={busy === 'return' ? undefined : () => decide(false)}
+              >
+                {busy === 'return' && <Spinner aria-hidden="true" data-icon="inline-start" />}
+                {t('kubecode.task.sendBack')}
+              </ConfirmationAction>
+              {returnReason && <FieldDescription id={`${reasonId}-return`}>{returnReason}</FieldDescription>}
+            </span>
           </ConfirmationActions>
         </Confirmation>
       </CardFooter>
@@ -493,6 +508,8 @@ function EvidenceRow({ busy, check, evidence, onAccept, settle }: {
   const open = useOpenEvidence(evidence)
   const changed = evidence.status === 'changed'
   const row = useRef<HTMLDivElement>(null)
+  const reasonId = useId()
+  const reason = versionReason(t, check)
   useEffect(() => {
     if (settle && !changed) row.current?.querySelector<HTMLElement>('button')?.focus({ preventScroll: true })
   }, [changed, settle])
@@ -502,23 +519,30 @@ function EvidenceRow({ busy, check, evidence, onAccept, settle }: {
       {changed && (
         <ItemActions className="flex-wrap items-start">
           {open && (
-            <Button data-focus-key={`evidence:${evidence.key}`} size="sm" variant="outline" onClick={open}>
+            <Button data-focus-key={`evidence:${evidence.key}`} size="wrap" variant="outline" onClick={open}>
               {t('kubecode.task.lookAtIt')}
             </Button>
           )}
           {check.state === 'seen_current' && (
             <small className="basis-full text-muted-foreground">{t('kubecode.task.version.seenCurrent', { revision: check.seen.slice(0, 12) })}</small>
           )}
-          <DecisionButton
-            busy={busy}
-            disabledReason={versionReason(t, check)}
-            variant="secondary"
-            onDecide={() => {
-              if (check.state === 'seen_current') onAccept(check.seen)
-            }}
-          >
-            {t('kubecode.task.acceptShown')}
-          </DecisionButton>
+          <span className="flex max-w-full flex-col items-start gap-1">
+            <Button
+              aria-busy={busy || undefined}
+              aria-describedby={reason ? reasonId : undefined}
+              aria-disabled={busy || undefined}
+              disabled={Boolean(reason) && !busy}
+              size="wrap"
+              variant="outline"
+              onClick={busy ? undefined : () => {
+                if (check.state === 'seen_current') onAccept(check.seen)
+              }}
+            >
+              {busy && <Spinner aria-hidden="true" data-icon="inline-start" />}
+              {t('kubecode.task.acceptShown')}
+            </Button>
+            {reason && <FieldDescription id={reasonId}>{reason}</FieldDescription>}
+          </span>
         </ItemActions>
       )}
     </Item>

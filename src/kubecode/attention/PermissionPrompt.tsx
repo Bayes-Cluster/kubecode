@@ -3,16 +3,18 @@ import { type RefObject, useEffect, useLayoutEffect, useRef, useState } from 're
 
 import {
   Confirmation,
+  ConfirmationAction,
   ConfirmationActions,
   ConfirmationRequest,
   ConfirmationTitle,
 } from '@/components/ai-elements/confirmation'
+import { Spinner } from '@/components/ui/spinner'
 import type { Translator } from '@/lib/i18n'
 
 import type { PendingOption } from '../api'
 import { permissionChoiceLabel } from '../session/sessionModel'
 import { isGone } from './attentionContext'
-import { PromptDecision, PromptOutcome } from './PromptDecision'
+import { PromptOutcome } from './PromptOutcome'
 
 export type PermissionPromptProps = {
   requestId: string
@@ -87,17 +89,23 @@ export function PermissionPrompt({ deadlineMs, heading, onGone, onResolve, optio
         <code className="block max-h-32 overflow-auto rounded-md bg-muted px-2 py-1 font-mono text-xs break-all whitespace-pre-wrap">{tool}</code>
       </ConfirmationRequest>
       <ConfirmationActions className="flex-wrap justify-start self-stretch">
-        {options.map((option, index) => (
-          <PromptDecision
-            busy={busy === option.id || resolving}
-            key={option.id}
-            title={`${index + 1} — ${option.label}`}
-            variant={option.kind.startsWith('reject') ? 'secondary' : 'primary'}
-            onDecide={() => void resolve(option.id)}
-          >
-            {permissionChoiceLabel(option, t)}
-          </PromptDecision>
-        ))}
+        {options.map((option, index) => {
+          const deciding = busy === option.id || resolving
+          return (
+            <ConfirmationAction
+              aria-busy={deciding || undefined}
+              aria-disabled={deciding || undefined}
+              key={option.id}
+              size="wrap"
+              title={`${index + 1} — ${option.label}`}
+              variant={option.kind.startsWith('reject') ? 'outline' : 'default'}
+              onClick={deciding ? undefined : () => void resolve(option.id)}
+            >
+              {deciding && <Spinner aria-hidden="true" data-icon="inline-start" />}
+              {permissionChoiceLabel(option, t)}
+            </ConfirmationAction>
+          )
+        })}
       </ConfirmationActions>
       <PromptOutcome outcome={outcome} resolving={resolving} t={t} />
     </Confirmation>
