@@ -273,6 +273,8 @@ test.describe('on a phone', () => {
         expect(card.width).toBeLessThanOrEqual(960)
         expect(Math.abs((card.x - pane.x) - (pane.x + pane.width - card.x - card.width))).toBeLessThanOrEqual(2)
         await running.click()
+        // The official Popover zooms in as it opens; measure it once it has settled.
+        await list.evaluate((element) => Promise.all(element.getAnimations({ subtree: true }).map((animation) => animation.finished)))
         const wideList = (await list.boundingBox())!
         expect(Math.abs(wideList.width - card.width)).toBeLessThanOrEqual(2)
         await page.keyboard.press('Escape')

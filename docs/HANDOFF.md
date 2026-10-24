@@ -18,6 +18,7 @@ what is still open. The row-by-row record is
 | G | #261 | Session and Team execution views | [0253](adr/0253-session-and-team-execution-views-on-official-components.md) |
 | H | #262 | File, Git, terminal and research utilities | [0252](adr/0252-file-git-terminal-and-research-utilities-on-official-components.md) |
 | I | #263 | Route audit, cleanup, hand-off | [0254](adr/0254-route-audit-closes-the-official-component-migration.md) |
+| UI2 A | #277 | Variants on the official components, the parallel layer retired, Sonner, the extended CSS ownership check | [0256](adr/0256-official-components-own-their-variants-and-the-parallel-layer-is-retired.md) |
 
 ## Contracts that now hold
 
