@@ -13,7 +13,7 @@ The audit in `docs/design/shadcn-remaining-gaps.md` (2026-10-24) found 320
 open findings after the #254 programme. Nearly every one routes through a
 small set of project wrappers in `src/components/workspace/` that owned
 typography, size and colour through `kubecode.css`, or through a per-call
-`className` that resized an official part (`pointer-coarse:min-h-11`,
+`className` that resized an official part (`pointer-coarse:min-h-[44px]`,
 `Empty className="p-4"`, `h-auto p-0` on a link Button). Issue #276 opens a
 second programme (UI2, slices A–L); this ADR is slice A (#277), the only
 slice that changes `src/components/ui/*` and `src/components/ai-elements/*`
@@ -38,7 +38,7 @@ Each carries a `Kubecode (ADR 0255)` comment so a CLI re-run's diff shows it.
 
 | File | Change |
 | --- | --- |
-| `ui/button.tsx` | Base: `pointer-coarse:min-h-11`; icon sizes also `pointer-coarse:min-w-11`, so every Button is a 44 px target on a coarse pointer. New sizes: `wrap` (a text decision that wraps a long translation: `h-auto min-h-8 … whitespace-normal`) and `inline` (a link inside running text: `h-auto p-0`, opts out of the touch minimum). |
+| `ui/button.tsx` | Base: `pointer-coarse:min-h-[44px]`; icon sizes also `pointer-coarse:min-w-[44px]`, so every Button is a 44 px target on a coarse pointer. New sizes: `wrap` (a text decision that wraps a long translation: `h-auto min-h-8 … whitespace-normal`) and `inline` (a link inside running text: `h-auto p-0`, opts out of the touch minimum). |
 | `ui/empty.tsx` | `size`: `default` (`gap-6 p-6 md:p-12`) and `compact` (`gap-4 p-4`); `variant`: `default` and `outline` (`border`). |
 | `ui/card.tsx` | `size`: `default` (`gap-6 py-6`) and `compact` (`gap-0 py-0`, for a Card whose one child owns the insets). |
 | `ui/item.tsx` | `size="compact"` (`gap-2.5 p-0`); an Item rendered as `a` or `button` is a 44 px target on a coarse pointer. |

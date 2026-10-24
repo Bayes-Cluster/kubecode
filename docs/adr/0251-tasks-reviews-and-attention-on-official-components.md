@@ -68,7 +68,7 @@ baseline entries. One layout block remains: the board's container queries
 (four, two, one column and the phone stage picker), the sticky review decision
 on a phone screen, the Needs you view's scroll container and the capped prompt
 body on small screens. Touch targets for `xs` buttons use
-`pointer-coarse:min-h-11` on the button.
+`pointer-coarse:min-h-[44px]` on the button.
 
 ## Consequences
 

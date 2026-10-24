@@ -25,10 +25,10 @@ describe('official component variants (ADR 0255)', () => {
         <Button size="inline" variant="link">Analyst</Button>
       </>,
     )
-    expect(screen.getByRole('button', { name: 'Retry' }).className).toContain('pointer-coarse:min-h-11')
+    expect(screen.getByRole('button', { name: 'Retry' }).className).toContain('pointer-coarse:min-h-[44px]')
     const icon = screen.getByRole('button', { name: 'Close' })
-    expect(icon.className).toContain('pointer-coarse:min-h-11')
-    expect(icon.className).toContain('pointer-coarse:min-w-11')
+    expect(icon.className).toContain('pointer-coarse:min-h-[44px]')
+    expect(icon.className).toContain('pointer-coarse:min-w-[44px]')
     const wrap = screen.getByRole('button', { name: 'Accept the results shown' })
     expect(wrap).toHaveAttribute('data-size', 'wrap')
     expect(wrap.className).toContain('whitespace-normal')
@@ -37,7 +37,7 @@ describe('official component variants (ADR 0255)', () => {
     expect(inline).toHaveAttribute('data-size', 'inline')
     expect(inline.className).toContain('p-0')
     expect(inline.className).toContain('pointer-coarse:min-h-0')
-    expect(inline.className).not.toContain('pointer-coarse:min-h-11')
+    expect(inline.className).not.toContain('pointer-coarse:min-h-[44px]')
   })
 
   it('Empty has a compact size and an outline variant', () => {
@@ -67,7 +67,7 @@ describe('official component variants (ADR 0255)', () => {
     expect(item).toHaveAttribute('data-size', 'compact')
     expect(item.className).toMatch(/\bp-0\b/)
     // An interactive Item is a touch-sized target without a per-call class.
-    expect(screen.getByRole('button', { name: 'row' }).className).toContain('[button&]:pointer-coarse:min-h-11')
+    expect(screen.getByRole('button', { name: 'row' }).className).toContain('[button&]:pointer-coarse:min-h-[44px]')
   })
 
   it('Alert has a warning variant on the semantic tokens', () => {
