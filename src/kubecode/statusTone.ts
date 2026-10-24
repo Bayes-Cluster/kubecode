@@ -1,7 +1,7 @@
 /**
  * How a status reads at a glance. The words always carry the meaning; the
  * tone only picks an official Badge variant, so it is never the only signal
- * (ADR 0247, ADR 0255).
+ * (ADR 0247, ADR 0256).
  */
 export type StatusTone = 'ok' | 'info' | 'warn' | 'danger' | 'muted'
 

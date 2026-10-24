@@ -172,7 +172,7 @@ function AttachmentTrigger({
     <Comp
       data-slot="attachment-trigger"
       type={asChild ? undefined : (type ?? "button")}
-      // Kubecode (ADR 0255): the covering trigger is a touch-sized target on a coarse pointer.
+      // Kubecode (ADR 0256): the covering trigger is a touch-sized target on a coarse pointer.
       className={cn("absolute inset-0 z-10 outline-none pointer-coarse:min-h-[44px]", className)}
       {...props}
     />

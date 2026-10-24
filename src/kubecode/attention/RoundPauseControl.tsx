@@ -51,7 +51,7 @@ export function RoundPauseControl({ api, execution, onChanged, projectId, t, tas
   }
   return (
     <div className="flex flex-wrap items-center gap-2" data-paused={execution.paused}>
-      {/* Its name never changes; the pressed state says whether new work is paused (ADR 0232, ADR 0255). */}
+      {/* Its name never changes; the pressed state says whether new work is paused (ADR 0232, ADR 0256). */}
       <Toggle
         aria-busy={busy || undefined}
         aria-disabled={busy || undefined}

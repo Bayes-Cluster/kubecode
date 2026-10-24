@@ -15,7 +15,7 @@ const TOASTS = {
 } as const
 
 /**
- * Application messages as official toasts (Sonner, ADR 0255): one host, the
+ * Application messages as official toasts (Sonner, ADR 0256): one host, the
  * newest three visible, a message published twice shown once, and a warning
  * or error kept until it is closed.
  */

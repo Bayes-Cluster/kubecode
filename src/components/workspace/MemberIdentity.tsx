@@ -70,7 +70,7 @@ export type MemberIdentityProps = {
  * mentions, and profiles (ADR 0227): the official Item with the Avatar as
  * its media, the name as its title (a link Button when it opens the
  * profile), and the handle, role, attention, activity and details as its
- * description (ADR 0255). It is a pass-through with no appearance of its
+ * description (ADR 0256). It is a pass-through with no appearance of its
  * own; it carries the contract that the avatar is hidden from assistive
  * technology and that membership is never shown as activity.
  */

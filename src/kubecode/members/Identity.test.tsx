@@ -18,7 +18,7 @@ describe('Identity', () => {
     expect(name).toHaveAttribute('data-size', 'inline')
     fireEvent.click(name)
     expect(inspect).toHaveBeenCalledWith({ kind: 'member', id: 'member-1' }, { from: 'message-1' })
-    // ADR 0255: the official Item owns the structure; the avatar is its media, the words its description.
+    // ADR 0256: the official Item owns the structure; the avatar is its media, the words its description.
     expect(name.closest('[data-slot="item"]')).not.toBeNull()
     expect(screen.getByTestId('member-avatar').closest('[data-slot="item-media"]')).not.toBeNull()
     expect(screen.getByTestId('member-avatar')).toHaveAttribute('data-slot', 'avatar')

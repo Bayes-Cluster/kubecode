@@ -818,7 +818,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     && !notifications.onboardingDismissed
     && browserPermission === 'default'
     && reconciliation.workspaceEvents.some((event) => event.kind === 'run_started')
-  // Notification onboarding is one official toast (ADR 0255), offered once agents start working.
+  // Notification onboarding is one official toast (ADR 0256), offered once agents start working.
   useEffect(() => {
     if (!notificationOnboardingOpen) {
       toast.dismiss(NOTIFICATION_ONBOARDING_TOAST)

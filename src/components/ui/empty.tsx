@@ -1,7 +1,7 @@
 import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "cn"
 
-// Kubecode (ADR 0255): a compact size for sidebars, inspectors and dialogs,
+// Kubecode (ADR 0256): a compact size for sidebars, inspectors and dialogs,
 // and an outline variant for an Empty that stands inside a panel.
 const emptyVariants = cva(
   "flex min-w-0 flex-1 flex-col items-center justify-center rounded-lg border-dashed text-center text-balance",

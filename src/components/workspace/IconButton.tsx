@@ -20,7 +20,7 @@ export type IconButtonProps = Omit<ComponentProps<typeof Button>, 'children' | '
 /**
  * A labelled icon-only control: the official Button in an icon size inside
  * the official Tooltip, its shortcut a Kbd, its busy state the official
- * Spinner (ADR 0255). It is a pass-through with no appearance of its own; it
+ * Spinner (ADR 0256). It is a pass-through with no appearance of its own; it
  * only carries the contract that the label is required and that a busy
  * button keeps focus.
  */

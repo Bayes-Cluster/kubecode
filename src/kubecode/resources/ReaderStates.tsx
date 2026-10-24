@@ -9,7 +9,7 @@ import { Spinner } from '@/components/ui/spinner'
  * evidence): the official Empty (compact, with the Spinner as its media)
  * and Alert, so Resources, Add context and a Task's evidence say loading,
  * nothing, changed and failed the same way. Only the roles are chosen here;
- * the components own the look (ADR 0255).
+ * the components own the look (ADR 0256).
  */
 export function ReaderLoading({ children }: { children: ReactNode }) {
   return (

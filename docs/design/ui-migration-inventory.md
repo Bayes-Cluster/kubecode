@@ -111,7 +111,7 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| DestinationHeader | `src/kubecode/app/DestinationHeader.tsx` | ViewHeader on the official Item + Separator (ADR 0255) | Item parts + Separator | all destinations | #277 | migrated | The wrapper `div` keeps the parents' bleed margins; the `header` takes only its padding |
+| DestinationHeader | `src/kubecode/app/DestinationHeader.tsx` | ViewHeader on the official Item + Separator (ADR 0256) | Item parts + Separator | all destinations | #277 | migrated | The wrapper `div` keeps the parents' bleed margins; the `header` takes only its padding |
 
 ## Inspector
 
@@ -321,8 +321,8 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 | Permission prompt | `src/kubecode/attention/PermissionPrompt.tsx:65-104; PromptDecision.tsx` | AI Elements Confirmation; PromptOutcome (status / Alert destructive) | AI Elements Confirmation (+ Alert) | General, SessionComposer | #259 | migrated | — |
 | Elicitation prompt form fields | `src/kubecode/attention/ElicitationPrompt.tsx:66-137` | Confirmation + Field/Input/Switch/Select; PromptOutcome | AI Elements Confirmation + shadcn Field | General, SessionComposer | #259 | migrated | — |
 | Execution strip: summary trigger, popover, Queue, failed row + Dismiss | `src/kubecode/attention/ExecutionStrip.tsx:122-134,243-307` | Popover + Queue + Shimmer; failed turn an Alert destructive | AI Elements Queue, Shimmer; Popover; Alert | General, TaskWork | #259 | migrated | — |
-| ExecutionRow (who, queued, state, stop) | `src/kubecode/attention/ExecutionRow.tsx` | QueueItem + Item + Shimmer + MemberIdentity (Item) + Button stop with Tooltip | AI Elements Queue + Item | ExecutionStrip | #277 | migrated | ADR 0255 |
-| Round pause control + notice | `src/kubecode/attention/RoundPauseControl.tsx` | official Toggle (pressed = paused) + Spinner; status line | shadcn Toggle; Alert | TaskWork | #277 | migrated | ADR 0255 |
+| ExecutionRow (who, queued, state, stop) | `src/kubecode/attention/ExecutionRow.tsx` | QueueItem + Item + Shimmer + MemberIdentity (Item) + Button stop with Tooltip | AI Elements Queue + Item | ExecutionStrip | #277 | migrated | ADR 0256 |
+| Round pause control + notice | `src/kubecode/attention/RoundPauseControl.tsx` | official Toggle (pressed = paused) + Spinner; status line | shadcn Toggle; Alert | TaskWork | #277 | migrated | ADR 0256 |
 | Prompt outcome lines (recorded, not recorded, gone) | `src/kubecode/attention/PromptOutcome.tsx` | PromptOutcome: status line or Alert destructive | Alert | PermissionPrompt, ElicitationPrompt | #259 | migrated | PromptDecision retired in #277 (ConfirmationAction size=wrap) |
 | Team work board / inspector load, refresh, notice and empty states | `src/kubecode/work/WorkBoard.tsx`, `src/kubecode/work/WorkInspector.tsx` | ReaderLoading/ReaderNotice/ReaderEmpty (Spinner, Alert, Empty) | Alert, Empty, Spinner | TeamTasksView | #259 | migrated | Filters, columns and forms stay with #261 (TeamTasksView row) |
 
@@ -395,7 +395,7 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 | Mode/model/config control menu | `src/kubecode/AgentControlMenu.tsx:102-200` | shadcn DropdownMenu (Sub + RadioGroup, CheckboxItem, disabled locked mode) | DropdownMenu (RadioGroup, Sub) or PromptInputSelect/ModelSelector | SessionComposer | #261 | migrated | ADR 0253 |
 | Slash command suggestions | `src/kubecode/AcpCommandMenu.tsx:23-42` | shadcn Command list mirroring the composer selection | shadcn Command | SessionComposer | #261 | migrated | ADR 0253 |
 | Side question panel | `src/kubecode/SideQuestionPanel.tsx:22-88` | Collapsible + Item list + Badge + Spinner | Collapsible / AI Elements Queue / Item | SessionComposer | #261 | migrated | — |
-| System message notice | `src/kubecode/SystemMessages.tsx` | Sonner `toast()` through `SystemMessageProvider`; inline notices are official Alerts with a close Button | Sonner / Alert | app-wide | #277 | migrated | ADR 0255 §3 |
+| System message notice | `src/kubecode/SystemMessages.tsx` | Sonner `toast()` through `SystemMessageProvider`; inline notices are official Alerts with a close Button | Sonner / Alert | app-wide | #277 | migrated | ADR 0256 §3 |
 | Plan summary | `src/kubecode/session/SessionPlanSummary.tsx:4-35` | AI Elements Plan; no CSS redraw | AI Elements Plan | SessionComposer | #261 | migrated | — |
 | Prompt queue dock | `src/kubecode/session/PromptQueueDock.tsx:4-18,75` | AI Elements Queue + Input/Button | AI Elements Queue | SessionWorkspace | #261 | migrated | — |
 | Usage/context meter | `src/kubecode/session/UsageMeter.tsx:4-13,77` | AI Elements Context + Progress; no indicator recolouring | AI Elements Context | SessionTitlebar | #261 | migrated | — |
@@ -501,7 +501,7 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 | Rounds panel and start-round form | `src/kubecode/research/ResearchRoundsPanel.tsx:164-407` | FieldGroup + FieldSet/Checkbox (carry-over, imports, execution) + Select; rounds as Item with Collapsible execution | Checkbox/RadioGroup (not installed) + Field + Card | research route | #262 | migrated | ADR 0252; checkbox.tsx byte-identical to #259 |
 | Import panel | `src/kubecode/research/ResearchImportPanel.tsx:98-430` | Field + Checkbox + Alert + Item + Table (before/after); reader states | Field + Checkbox + Alert; CodeBlock | research route, TaskActivity | #262 | migrated | ADR 0252; table.tsx added by CLI |
 | Export panel | `src/kubecode/research/ResearchExportPanel.tsx:81-155` | FieldSet + Checkbox + Alert | Checkbox/RadioGroup + Alert + CodeBlock | research route, TaskActivity | #262 | migrated | ADR 0252 |
-| AvailabilityBadge / StaleBadge | `src/kubecode/research/researchLabels.ts` (`availabilityVariant`) | Badge inline at each site | shadcn Badge | research route | #277 | migrated | SourceBadge.tsx retired (ADR 0255) |
+| AvailabilityBadge / StaleBadge | `src/kubecode/research/researchLabels.ts` (`availabilityVariant`) | Badge inline at each site | shadcn Badge | research route | #277 | migrated | SourceBadge.tsx retired (ADR 0256) |
 
 ## Experiment runner
 
@@ -515,15 +515,15 @@ components are listed, with their owner, in `scripts/css-ownership-baseline.json
 
 | Element | Files | Current | Official replacement | Consumers | Owner | Status | Exception / evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| StatusBadge | retired | Badge with `statusToneVariant` (`src/kubecode/statusTone.ts`) or a literal variant | shadcn Badge | 30 former consumers | #277 | migrated | ADR 0255 §5 |
-| IconButton | `src/components/workspace/IconButton.tsx` | pass-through: Button icon size inside Tooltip, Kbd shortcut, Spinner busy; no CSS | shadcn Button + Tooltip | app-wide | #277 | exception | Carries the required-name and busy-keeps-focus contract (ADR 0255 §5) |
-| ActionTooltip + actionTooltipRecovery | retired | Tooltip + Kbd directly | shadcn Tooltip | — | #277 | migrated | The recovery mark had no consumer (ADR 0255 §5) |
-| MoreActions | `src/components/workspace/MoreActions.tsx:36` | official DropdownMenu + IconButton | shadcn DropdownMenu | headers, messages, tasks | #277 | exception | Thin; no CSS (ADR 0255 §5) |
-| DecisionButton | retired | Button / ConfirmationAction size=wrap + Spinner, reason as FieldDescription | Button / ConfirmationAction | TaskResults, TaskPanel, ResearchFindingsPanel, DmShareDialog, prompts | #277 | migrated | ADR 0255 §5 |
-| SendButton / StopButton / PauseButton | retired | PromptInputSubmit; Button + Tooltip with a `pointer-fine:sr-only` label; Toggle | AI Elements PromptInputSubmit, shadcn Button/Toggle | AiPanelChrome, ExecutionRow, RoundPauseControl | #277 | migrated | ADR 0255 §5 |
+| StatusBadge | retired | Badge with `statusToneVariant` (`src/kubecode/statusTone.ts`) or a literal variant | shadcn Badge | 30 former consumers | #277 | migrated | ADR 0256 §5 |
+| IconButton | `src/components/workspace/IconButton.tsx` | pass-through: Button icon size inside Tooltip, Kbd shortcut, Spinner busy; no CSS | shadcn Button + Tooltip | app-wide | #277 | exception | Carries the required-name and busy-keeps-focus contract (ADR 0256 §5) |
+| ActionTooltip + actionTooltipRecovery | retired | Tooltip + Kbd directly | shadcn Tooltip | — | #277 | migrated | The recovery mark had no consumer (ADR 0256 §5) |
+| MoreActions | `src/components/workspace/MoreActions.tsx:36` | official DropdownMenu + IconButton | shadcn DropdownMenu | headers, messages, tasks | #277 | exception | Thin; no CSS (ADR 0256 §5) |
+| DecisionButton | retired | Button / ConfirmationAction size=wrap + Spinner, reason as FieldDescription | Button / ConfirmationAction | TaskResults, TaskPanel, ResearchFindingsPanel, DmShareDialog, prompts | #277 | migrated | ADR 0256 §5 |
+| SendButton / StopButton / PauseButton | retired | PromptInputSubmit; Button + Tooltip with a `pointer-fine:sr-only` label; Toggle | AI Elements PromptInputSubmit, shadcn Button/Toggle | AiPanelChrome, ExecutionRow, RoundPauseControl | #277 | migrated | ADR 0256 §5 |
 | ReferenceChip | `src/components/workspace/ReferenceChip.tsx` | official Badge (outline) + Button (ghost) open/remove | Badge / InlineCitation; Attachment | 8 consumers | #255 | migrated | — |
-| MemberIdentity / MemberAvatar | `src/components/workspace/MemberIdentity.tsx` | pass-through: Item with Avatar media, title (link Button size=inline), description; no CSS | shadcn Item + Avatar + Badge | messages, roster, tasks, mentions | #277 | exception | ConversationIdentity merged into it (ADR 0255 §5) |
-| ViewHeader | `src/components/workspace/ViewHeader.tsx` | pass-through: Item with ItemHeader/ItemMedia/ItemTitle/ItemActions/ItemContent/ItemDescription; no CSS | Item parts | DestinationHeader, InspectorPanel, ThreadPane, DmPane | #277 | exception | Keeps the Back/Close and heading-level contract for C–K (ADR 0255 §5) |
+| MemberIdentity / MemberAvatar | `src/components/workspace/MemberIdentity.tsx` | pass-through: Item with Avatar media, title (link Button size=inline), description; no CSS | shadcn Item + Avatar + Badge | messages, roster, tasks, mentions | #277 | exception | ConversationIdentity merged into it (ADR 0256 §5) |
+| ViewHeader | `src/components/workspace/ViewHeader.tsx` | pass-through: Item with ItemHeader/ItemMedia/ItemTitle/ItemActions/ItemContent/ItemDescription; no CSS | Item parts | DestinationHeader, InspectorPanel, ThreadPane, DmPane | #277 | exception | Keeps the Back/Close and heading-level contract for C–K (ADR 0256 §5) |
 | Attachment | `src/components/ui/attachment.tsx:1-204` | local component in ui/ | AI Elements PromptInput attachments | 1 consumer | #255 | exception | #258 decision (ADR 0250 §5): ReferenceChip composes this Attachment; Prompt Input attachments are for uploaded files, which Kubecode has no service for (#263 audit: unchanged) |
 
 ## Config

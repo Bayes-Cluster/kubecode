@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// ADR 0247 and ADR 0255: official components own their base appearance.
+// ADR 0247 and ADR 0256: official components own their base appearance.
 // Product CSS (every .css file under src/) may lay out the elements it owns,
 // but it may not:
 //   - reach into an official component's internals (`[data-slot=…]`,
@@ -419,7 +419,7 @@ if (isMain) {
   }
   for (const entry of stale) console.error(`scripts/css-ownership-baseline.json: stale entry, remove it: ${entry.file} ${entry.kind} ${entry.text}${entry.context ? ` (in ${entry.context})` : ''}`)
   if (added.length || stale.length) {
-    console.error('CSS ownership check failed (ADR 0247, ADR 0255, docs/design/ui-shared-contract.md).')
+    console.error('CSS ownership check failed (ADR 0247, ADR 0256, docs/design/ui-shared-contract.md).')
     process.exit(1)
   }
   const counts = {}

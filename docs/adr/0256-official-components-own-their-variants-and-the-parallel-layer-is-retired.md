@@ -1,6 +1,6 @@
 ---
 type: ADR
-id: "0255"
+id: "0256"
 title: "Official components own their variants; the parallel component layer is retired"
 status: accepted
 date: 2026-10-24
@@ -34,7 +34,7 @@ contract, and it has no CSS of its own.
 
 ### 2. Variants added to official files
 
-Each carries a `Kubecode (ADR 0255)` comment so a CLI re-run's diff shows it.
+Each carries a `Kubecode (ADR 0256)` comment so a CLI re-run's diff shows it.
 
 | File | Change |
 | --- | --- |

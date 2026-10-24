@@ -22,7 +22,7 @@ for layout (flex, grid, gap, width, margin, alignment, truncation).
 
 ## 2. Pass-throughs (`src/components/workspace/`, owned by A)
 
-Since [ADR 0255](../adr/0255-official-components-own-their-variants-and-the-parallel-layer-is-retired.md)
+Since [ADR 0256](../adr/0256-official-components-own-their-variants-and-the-parallel-layer-is-retired.md)
 these are compositions of official parts with no CSS of their own. They
 choose variants and carry one contract each; add nothing to them that a
 variant could carry.
@@ -75,9 +75,9 @@ reading font) stay available for layout.
 
 Badge variants: `default`, `secondary`, `destructive`, `outline`, `ghost`,
 `link`, `success`, `info`, `warning`. Button variants and sizes are those of
-`src/components/ui/button.tsx`; ADR 0255 adds `size="wrap"` (a decision that
+`src/components/ui/button.tsx`; ADR 0256 adds `size="wrap"` (a decision that
 wraps) and `size="inline"` (a link in text), and makes every Button a 44 px
-target on a coarse pointer. Other sizes added once (ADR 0255): `Empty
+target on a coarse pointer. Other sizes added once (ADR 0256): `Empty
 size="compact"` / `variant="outline"`, `Card size="compact"`, `Item
 size="compact"`, `Alert variant="warning"`, `FieldLabel variant="option"`,
 `SidebarMenuSubButton size="lg"`; `SidebarMenuButton` takes `size` from
@@ -102,7 +102,7 @@ Nobody may:
 - stack descendant selectors to beat a component's specificity.
 
 `pnpm lint` runs `scripts/check-css-ownership.mjs` over every `.css` file
-under `src/` against the product TSX (ADR 0255 §6). It flags official and
+under `src/` against the product TSX (ADR 0256 §6). It flags official and
 third-party internals and `!important`; a size, padding, border, radius,
 font or colour declaration in a rule whose subject is a class an official
 component carries as `className`; a rule that reaches an element or
@@ -145,7 +145,7 @@ pnpm dlx shadcn@latest add <component> --diff <file>
 `registries` in `components.json`: the CLI then rejects the whole file with
 "Invalid configuration" (ADR 0254). Only third-party registries such as
 `@ai-elements` (`https://elements.ai-sdk.dev/api/registry/{name}.json`,
-ADR 0255 §4) belong there. The shadcn-hosted AI Elements are copy-paste
+ADR 0256 §4) belong there. The shadcn-hosted AI Elements are copy-paste
 patterns whose `trace`/`code-block` dependencies are not published for the
 `new-york` style; copy a pattern's source from its page and record it.
 

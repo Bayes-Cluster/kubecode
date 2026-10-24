@@ -10,7 +10,7 @@ const alertVariants = cva(
         default: "bg-card text-card-foreground",
         destructive:
           "bg-card text-destructive *:data-[slot=alert-description]:text-destructive/90 [&>svg]:text-current",
-        // Kubecode (ADR 0255): a warning on the semantic warning tokens.
+        // Kubecode (ADR 0256): a warning on the semantic warning tokens.
         warning:
           "bg-card text-warning-foreground *:data-[slot=alert-description]:text-warning-foreground/90 [&>svg]:text-current",
       },

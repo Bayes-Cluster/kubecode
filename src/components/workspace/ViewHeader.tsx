@@ -37,7 +37,7 @@ export type ViewHeaderProps = {
  * The one header of every Workspace view and detail (ADR 0227): the official
  * Item with its header row (Back, glyph as the media, the heading as the
  * title, the view's actions, Close), facts as its content and the
- * description as its description (ADR 0255). The `header` element is the
+ * description as its description (ADR 0256). The `header` element is the
  * context's layout container; the Item owns the appearance. It is kept as a
  * composition because the shell, the inspector and the destinations share
  * its Back/Close and heading-level contract.

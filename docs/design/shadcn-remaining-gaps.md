@@ -20,7 +20,7 @@ official component own the structure **and** the appearance? By that measure the
 
 ## Status
 
-UI2 slice A (#277, [ADR 0255](../adr/0255-official-components-own-their-variants-and-the-parallel-layer-is-retired.md))
+UI2 slice A (#277, [ADR 0256](../adr/0256-official-components-own-their-variants-and-the-parallel-layer-is-retired.md))
 closed patterns 1 and 11 and part of 7 and 12: the rows marked
 `fixed (A #277)` below are done, the rows marked `exception-ok (A #277)` are
 pass-throughs over official parts with no CSS. The remaining rows keep their

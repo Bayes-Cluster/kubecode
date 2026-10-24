@@ -642,7 +642,7 @@ function SidebarMenuSubButton({
   ...props
 }: React.ComponentProps<"a"> & {
   asChild?: boolean
-  // Kubecode (ADR 0255): `lg` is the touch-sized row, like SidebarMenuButton's.
+  // Kubecode (ADR 0256): `lg` is the touch-sized row, like SidebarMenuButton's.
   size?: "sm" | "md" | "lg"
   isActive?: boolean
 }) {

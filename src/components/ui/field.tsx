@@ -110,7 +110,7 @@ function FieldLabel({
   variant = "default",
   ...props
 }: React.ComponentProps<typeof Label> & {
-  // Kubecode (ADR 0255): `option` is the label of one choice in a set
+  // Kubecode (ADR 0256): `option` is the label of one choice in a set
   // (a checkbox or radio row), at body weight under the set's legend.
   variant?: "default" | "option"
 }) {

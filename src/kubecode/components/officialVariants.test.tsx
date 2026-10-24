@@ -12,10 +12,10 @@ import { Popover, PopoverAnchor } from '@/components/ui/popover'
 import { SidebarMenu, SidebarMenuItem, SidebarMenuSub, SidebarMenuSubButton, SidebarMenuSubItem, SidebarProvider } from '@/components/ui/sidebar'
 
 /**
- * ADR 0255: sizes and tones live in the official component once, as variants,
+ * ADR 0256: sizes and tones live in the official component once, as variants,
  * so no call site repaints a part by className.
  */
-describe('official component variants (ADR 0255)', () => {
+describe('official component variants (ADR 0256)', () => {
   it('Button meets the touch target on a coarse pointer in every size but inline, and wraps a decision', () => {
     render(
       <>

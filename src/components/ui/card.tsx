@@ -2,7 +2,7 @@ import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "cn"
 
-// Kubecode (ADR 0255): a compact Card whose one child (a button, a row) owns the insets.
+// Kubecode (ADR 0256): a compact Card whose one child (a button, a row) owns the insets.
 const cardVariants = cva(
   "flex flex-col rounded-xl border bg-card text-card-foreground shadow-sm",
   {

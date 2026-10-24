@@ -66,7 +66,7 @@ describe('IconButton and status tones', () => {
     ['warn', 'warning'],
     ['danger', 'destructive'],
     ['muted', 'secondary'],
-  ] as const)('maps the %s tone onto the official %s Badge variant (ADR 0255)', (tone, variant) => {
+  ] as const)('maps the %s tone onto the official %s Badge variant (ADR 0256)', (tone, variant) => {
     expect(statusToneVariant(tone)).toBe(variant)
   })
 
@@ -93,7 +93,7 @@ describe('filtering and ranking', () => {
 describe('IconButton sizes', () => {
   it('is compact by default, regular on request, and honours disabled', () => {
     const { rerender } = render(<IconButton icon={<svg />} label="Open" />)
-    // ADR 0255: the official Button's icon sizes, nothing of its own.
+    // ADR 0256: the official Button's icon sizes, nothing of its own.
     expect(screen.getByRole('button', { name: 'Open' })).toHaveAttribute('data-size', 'icon-xs')
     rerender(<IconButton icon={<svg />} label="Open" size="md" />)
     expect(screen.getByRole('button', { name: 'Open' })).toHaveAttribute('data-size', 'icon-sm')

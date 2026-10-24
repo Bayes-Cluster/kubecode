@@ -34,7 +34,7 @@ function control(paused: boolean, api: Partial<KubecodeApi> = {}) {
   return screen.getByRole('button', { name: 'Pause new work on Structured pruning' })
 }
 
-describe('RoundPauseControl (ADR 0232, ADR 0255)', () => {
+describe('RoundPauseControl (ADR 0232, ADR 0256)', () => {
   it('is the official Toggle: its name never changes, the pressed state says whether new work is paused', () => {
     const pause = control(false)
     expect(pause).toHaveAttribute('data-slot', 'toggle')

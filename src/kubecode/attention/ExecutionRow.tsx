@@ -70,7 +70,7 @@ export function ExecutionRow({ alone = false, entryKey, onStop, runs, stopping, 
           </ItemDescription>
         </ItemContent>
         <ItemActions>
-          {/* Stops every turn of this row now, apart from sending; on touch it says so in text (ADR 0227, ADR 0255). */}
+          {/* Stops every turn of this row now, apart from sending; on touch it says so in text (ADR 0227, ADR 0256). */}
           <span className="sr-only" id={stopHintId}>
             {task ? t('kubecode.execution.stopTaskHint', { task: task.title }) : t('kubecode.execution.stopReplyHint', { name })}
           </span>

@@ -41,7 +41,7 @@ export type DestinationHeaderProps = {
 /**
  * The header every Workspace destination shares (#231): its glyph and name as
  * a level-2 heading, a description, facts and actions, over the official
- * Separator (ADR 0255). A destination is never "back" anywhere, so there is
+ * Separator (ADR 0256). A destination is never "back" anywhere, so there is
  * no Back. The wrapper is the layout container; a parent that bleeds it to
  * its edges passes the margins as `className`.
  */

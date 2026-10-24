@@ -13,7 +13,7 @@ describe('DestinationHeader', () => {
       const { container, unmount } = render(<DestinationHeader destination={destination} t={t} />)
       const header = container.querySelector('header')!
       expect(header).toHaveAttribute('data-destination', destination)
-      // ADR 0255: the official Item owns the header; the glyph is its media, the hairline the official Separator.
+      // ADR 0256: the official Item owns the header; the glyph is its media, the hairline the official Separator.
       expect(header.querySelector('[data-slot="item-media"] svg')).not.toBeNull()
       expect(header.querySelector('[data-slot="item-title"] h2')).toHaveTextContent(t(DESTINATION_TITLES[destination]))
       expect(header.parentElement?.querySelector('[data-slot="separator"]')).not.toBeNull()

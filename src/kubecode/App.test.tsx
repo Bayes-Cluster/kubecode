@@ -675,7 +675,7 @@ describe('Kubecode workspace', () => {
         run_id: 'run-live', payload: {}, created_at: 'now',
       }))
       const enable = await screen.findByRole('button', { name: 'Enable notifications' })
-      // ADR 0255: onboarding is one official toast with its action and its cancel.
+      // ADR 0256: onboarding is one official toast with its action and its cancel.
       const alert = enable.closest('[data-sonner-toast]') as HTMLElement
       expect(alert).not.toBeNull()
       expect(within(alert).getByRole('button', { name: 'Not now' })).toBeInTheDocument()

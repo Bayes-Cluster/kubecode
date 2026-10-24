@@ -55,7 +55,7 @@ test('lists every stylesheet under src, not only kubecode.css', () => {
   assert.ok(files.includes('src/kubecode/kubecode.css'))
 })
 
-// ADR 0255: the checker also sees rules applied to official components by
+// ADR 0256: the checker also sees rules applied to official components by
 // className, element reach-ins, third-party internals and dead classes.
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
