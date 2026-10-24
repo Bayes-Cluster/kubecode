@@ -124,6 +124,25 @@ composer reads the coarse pointer through the shared hook.
   commits under the other branch's name (PR #264). Run gates serially and
   compare `git ls-remote origin refs/heads/<branch>` with the intended
   commit before opening the PR.
+- **A slice worktree shares `node_modules` with the main checkout** (a
+  symlink). `pnpm remove` there would prune packages the other worktrees
+  still import. Edit `package.json` and run
+  `pnpm install --lockfile-only --ignore-scripts`; it rewrites the lockfile
+  and leaves `node_modules` alone (check `.modules.yaml`'s mtime). The main
+  checkout picks the removal up on its next `pnpm install` (#278).
+- **streamdown forwards unknown props to its root `div`**, so a
+  `data-testid` on `MessageResponse` lands on the rendered root, but
+  `MessageResponse`'s memo compares only children, `isAnimating`,
+  `className`, `components`, `controls` and `translations`: a prop that
+  changes between renders is ignored. Keep forwarded props constant (#278).
+- **Comparing two renders of the same markdown**: React's `useId` values
+  (`id`, `for`, `aria-controls`, `aria-describedby`) differ between trees,
+  and shiki highlights asynchronously. Strip those attributes and compare
+  inside `waitFor`, as `src/kubecode/markdown/oneRenderer.test.tsx` does.
+- **A paragraph that starts with raw HTML is one HTML block to marked**: with
+  `skipHtml`, everything on that line (links included) becomes literal text.
+  In a fixture, keep the raw-HTML attack and the link attack in separate
+  paragraphs, or the link assertions test nothing (#278).
 
 ## Validation
 
