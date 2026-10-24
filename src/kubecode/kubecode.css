@@ -902,16 +902,6 @@
 }
 
 .kubecode-channel-thread h3,
-.kubecode-channel-header h2 {
-  font-size: 16px;
-  font-weight: 650;
-  margin: 2px 0;
-  overflow-wrap: anywhere;
-}
-
-.kubecode-channel-header p,
-.kubecode-channel-thread > header p { margin: 0; }
-
 .kubecode-channel-link {
   align-items: center;
   display: flex;
@@ -1281,44 +1271,8 @@
   --ws-font-meta: 400 var(--kubecode-ui-font-small, 13px) / 1.4 var(--kubecode-ui-font, system-ui, sans-serif);
 }
 
-/* The one header of a Workspace view or detail. */
-.kubecode-view-header {
-  display: flex;
-  flex-direction: column;
-  gap: var(--ws-space-1);
-  padding: var(--ws-space-3) var(--ws-space-4) var(--ws-space-2);
-}
-.kubecode-view-header-row {
-  align-items: center;
-  display: flex;
-  /* Actions wrap under a title that would otherwise be squeezed below a readable width. */
-  flex-wrap: wrap;
-  gap: var(--ws-space-2);
-  min-width: 0;
-}
-.kubecode-view-header-icon { color: var(--text-tertiary); display: inline-flex; }
-.kubecode-view-header-title {
-  flex: 1 1 14ch;
-  font: var(--ws-font-title);
-  margin: 0;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.kubecode-view-header-actions {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  max-width: 100%;
-  min-width: 0;
-  gap: var(--ws-space-1);
-  justify-content: flex-end;
-}
-.kubecode-view-header-description {
-  color: var(--text-secondary);
-  font: var(--ws-font-meta);
-  margin: 0;
-  max-width: var(--ws-reading-width);
-}
+/* The one header of a Workspace view or detail: the context's layout container around the official Item (ADR 0255). */
+.kubecode-view-header { padding: 0 0 var(--ws-space-2); }
 
 /* The control matrix page (#/controls, ADR 0227). */
 .kubecode-app.kubecode-control-matrix {
@@ -1331,7 +1285,6 @@
   overflow: visible;
   padding: var(--ws-space-4);
 }
-.kubecode-control-matrix h1 { font: var(--ws-font-title); margin: 0; }
 .kubecode-control-matrix-caption {
   align-items: center;
   color: var(--text-secondary);
@@ -1378,15 +1331,6 @@
   .kubecode-control-matrix-row { grid-template-columns: minmax(0, 1fr); }
 }
 
-/* Review follow-ups to the vocabulary (ADR 0227). */
-.kubecode-view-header { padding: 0 0 var(--ws-space-2); }
-.kubecode-view-header[data-level='3'] .kubecode-view-header-title { font: var(--ws-font-subtitle); }
-.kubecode-view-header-meta {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--ws-space-1) var(--ws-space-2);
-}
 
 /* Text in the danger color must read at 4.5:1; the bright error red is for icons and borders. */
 .kubecode-app { --ws-danger-text: #C53030; }
@@ -1520,10 +1464,7 @@
 }
 .kubecode-proto-inspector-body { display: flex; flex-direction: column; gap: var(--ws-space-3); }
 .kubecode-proto-conversation { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }
-.kubecode-proto-conversation > .kubecode-view-header, .kubecode-proto-review > .kubecode-view-header {
-  border-bottom: 0.5px solid var(--ws-hairline-strong);
-  padding: var(--ws-space-3) var(--ws-space-5);
-}
+.kubecode-proto-conversation > .kubecode-view-header, .kubecode-proto-review > .kubecode-view-header { padding: var(--ws-space-3) var(--ws-space-5); }
 .kubecode-proto-dock { display: flex; flex-direction: column; gap: var(--ws-space-2); padding: var(--ws-space-2) var(--ws-space-4) var(--ws-space-3); }
 .kubecode-proto-note { color: var(--text-secondary); font: var(--ws-font-meta); margin: 0; }
 .kubecode-proto-subheading { font: var(--ws-font-subtitle); margin: var(--ws-space-4) 0 var(--ws-space-2); }
@@ -1582,12 +1523,8 @@
 /* One header for General, Kanban, Resources, Needs you and Members. */
 .kubecode-resources,
 .kubecode-members-view { padding-top: 0; }
-.kubecode-view-header.kubecode-destination-header {
-  background: var(--surface-app);
-  border-bottom: 0.5px solid var(--ws-hairline-strong);
-  flex: 0 0 auto;
-  padding: var(--ws-space-3) var(--ws-space-5);
-}
+.kubecode-destination-header { flex: 0 0 auto; }
+.kubecode-destination-header > .kubecode-view-header { padding: var(--ws-space-3) var(--ws-space-5); }
 .kubecode-resources > .kubecode-destination-header,
 .kubecode-members-view > .kubecode-destination-header { margin: 0 -16px var(--ws-space-3); }
 
@@ -1608,7 +1545,7 @@
 }
 
 @media (max-width: 760px) {
-  .kubecode-view-header.kubecode-destination-header { padding: var(--ws-space-3); }
+  .kubecode-destination-header > .kubecode-view-header { padding: var(--ws-space-3); }
   .kubecode-resources > .kubecode-destination-header,
   .kubecode-members-view > .kubecode-destination-header { margin: 0 -16px var(--ws-space-2); }
   .kubecode-destination-body { padding: var(--ws-space-2) var(--ws-space-3); }

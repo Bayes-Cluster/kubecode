@@ -263,7 +263,7 @@ describe('Workspace navigation and routes', () => {
       fireEvent.click(within(nav).getAllByRole('button', { name })[0])
       await waitFor(() => expect(window.location.hash).toBe(`#/p/project-1/${destination}`))
       const header = await waitFor(() => {
-        const found = document.querySelector(`.kubecode-session-context-row header.kubecode-destination-header[data-destination="${destination}"]`)
+        const found = document.querySelector(`.kubecode-session-context-row header[data-destination="${destination}"]`)
         expect(found).not.toBeNull()
         return found as HTMLElement
       })

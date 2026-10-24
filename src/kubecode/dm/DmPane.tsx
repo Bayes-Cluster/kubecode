@@ -131,7 +131,6 @@ export function DmPane({
               {t('kubecode.dm.share')}
             </Button>
           )}
-          className="kubecode-channel-header"
           icon={<Icon role="navigation" source={WORKSPACE_DESTINATION_ICONS.directMessage.Icon} />}
           meta={(
             <>

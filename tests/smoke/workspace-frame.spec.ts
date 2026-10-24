@@ -38,7 +38,7 @@ async function createWorkspace(request: APIRequestContext, api: string, name: st
 }
 
 function header(page: Page, view: string) {
-  return page.locator(`.kubecode-session-context-row header.kubecode-destination-header[data-destination="${view}"]`)
+  return page.locator(`.kubecode-session-context-row header[data-destination="${view}"]`)
 }
 
 async function expectContained(page: Page) {

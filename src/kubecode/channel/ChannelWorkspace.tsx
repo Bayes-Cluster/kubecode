@@ -315,7 +315,6 @@ export function ChannelWorkspace({
     >
       <div className="kubecode-channel-main" inert={detail !== null && detailCovers ? true : undefined}>
         <DestinationHeader
-          className="kubecode-channel-header"
           destination="general"
           meta={research.length > 0 || taskFilter ? (
             <div className="kubecode-channel-filter">
