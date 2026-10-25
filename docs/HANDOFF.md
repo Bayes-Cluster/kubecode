@@ -124,6 +124,42 @@ composer reads the coarse pointer through the shared hook.
   commits under the other branch's name (PR #264). Run gates serially and
   compare `git ls-remote origin refs/heads/<branch>` with the intended
   commit before opening the PR.
+- **A slice worktree shares `node_modules` with the main checkout** (a
+  symlink). `pnpm remove` there would prune packages the other worktrees
+  still import. Edit `package.json` and run
+  `pnpm install --lockfile-only --ignore-scripts`; it rewrites the lockfile
+  and leaves `node_modules` alone (check `.modules.yaml`'s mtime). The main
+  checkout picks the removal up on its next `pnpm install` (#278).
+- **streamdown forwards unknown props to its root `div`**, so a
+  `data-testid` on `MessageResponse` lands on the rendered root, but
+  `MessageResponse`'s memo compares only children, `isAnimating`,
+  `className`, `components`, `controls` and `translations`: a prop that
+  changes between renders is ignored. Keep forwarded props constant (#278).
+- **Comparing two renders of the same markdown**: React's `useId` values
+  (`id`, `for`, `aria-controls`, `aria-describedby`) differ between trees,
+  and shiki highlights asynchronously. Strip those attributes and compare
+  inside `waitFor`, as `src/kubecode/markdown/oneRenderer.test.tsx` does.
+- **micromark's `singleDollarTextMath` is not pandoc's rule.** It renders
+  "$5 and $10" and "$x$2" as formulas; the ADR 0229 §7 rules (no space inside
+  the delimiters, no digit after the closing one) live in
+  `src/kubecode/markdown/inlineMath.ts`, which every adapter must run.
+  `@streamdown/math`'s `createMathPlugin` takes no KaTeX options; rebuild its
+  `rehypePlugin` tuple to pass `maxSize`/`maxExpand`/`trust` (#278).
+- **streamdown marks no root or paragraph.** `data-streamdown` sits on links,
+  tables, strong and the like, never on the root `div` or `<p>`, so a
+  selector on it misses prose; the adapters put `data-prose` on the root.
+- **A paragraph that starts with raw HTML is one HTML block to marked**: with
+  `skipHtml`, everything on that line (links included) becomes literal text.
+  In a fixture, keep the raw-HTML attack and the link attack in separate
+  paragraphs, or the link assertions test nothing (#278).
+
+- **Timeouts under load are not failures.** The workstation is shared;
+  other jobs push the load average past 12 on 7 cores, and the pre-push
+  gate's Vitest run then times out four or five whole-Workbench route tests
+  that take a second when idle (WorkspaceShell, App, ChannelWorkspace,
+  ProjectFileTree). `testTimeout` is 30 s and testing-library's
+  `asyncUtilTimeout` is 5 s for that reason; check `uptime` before blaming
+  a change, and run the gate when no other heavy agent is building.
 
 ## Validation
 

@@ -4,8 +4,8 @@ import { describe, expect, it } from 'vitest'
 import { MessageResponse } from '@/components/ai-elements/message'
 import { Reasoning, ReasoningContent } from '@/components/ai-elements/reasoning'
 
-// ADR 0241: official streamdown rendering keeps today's MarkdownContent
-// hardening — no raw HTML, only safe link protocols — and KaTeX math.
+// ADR 0241 / ADR 0255: the one hardened streamdown configuration — no raw
+// HTML, only safe link protocols — and KaTeX math.
 describe('hardened streamdown', () => {
   it('never renders raw HTML from the markdown', () => {
     const { container } = render(
@@ -34,6 +34,21 @@ describe('hardened streamdown', () => {
   it('renders $…$ and $$…$$ math with KaTeX', () => {
     const { container } = render(<MessageResponse>{'Inline $x^2$ and\n\n$$\\int_0^1 x\\,dx$$'}</MessageResponse>)
     expect(container.querySelectorAll('.katex').length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('caps sizes a message asks for, so math cannot cover the page (ADR 0229 §7)', () => {
+    const { container } = render(<MessageResponse>{'$\\rule{500em}{500em}$'}</MessageResponse>)
+    const drawn = container.querySelector('.katex-html')
+    expect(drawn).not.toBeNull()
+    // The source stays in the annotation; what is drawn is capped at maxSize.
+    expect(drawn!.innerHTML).not.toContain('500em')
+    expect(drawn!.innerHTML).toContain('10em')
+  })
+
+  it('stops a macro that expands without end instead of hanging', () => {
+    const { container } = render(<MessageResponse>{'$\\def\\a{\\a\\a}\\a$'}</MessageResponse>)
+    expect(container.querySelector('.katex-error')).not.toBeNull()
+    expect(container.querySelector('.katex-html')).toBeNull()
   })
 
   it('hardens reasoning content the same way', () => {

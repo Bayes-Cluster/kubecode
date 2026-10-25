@@ -1,9 +1,9 @@
 import { useEffect, useRef } from 'react'
 
-import { Streamdown } from 'streamdown'
 import type { BundledLanguage } from 'shiki'
 
 import { CodeBlock } from '@/components/ai-elements/code-block'
+import { MessageContent, MessageResponse } from '@/components/ai-elements/message'
 import { NO_IMAGE_STREAMDOWN_PROPS } from '@/components/ai-elements/streamdown-hardening'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -15,6 +15,8 @@ import type { Translator } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
 import type { KubecodeApi, ProjectContextDocument, ProjectContextItem, ProjectContextRef, WorkspaceEvent } from '../api'
+import { prepareInlineMath } from '../markdown/inlineMath'
+import { PROSE_ROOT } from '../markdown/MarkdownParts'
 import { objectKindOf } from '../references/referenceLabels'
 import { ReaderEmpty, ReaderLoading, ReaderNotice } from './ReaderStates'
 import { formatVersion, kindLabelKey } from './referenceKinds'
@@ -221,9 +223,10 @@ export function RecordPreview({
           )}
           {/* A truncated section can end inside a fence, so it shows as text. */}
           {format.markdown && !section.truncated ? (
-            <div data-record-markdown="" className="min-w-0 text-sm [overflow-wrap:anywhere]">
-              <Streamdown {...NO_IMAGE_STREAMDOWN_PROPS} mode="static">{section.text}</Streamdown>
-            </div>
+            // A Markdown record reads as a message body: the one MessageResponse (#278), with no image ever fetched.
+            <MessageContent className="[overflow-wrap:anywhere]">
+              <MessageResponse {...NO_IMAGE_STREAMDOWN_PROPS} {...PROSE_ROOT} mode="static">{prepareInlineMath(section.text)}</MessageResponse>
+            </MessageContent>
           ) : (
             // The block scrolls as one region so a long file reads from the keyboard.
             <CodeBlock

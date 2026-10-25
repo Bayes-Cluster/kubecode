@@ -436,6 +436,10 @@ test('@smoke project, reconnect recovery, editor, terminal, and project removal'
   await page.screenshot({ path: testInfo.outputPath('runtime-settings-desktop.png') })
   await page.setViewportSize({ width: 680, height: 720 })
   await runtimePanel.scrollIntoViewIfNeeded()
+  // The dialog re-measures its width from the viewport a frame or two after the resize; wait for it.
+  await expect.poll(async () => (await page.getByRole('dialog').boundingBox())?.width ?? Infinity, {
+    message: 'settings dialog narrower than the 680px viewport',
+  }).toBeLessThanOrEqual(680)
   const [dialogBox, runtimeBox] = await Promise.all([
     page.getByRole('dialog').boundingBox(),
     runtimePanel.boundingBox(),

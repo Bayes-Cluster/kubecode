@@ -263,7 +263,11 @@ describe('DmPane sharing to General (ADR 0223 §5, ADR 0229 §6)', () => {
     expect(within(card).getByText('within').tagName).toBe('STRONG')
     expect(within(card).getByText('This will reach General, the project manager, like anything you write in General.')).toBeInTheDocument()
     expect(within(card).getByText('Exact text')).toBeInTheDocument()
-    expect(card.querySelector('pre')).toHaveTextContent('> is 0.91 enough?')
+    // The body is the official Message bubble General uses, with General's root class; the exact text is a read-only Textarea (#278).
+    expect(within(card).getByTestId('conversation-response').closest('.is-user')).not.toBeNull()
+    expect(within(card).getByTestId('conversation-response')).toHaveClass('kubecode-message-body')
+    expect(card.querySelector('.ai-markdown, pre')).toBeNull()
+    expect(card.querySelector<HTMLTextAreaElement>('textarea[readonly]')!.value).toContain('> is 0.91 enough?')
     // Editing makes the preview stale: it must be shown again.
     fireEvent.change(within(dialog).getByRole('textbox', { name: 'Add a note (optional)' }), { target: { value: 'for everyone!' } })
     expect(within(dialog).queryByRole('region', { name: 'Preview' })).not.toBeInTheDocument()
