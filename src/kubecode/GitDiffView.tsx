@@ -3,7 +3,7 @@ import { CircleAlert, X } from 'lucide-react'
 import { IconButton } from '@/components/workspace/IconButton'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia } from '@/components/ui/empty'
 import { Spinner } from '@/components/ui/spinner'
 import type { Translator } from '@/lib/i18n'
 
@@ -41,7 +41,7 @@ export function GitDiffView({ state, onClose, onRetry, t }: GitDiffViewProps) {
         <Empty role="status" size="compact">
           <EmptyHeader>
             <EmptyMedia><Spinner /></EmptyMedia>
-            <EmptyTitle className="text-sm font-normal text-muted-foreground">{t('kubecode.gitDiffLoading')}</EmptyTitle>
+            <EmptyDescription>{t('kubecode.gitDiffLoading')}</EmptyDescription>
           </EmptyHeader>
         </Empty>
       )}
@@ -51,9 +51,9 @@ export function GitDiffView({ state, onClose, onRetry, t }: GitDiffViewProps) {
       {state.kind === 'ready' && !state.content && (
         <Empty role="status" size="compact">
           <EmptyHeader>
-            <EmptyTitle className="text-sm font-normal text-muted-foreground">
+            <EmptyDescription>
               {gitDiffUnavailableMessage(state.unavailableReason, t)}
-            </EmptyTitle>
+            </EmptyDescription>
           </EmptyHeader>
         </Empty>
       )}

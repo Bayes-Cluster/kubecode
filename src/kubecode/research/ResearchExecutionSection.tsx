@@ -316,7 +316,7 @@ export function ResearchExecutionSection({
       {control.error && <Alert variant="destructive"><AlertDescription>{control.error}</AlertDescription></Alert>}
 
       {execution.experiments.length === 0 && envelope && (
-        <Empty className="items-start p-0 text-left md:p-0">
+        <Empty size="compact">
           <EmptyDescription>{t('kubecode.research.exec.noExperiments')}</EmptyDescription>
         </Empty>
       )}

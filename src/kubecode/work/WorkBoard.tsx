@@ -472,8 +472,8 @@ function FilterSelect({
   value: string
 }) {
   return (
-    <Field className="kubecode-work-filter w-auto" orientation="horizontal">
-      <FieldLabel className="shrink-0 text-muted-foreground" variant="option">{label}</FieldLabel>
+    <Field className="w-auto" orientation="horizontal">
+      <FieldLabel className="shrink-0" variant="option">{label}</FieldLabel>
       <Select value={value || ALL} onValueChange={(next) => onChange(next === ALL ? '' : next)}>
         <SelectTrigger aria-label={label} className="max-w-48" size="sm">
           <SelectValue />

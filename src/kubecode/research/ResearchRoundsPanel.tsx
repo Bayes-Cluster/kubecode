@@ -349,7 +349,7 @@ export function ResearchRoundsPanel({
 
       <ResearchSection label={t('kubecode.research.rounds')}>
         {rounds.length === 0 && (
-          <Empty className="items-start p-0 text-left md:p-0">
+          <Empty size="compact">
             <EmptyDescription>{t('kubecode.research.noRounds')}</EmptyDescription>
           </Empty>
         )}

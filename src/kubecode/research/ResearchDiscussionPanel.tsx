@@ -118,7 +118,7 @@ export function ResearchDiscussionPanel({
     <ResearchPanel>
       <ResearchSection label={t('kubecode.research.discussionSessions')}>
         {sessions.length === 0 && (
-          <Empty className="items-start p-0 text-left md:p-0">
+          <Empty size="compact">
             <EmptyDescription>{t('kubecode.research.noDiscussionSessions')}</EmptyDescription>
           </Empty>
         )}
@@ -214,7 +214,7 @@ export function ResearchDiscussionPanel({
 
       <ResearchSection label={t('kubecode.research.log')}>
         {entries.length === 0 && (
-          <Empty className="items-start p-0 text-left md:p-0">
+          <Empty size="compact">
             <EmptyDescription>{t('kubecode.research.noEntries')}</EmptyDescription>
           </Empty>
         )}
