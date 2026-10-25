@@ -24,18 +24,20 @@ export type MoreActionsProps = {
   label: string
   items: MoreActionItem[]
   align?: 'start' | 'end'
+  /** `md` is the touch-sized control a row keeps on screen for a coarse pointer (ADR 0229 §7). */
+  size?: 'sm' | 'md'
 }
 
 /**
  * A row's secondary actions behind one labelled control (ADR 0227), so a row
  * shows its primary action and nothing else until asked.
  */
-export function MoreActions({ align = 'end', items, label }: MoreActionsProps) {
+export function MoreActions({ align = 'end', items, label, size = 'sm' }: MoreActionsProps) {
   if (items.length === 0) return null
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <IconButton icon={<Icon role="command" source={WORKSPACE_COMMAND_ICONS.more.Icon} />} label={label} />
+        <IconButton icon={<Icon role="command" source={WORKSPACE_COMMAND_ICONS.more.Icon} />} label={label} size={size} />
       </DropdownMenuTrigger>
       <DropdownMenuContent align={align}>
         {items.map((item) => (

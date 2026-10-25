@@ -152,7 +152,8 @@ function AttachmentAction({
       data-slot="attachment-action"
       variant={variant ?? "ghost"}
       size={size}
-      className={cn(className)}
+      // Kubecode (ADR 0256): the remove action of a chip is a touch-sized target on a coarse pointer.
+      className={cn("pointer-coarse:min-h-[44px] pointer-coarse:min-w-[44px]", className)}
       {...props}
     />
   )

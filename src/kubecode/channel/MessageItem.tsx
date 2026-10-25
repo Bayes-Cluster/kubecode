@@ -207,7 +207,7 @@ export function MessageItem({
               <Icon role="command" source={WORKSPACE_COMMAND_ICONS.reply.Icon} />
             </MessageAction>
           )}
-          <MoreActions items={actions} label={t('kubecode.channel.messageActions', { author: author.name })} />
+          <MoreActions items={actions} label={t('kubecode.channel.messageActions', { author: author.name })} size={coarse ? 'md' : 'sm'} />
         </MessageActions>
       </div>
       <MessageContent className="kubecode-message-content">

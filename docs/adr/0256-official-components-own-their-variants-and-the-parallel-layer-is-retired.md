@@ -38,7 +38,7 @@ Each carries a `Kubecode (ADR 0256)` comment so a CLI re-run's diff shows it.
 
 | File | Change |
 | --- | --- |
-| `ui/button.tsx` | The `default`, `sm`, `lg`, `icon`, `icon-sm`, `icon-lg` and `wrap` sizes are 44 px targets on a coarse pointer (`pointer-coarse:min-h-[44px]`, icon sizes also `min-w-[44px]`; `44px`, not `11`, because the root is 14 px). `xs` and `icon-xs` keep their height: they are the dense rows and small actions — the file tree rows (Virtuoso at 26 px), the terminal navigator rows and close, message actions, the Session message copy buttons, the title-bar and side-question icon buttons, the delivery-failure actions. New sizes: `wrap` (a text decision that wraps a long translation: `h-auto min-h-8 … whitespace-normal`) and `inline` (a link inside running text: `h-auto p-0`). |
+| `ui/button.tsx` | The `default`, `sm`, `lg`, `icon`, `icon-sm`, `icon-lg` and `wrap` sizes are 44 px targets on a coarse pointer (`pointer-coarse:min-h-[44px]`, icon sizes also `min-w-[44px]`; `44px`, not `11`, because the root is 14 px). `xs` and `icon-xs` keep their height (except where a row's persistent More on a coarse pointer takes `MoreActions size="md"`, ADR 0229 §7): they are the dense rows and small actions — the file tree rows (Virtuoso at 26 px), the terminal navigator rows and close, message actions, the Session message copy buttons, the title-bar and side-question icon buttons, the delivery-failure actions. New sizes: `wrap` (a text decision that wraps a long translation: `h-auto min-h-8 … whitespace-normal`) and `inline` (a link inside running text: `h-auto p-0`). |
 | `ui/empty.tsx` | `size`: `default` (`gap-6 p-6 md:p-12`) and `compact` (`gap-4 p-4`); `variant`: `default` and `outline` (`border`). |
 | `ui/card.tsx` | `size`: `default` (`gap-6 py-6`) and `compact` (`gap-0 py-0`, for a Card whose one child owns the insets). |
 | `ui/item.tsx` | `size="compact"` (`gap-2.5 p-0`); an Item rendered as `a` or `button` is a 44 px target on a coarse pointer. |
@@ -47,7 +47,7 @@ Each carries a `Kubecode (ADR 0256)` comment so a CLI re-run's diff shows it.
 | `ui/popover.tsx` | Exports `PopoverAnchor`; `PopoverContent` carries the upstream classes instead of `kubecode-popover-content`, which no stylesheet styled. |
 | `ui/command.tsx` | Exports `CommandLoading`; `CommandItem` is a 44 px target on a coarse pointer. |
 | `ui/toggle.tsx` | 44 px target on a coarse pointer (ToggleGroup items inherit it). |
-| `ui/attachment.tsx` | An Attachment with a trigger is a 44 px target on a coarse pointer. |
+| `ui/attachment.tsx` | The covering `AttachmentTrigger` and the `AttachmentAction` (a chip's remove button) are 44 px targets on a coarse pointer, although the action is an `icon-xs` Button: a chip's only actions must be reachable by touch. |
 | `ui/sidebar.tsx` | `SidebarMenuSubButton size="lg"` (`h-12`), the touch row like `SidebarMenuButton`'s; both `lg` sizes add `pointer-coarse:min-h-[44px]` (`h-12` is 42 px on the 14 px root), and the sub-button is a `peer/menu-button` so `SidebarMenuAction` centres on it. Call sites pass `size` from `useSidebarMenuSize()` (`lg` on a coarse pointer). |
 | `ui/input-group.tsx` | `InputGroup` is `h-auto min-h-9` so it grows with a touch-sized button or a textarea; `InputGroupButton` `sm` and `icon-sm` are 44 px targets on a coarse pointer (`xs`, `icon-xs` keep their height). |
 | `ai-elements/confirmation.tsx` | `ConfirmationAction` takes a Button `size` (default `sm`) instead of a fixed className, so a decision can take `wrap`. |
