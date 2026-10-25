@@ -1,5 +1,6 @@
 import { Hash } from 'lucide-react'
 
+import { Badge } from '@/components/ui/badge'
 import {
   SidebarGroup,
   SidebarGroupLabel,
@@ -7,10 +8,10 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@/components/ui/sidebar'
-import { StatusBadge } from '@/components/workspace/StatusBadge'
 import type { Translator } from '@/lib/i18n'
 
 import type { ChannelThread } from '../api'
+import { useSidebarMenuSize } from '../app/useSidebarMenuSize'
 
 export type ChannelNavigatorProps = {
   active: boolean
@@ -25,6 +26,7 @@ export type ChannelNavigatorProps = {
 
 /** The Workspace conversation, above the research list and the Sessions: a Sidebar group. */
 export function ChannelNavigator({ active, onOpen, onOpenThread, t, threads, threadsOnly = false }: ChannelNavigatorProps) {
+  const menuSize = useSidebarMenuSize()
   const label = threadsOnly ? t('kubecode.channel.linkedThreads') : t('kubecode.channel.title')
   return (
     <SidebarGroup aria-label={label} className="p-0" role="region">
@@ -32,7 +34,7 @@ export function ChannelNavigator({ active, onOpen, onOpenThread, t, threads, thr
       <SidebarMenu>
         {!threadsOnly && (
           <SidebarMenuItem>
-            <SidebarMenuButton className="pointer-coarse:min-h-(--ws-touch-target)" aria-current={active ? 'page' : undefined} isActive={active} onClick={onOpen}>
+            <SidebarMenuButton aria-current={active ? 'page' : undefined} isActive={active} size={menuSize} onClick={onOpen}>
               <Hash aria-hidden="true" />
               <span>{t('kubecode.channel.general')}</span>
             </SidebarMenuButton>
@@ -40,12 +42,12 @@ export function ChannelNavigator({ active, onOpen, onOpenThread, t, threads, thr
         )}
         {threads.slice(0, 5).map((thread) => (
           <SidebarMenuItem key={thread.id}>
-            <SidebarMenuButton className="pointer-coarse:min-h-(--ws-touch-target)" onClick={() => onOpenThread(thread.id)}>
+            <SidebarMenuButton size={menuSize} onClick={() => onOpenThread(thread.id)}>
               <span className="min-w-0 flex-1 truncate">{thread.title}</span>
               {thread.research_id && (
-                <StatusBadge tone="ok">
+                <Badge variant="success">
                   {t('kubecode.channel.linkedBadge')}
-                </StatusBadge>
+                </Badge>
               )}
             </SidebarMenuButton>
           </SidebarMenuItem>

@@ -228,7 +228,7 @@ describe('RecordPreview', () => {
     const block = container.querySelector('[data-language]')
     expect(block).toHaveAttribute('data-language', 'python')
     // The reader can scroll a long file from the keyboard.
-    expect(container.querySelector('.kubecode-record-code')).toHaveAttribute('tabindex', '0')
+    expect(container.querySelector('[data-testid="record-code"]')).toHaveAttribute('tabindex', '0')
   })
 
   it('shows plain text in the Code Block without guessing a language', async () => {
@@ -245,9 +245,9 @@ describe('RecordPreview', () => {
         sections: [{ heading: 'Summary', text, truncated: false }],
       })),
     }, { target: { kind: 'finding', id: 'f1' } })
-    await waitFor(() => expect(container.querySelector('.kubecode-record-code')).not.toBeNull())
-    expect(container.querySelector('.kubecode-record-code')!.textContent).toContain('returns Vec<String> from parse()')
-    expect(container.querySelector('.kubecode-record-code')!.textContent).toContain('costs $5 and $10')
+    await waitFor(() => expect(container.querySelector('[data-testid="record-code"]')).not.toBeNull())
+    expect(container.querySelector('[data-testid="record-code"]')!.textContent).toContain('returns Vec<String> from parse()')
+    expect(container.querySelector('[data-testid="record-code"]')!.textContent).toContain('costs $5 and $10')
     expect(container.querySelector('.katex, em')).toBeNull()
   })
 
@@ -258,8 +258,8 @@ describe('RecordPreview', () => {
         sections: [{ heading: 'Content', text: '# Title\n\n```py\nx = 1', truncated: true }],
       })),
     }, { target: { kind: 'file', id: 'README.md' } })
-    await waitFor(() => expect(container.querySelector('.kubecode-record-code')).not.toBeNull())
-    expect(container.querySelector('.kubecode-record-code')!.textContent).toContain('# Title')
+    await waitFor(() => expect(container.querySelector('[data-testid="record-code"]')).not.toBeNull())
+    expect(container.querySelector('[data-testid="record-code"]')!.textContent).toContain('# Title')
     expect(screen.queryByRole('heading', { name: 'Title' })).toBeNull()
   })
 

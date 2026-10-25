@@ -1,10 +1,5 @@
 import { useEffect, useState } from 'react'
-import {
-  Download,
-  Plus,
-  User,
-  Users,
-} from 'lucide-react'
+import { Download, Plus, User, Users } from 'lucide-react'
 import { trackEvent } from '@/lib/telemetry'
 
 import { AiAgentIcon } from '@/components/AiAgentIcon'
@@ -59,9 +54,9 @@ import {
   type ProviderSessionInfo,
   type TeamSnapshot,
 } from '../api'
-import { SystemMessageNotice } from '../SystemMessageNotice'
 import { errorMessage } from './errors'
 import type { Translator } from '@/lib/i18n'
+import { InlineNotice } from '../InlineNotice'
 
 export type NewSessionDialogProps = {
   agents: AgentDescriptor[]
@@ -188,12 +183,12 @@ export function NewSessionDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="kubecode-new-session-dialog">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>{t('kubecode.newSession')}</DialogTitle>
           <DialogDescription>{t('kubecode.newSessionDescription')}</DialogDescription>
         </DialogHeader>
-        <FieldGroup className="kubecode-new-session-form">
+        <FieldGroup>
           <ToggleGroup
             aria-label={t('kubecode.newSession')}
             className="w-full"
@@ -325,28 +320,16 @@ export function NewSessionDialog({
                 <Empty><EmptyHeader><EmptyDescription>{t('kubecode.noProviderSessions')}</EmptyDescription></EmptyHeader></Empty>
               )}
               {providerError && (
-                <SystemMessageNotice
-                  detailsLabel={t('kubecode.details')}
-                  dismissLabel={t('window.close')}
-                  level="error"
-                  message={providerError}
-                  onDismiss={() => setProviderError(null)}
-                />
+<InlineNotice closeLabel={t('window.close')} detailsLabel={t('kubecode.details')} level="error" message={providerError} onClose={() => setProviderError(null)} />
               )}
             </ItemGroup>
           )}
           {createError && (
             <div className="flex flex-col gap-2">
-              <SystemMessageNotice
-                detailsLabel={t('kubecode.details')}
-                dismissLabel={t('window.close')}
-                level="error"
-                message={createError}
-                onDismiss={() => {
-                  setCreateError(null)
-                  setCreateFailure(null)
-                }}
-              />
+<InlineNotice closeLabel={t('window.close')} detailsLabel={t('kubecode.details')} level="error" message={createError} onClose={() => {
+            setCreateError(null)
+            setCreateFailure(null)
+          }} />
               {createFailure && (
                 <code className="text-xs text-muted-foreground">
                   {createFailure.code}

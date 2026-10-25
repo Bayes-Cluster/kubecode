@@ -1,10 +1,16 @@
 import { useState } from 'react'
 
-import { PauseButton } from '@/components/workspace/SendButton'
+import { Spinner } from '@/components/ui/spinner'
+import { Toggle } from '@/components/ui/toggle'
+import { ICON_SIZES } from '@/kubecode/icons'
+import { WORKSPACE_COMMAND_ICONS } from '@/kubecode/icons/workspaceIcons'
 import type { Translator } from '@/lib/i18n'
 
 import { ApiError, type KubecodeApi, type TaskExecution } from '../api'
 import { errorMessage } from '../app/errors'
+
+const Pause = WORKSPACE_COMMAND_ICONS.pauseOrchestration.Icon
+const Resume = WORKSPACE_COMMAND_ICONS.resumeOrchestration.Icon
 
 export type RoundPauseControlProps = {
   api: KubecodeApi
@@ -25,6 +31,7 @@ export type RoundPauseControlProps = {
 export function RoundPauseControl({ api, execution, onChanged, projectId, t, task }: RoundPauseControlProps) {
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
+  const label = t('kubecode.execution.pauseTaskWork', { task: task.title })
   const toggle = async () => {
     setBusy(true)
     setNotice(null)
@@ -44,13 +51,19 @@ export function RoundPauseControl({ api, execution, onChanged, projectId, t, tas
   }
   return (
     <div className="flex flex-wrap items-center gap-2" data-paused={execution.paused}>
-      <PauseButton
-        busy={busy}
-        label={t('kubecode.execution.pauseTaskWork', { task: task.title })}
-        paused={execution.paused}
-        text={t('kubecode.execution.pauseWorkShort')}
-        onToggle={() => void toggle()}
-      />
+      {/* Its name never changes; the pressed state says whether new work is paused (ADR 0232, ADR 0256). */}
+      <Toggle
+        aria-busy={busy || undefined}
+        aria-disabled={busy || undefined}
+        aria-label={label}
+        pressed={execution.paused}
+        size="sm"
+        variant="outline"
+        onPressedChange={busy ? undefined : () => void toggle()}
+      >
+        {busy ? <Spinner aria-hidden="true" /> : execution.paused ? <Resume aria-hidden size={ICON_SIZES.default} /> : <Pause aria-hidden size={ICON_SIZES.default} />}
+        {t('kubecode.execution.pauseWorkShort')}
+      </Toggle>
       {notice && <p className="min-w-56 flex-1 text-sm text-muted-foreground" role="status">{notice}</p>}
     </div>
   )

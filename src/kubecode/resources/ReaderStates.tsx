@@ -1,28 +1,33 @@
 import type { ReactNode } from 'react'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Empty, EmptyDescription, EmptyHeader } from '@/components/ui/empty'
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia } from '@/components/ui/empty'
 import { Spinner } from '@/components/ui/spinner'
 
 /**
  * The states every Workspace reader shares (search, record preview,
- * evidence): official Spinner, Empty and Alert, so Resources, Add context and
- * a Task's evidence say loading, nothing, changed and failed the same way.
- * Only the roles are chosen here; the components own the look.
+ * evidence): the official Empty (compact, with the Spinner as its media)
+ * and Alert, so Resources, Add context and a Task's evidence say loading,
+ * nothing, changed and failed the same way. Only the roles are chosen here;
+ * the components own the look (ADR 0256).
  */
 export function ReaderLoading({ children }: { children: ReactNode }) {
   return (
-    <div className="flex items-center gap-2 py-2 text-sm text-muted-foreground" role="status">
-      <Spinner aria-hidden="true" aria-label={undefined} role={undefined} />
-      <span>{children}</span>
-    </div>
+    <Empty role="status" size="compact">
+      <EmptyHeader>
+        <EmptyMedia>
+          <Spinner aria-hidden="true" role="presentation" />
+        </EmptyMedia>
+        <EmptyDescription>{children}</EmptyDescription>
+      </EmptyHeader>
+    </Empty>
   )
 }
 
 /** Nothing to show; never an error. */
 export function ReaderEmpty({ children }: { children: ReactNode }) {
   return (
-    <Empty className="p-4 md:p-6" role="status">
+    <Empty role="status" size="compact">
       <EmptyHeader>
         <EmptyDescription>{children}</EmptyDescription>
       </EmptyHeader>
@@ -49,7 +54,7 @@ export function ReaderNotice({
 }) {
   const role = failed ? 'alert' : live ? 'status' : undefined
   return (
-    <Alert className="py-2" role={role} variant={failed ? 'destructive' : 'default'}>
+    <Alert role={role} variant={failed ? 'destructive' : 'default'}>
       <AlertDescription className="flex flex-wrap items-center gap-2">
         <span>{children}</span>
         {action}

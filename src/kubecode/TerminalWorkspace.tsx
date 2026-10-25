@@ -17,16 +17,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import {
-  ChevronDown,
-  PanelLeft,
-  Plus,
-  SquareSplitHorizontal,
-  SquareSplitVertical,
-  SquareTerminal,
-  Trash2,
-  X
-} from 'lucide-react'
+import { ChevronDown, PanelLeft, Plus, SquareSplitHorizontal, SquareSplitVertical, SquareTerminal, Trash2, X } from 'lucide-react'
 
 import { AiAgentIcon } from '@/components/AiAgentIcon'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -39,7 +30,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia } from '@/components/ui/empty'
 import { Input } from '@/components/ui/input'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { Spinner } from '@/components/ui/spinner'
@@ -49,7 +40,6 @@ import type { Translator } from '@/lib/i18n'
 import type { AgentDescriptor, AgentId, KubecodeApi, TerminalInfo, TerminalKind } from './api'
 import { removeTerminalSnapshot } from './terminalSnapshots'
 import { TerminalView } from './TerminalView'
-import { SystemMessageNotice } from './SystemMessageNotice'
 import { useSystemMessages } from './systemMessages'
 import {
   activateTerminalLeaf,
@@ -67,6 +57,7 @@ import {
   type TerminalLayout,
 } from './terminalWorkspaceState'
 import { createPreferenceStorage } from './preferenceStorage'
+import { InlineNotice } from './InlineNotice'
 
 type TerminalWorkspaceProps = {
   agents: AgentDescriptor[]
@@ -333,7 +324,7 @@ export function TerminalWorkspace({
           <Button
             aria-label={t('kubecode.newTerminal')}
             disabled={creating}
-            className="kubecode-touch-target" size="icon-xs"
+            size="icon-xs"
             variant="ghost"
             onClick={() => void create('regular')}
           ><Plus  size={16}/></Button>
@@ -341,7 +332,7 @@ export function TerminalWorkspace({
           <Button
             aria-label={t('kubecode.splitRight')}
             disabled={!activeTerminal || creating}
-            className="kubecode-touch-target" size="icon-xs"
+            size="icon-xs"
             variant="ghost"
             onClick={() => void create(
               activeTerminal?.kind ?? 'regular',
@@ -353,7 +344,7 @@ export function TerminalWorkspace({
           <Button
             aria-label={t('kubecode.splitDown')}
             disabled={!activeTerminal || creating}
-            className="kubecode-touch-target" size="icon-xs"
+            size="icon-xs"
             variant="ghost"
             onClick={() => void create(
               activeTerminal?.kind ?? 'regular',
@@ -365,7 +356,7 @@ export function TerminalWorkspace({
           <Button
             aria-label={t('kubecode.closeTerminal')}
             disabled={!activeTerminal}
-            className="kubecode-touch-target" size="icon-xs"
+            size="icon-xs"
             variant="ghost"
             onClick={() => activeTerminal && void closeLeaf(activeTerminal.id)}
           ><Trash2  size={16}/></Button>
@@ -373,7 +364,7 @@ export function TerminalWorkspace({
             <Button
               aria-label={t('kubecode.collapse')}
               aria-pressed={!navigatorNarrow}
-              className="kubecode-touch-target" size="icon-xs"
+              size="icon-xs"
               variant="ghost"
               onClick={toggleNavigator}
             ><PanelLeft  size={16}/></Button>
@@ -381,14 +372,7 @@ export function TerminalWorkspace({
         </div>
       </div>
       {error && (
-        <SystemMessageNotice
-          className="kubecode-terminal-error"
-          detailsLabel={t('kubecode.details')}
-          dismissLabel={t('window.close')}
-          level="error"
-          message={error}
-          onDismiss={() => setError(null)}
-        />
+<InlineNotice className="kubecode-terminal-error" closeLabel={t('window.close')} detailsLabel={t('kubecode.details')} level="error" message={error} onClose={() => setError(null)} />
       )}
       <ResizablePanelGroup className="kubecode-terminal-body" id="kubecode-terminal-body" orientation="horizontal">
         <ResizablePanel className="kubecode-terminal-canvas" id="terminal-canvas" minSize={120}>
@@ -414,12 +398,12 @@ export function TerminalWorkspace({
               visible={open}
             />
           ) : (
-            <Empty className="h-full p-4">
+            <Empty className="h-full" size="compact">
               <EmptyHeader>
                 {creating && <EmptyMedia><Spinner /></EmptyMedia>}
-                <EmptyTitle className="text-sm font-normal text-muted-foreground">
+                <EmptyDescription>
                   {creating ? t('kubecode.loading') : t('kubecode.newTerminal')}
-                </EmptyTitle>
+                </EmptyDescription>
               </EmptyHeader>
             </Empty>
           )}
@@ -649,7 +633,7 @@ function TerminalProfileMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button aria-label={t('kubecode.terminalProfiles')} disabled={disabled} className="kubecode-touch-target" size="icon-xs" variant="ghost">
+        <Button aria-label={t('kubecode.terminalProfiles')} disabled={disabled} size="icon-xs" variant="ghost">
           <ChevronDown  size={16}/>
         </Button>
       </DropdownMenuTrigger>

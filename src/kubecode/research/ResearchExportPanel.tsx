@@ -106,7 +106,7 @@ export function ResearchExportPanel({
                   })
                 }}
               />
-              <FieldLabel className="font-normal" htmlFor={`${fieldId}-${section.id}`}>{t(section.label)}</FieldLabel>
+              <FieldLabel variant="option" htmlFor={`${fieldId}-${section.id}`}>{t(section.label)}</FieldLabel>
             </Field>
           ))}
         </FieldGroup>

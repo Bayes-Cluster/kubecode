@@ -1,5 +1,6 @@
 import { useId } from 'react'
 
+import { Badge } from '@/components/ui/badge'
 import {
   SidebarGroup,
   SidebarGroupLabel,
@@ -9,7 +10,6 @@ import {
   SidebarMenuItem,
 } from '@/components/ui/sidebar'
 import { MemberAvatar, type MemberRoleKind } from '@/components/workspace/MemberIdentity'
-import { StatusBadge } from '@/components/workspace/StatusBadge'
 import type { Translator } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
@@ -20,6 +20,7 @@ import { Identity } from '../members/Identity'
 import { memberView } from '../members/memberIdentity'
 import type { NeedsYouEntry } from './location/needsYou'
 import type { ViewKey } from './location/workspaceLocation'
+import { useSidebarMenuSize } from './useSidebarMenuSize'
 
 export type WorkspaceNavDestination = 'general' | 'board' | 'resources' | 'needs-you' | 'members'
 
@@ -73,24 +74,26 @@ export function WorkspaceNav({
     { view: 'members', icon: DESTINATIONS.members.Icon, label: t('kubecode.nav.members') },
   ] as const
   const waiting = needsYou.length
+  const menuSize = useSidebarMenuSize()
   const destination = (entry: typeof places[number]) => (
     <SidebarMenuItem key={entry.view}>
       <SidebarMenuButton
         aria-current={active === entry.view ? 'page' : undefined}
-        className="pointer-coarse:min-h-(--ws-touch-target) h-auto min-h-8"
+        className="h-auto min-h-8"
         isActive={active === entry.view}
+        size={menuSize}
         onClick={() => onOpen(entry.view)}
       >
         <Icon role="navigation" size="secondary" source={entry.icon} />
         <span className="min-w-0 flex-1 truncate">{entry.label}</span>
         {entry.view === 'board' && taskCount > 0 && (
-          <StatusBadge tone="muted">{taskCount}</StatusBadge>
+          <Badge variant="secondary">{taskCount}</Badge>
         )}
         {entry.view === 'needs-you' && (
-          <StatusBadge tone={waiting > 0 ? 'warn' : 'muted'}>{waiting}</StatusBadge>
+          <Badge variant={waiting > 0 ? 'warning' : 'secondary'}>{waiting}</Badge>
         )}
         {entry.view === 'general' && undeliveredGeneral > 0 && (
-          <StatusBadge tone="danger">{t('kubecode.nav.notDelivered', { count: undeliveredGeneral })}</StatusBadge>
+          <Badge variant="destructive">{t('kubecode.nav.notDelivered', { count: undeliveredGeneral })}</Badge>
         )}
       </SidebarMenuButton>
     </SidebarMenuItem>
@@ -146,9 +149,10 @@ export function WorkspaceNav({
             {direct.map((member) => (
               <SidebarMenuItem key={member.id}>
                 <SidebarMenuButton
-                  className="pointer-coarse:min-h-(--ws-touch-target)"
+                 
                   aria-current={active === `dm:${member.id}` ? 'page' : undefined}
                   isActive={active === `dm:${member.id}`}
+                  size={menuSize}
                   onClick={() => onOpenDm(member.id)}
                 >
                   <MemberAvatar name={member.name} role={roleKind(member)} size="sm" />

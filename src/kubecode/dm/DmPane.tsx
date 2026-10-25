@@ -25,7 +25,7 @@ import { ConversationComposer } from '../channel/ConversationComposer'
 import { ConversationMessage } from '../channel/ConversationMessage'
 import { ConversationResponse } from '../channel/ConversationResponse'
 import { OutboxRows } from '../channel/OutboxRows'
-import { ConversationIdentity } from '../members/ConversationIdentity'
+import { Identity } from '../members/Identity'
 import { memberView, researcherView } from '../members/memberIdentity'
 import { newClientMessageId } from '../session/sessionModel'
 import type { WorkspaceConnectionState } from '../useWorkspaceEventStream'
@@ -131,11 +131,10 @@ export function DmPane({
               {t('kubecode.dm.share')}
             </Button>
           )}
-          className="kubecode-channel-header"
           icon={<Icon role="navigation" source={WORKSPACE_DESTINATION_ICONS.directMessage.Icon} />}
           meta={(
             <>
-              <ConversationIdentity view={them} />
+              <Identity view={them} />
               <Badge variant="secondary">{t('kubecode.dm.privateBadge')}</Badge>
             </>
           )}
@@ -189,7 +188,7 @@ export function DmPane({
                   </ConversationMessage>
                   {turn.assistant && (
                     <ConversationMessage aria-label={them.name} from="member">
-                      <div className="kubecode-message-header"><ConversationIdentity size="sm" view={them} /></div>
+                      <div className="kubecode-message-header"><Identity size="sm" view={them} /></div>
                       <MessageContent className="kubecode-message-content">
                         <ConversationResponse className="kubecode-message-body" t={t}>{turn.assistant}</ConversationResponse>
                       </MessageContent>
@@ -199,7 +198,7 @@ export function DmPane({
               ))}
               {newest && !newest.assistant && (
                 <ConversationMessage aria-label={them.name} from="member" state="pending">
-                  <div className="kubecode-message-header"><ConversationIdentity size="sm" view={them} /></div>
+                  <div className="kubecode-message-header"><Identity size="sm" view={them} /></div>
                   <MessageContent className="kubecode-message-content">
                     <p className="text-sm" role="status">
                       <Shimmer as="span">{t('kubecode.dm.waitingReply', { name: member.name })}</Shimmer>

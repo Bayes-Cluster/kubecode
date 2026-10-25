@@ -18,15 +18,19 @@ what is still open. The row-by-row record is
 | G | #261 | Session and Team execution views | [0253](adr/0253-session-and-team-execution-views-on-official-components.md) |
 | H | #262 | File, Git, terminal and research utilities | [0252](adr/0252-file-git-terminal-and-research-utilities-on-official-components.md) |
 | I | #263 | Route audit, cleanup, hand-off | [0254](adr/0254-route-audit-closes-the-official-component-migration.md) |
+| UI2 A | #277 | Variants on the official components, the parallel layer retired, Sonner, the extended CSS ownership check | [0256](adr/0256-official-components-own-their-variants-and-the-parallel-layer-is-retired.md) |
 
 ## Contracts that now hold
 
 - **Official components own their base appearance** (ADR 0247). Product CSS
   lays out elements it owns. `pnpm lint` runs `scripts/check-css-ownership.mjs`,
   which fails on any new `[data-slot=…]`, `[cmdk-…]`, `[data-radix-…]` or
-  `!important` rule. `scripts/css-ownership-baseline.json` holds 10 entries,
-  all exceptions: overlay zoom compensation (5), no text selection on controls
-  (2), the xterm viewport (1) and `prefers-reduced-motion` (2).
+  `!important` rule, and since ADR 0256 on appearance rules reaching official
+  components by class, element reach-ins, third-party internals and dead
+  classes. `scripts/css-ownership-baseline.json` holds 123 entries: the ten
+  #254 exceptions (overlay zoom compensation 5, no text selection on controls
+  2, the xterm viewport 1, `prefers-reduced-motion` 2) and 113 findings owned
+  by the UI2 slices, which only shrink.
 - **Shared vocabulary** (`docs/design/ui-shared-contract.md`): `ViewHeader`,
   `IconButton`, `StatusBadge`, `MemberIdentity`/`MemberAvatar`,
   `ReferenceChip`, `PauseButton`/`StopButton`, `MoreActions`,
@@ -160,6 +164,46 @@ composer reads the coarse pointer through the shared hook.
   ProjectFileTree). `testTimeout` is 30 s and testing-library's
   `asyncUtilTimeout` is 5 s for that reason; check `uptime` before blaming
   a change, and run the gate when no other heavy agent is building.
+
+## UI2 A (#277): pitfalls met on the way
+
+- **A worktree cannot `pnpm add` through a symlinked `node_modules`.** The
+  shadcn CLI runs `pnpm add`, and pnpm refuses a virtual store that lives in
+  another checkout ("Unexpected virtual store location"). Give the worktree
+  its own install first: `rm node_modules && pnpm install --frozen-lockfile
+  --prefer-offline` (seconds from the shared store), then `pnpm dlx
+  shadcn@latest add …`.
+- **Never wrap a Radix `Toggle` (or `ToggleGroupItem`) in a `TooltipTrigger
+  asChild`.** The trigger spreads its own `data-state` and `data-slot` after
+  the toggle's, so `data-[state=on]` styling and tests on `data-slot="toggle"`
+  break. A toggle with a visible label needs no tooltip.
+- **Two AI Elements hosts differ.** `registry.ai-sdk.dev/{name}.json` lacks
+  `file-tree`; `elements.ai-sdk.dev/api/registry/{name}.json` (the redirect
+  target of the legacy URL) has it. The shadcn-hosted elements on
+  `ui.shadcn.com/docs/ai-elements/radix/*` are copy-paste patterns; their
+  `trace`/`code-block` items are not published for the `new-york` style, so
+  `shadcn view @shadcn/trace` fails. `add @ai-elements/<name> --dry-run`
+  first: it offers to overwrite `ui/` files it depends on.
+- **Vitest only collects `src/kubecode/**`.** A test for a `src/components/ui`
+  variant lives in `src/kubecode/components/` (see
+  `officialVariants.test.tsx`) or it never runs.
+- **Test hooks on wrapper internals.** `data-tone`, `.kubecode-view-header`,
+  `.kubecode-member-identity`, `.kubecode-reference-chip` and friends were
+  test selectors. They are now `data-variant`, `header[data-destination]`,
+  `[data-slot="item"]`, `[data-reference-state]`; prefer roles and
+  `data-testid` for new hooks.
+- **Touch sizing lives in the component.** `Button` (default, sm, lg, icon,
+  icon-sm, icon-lg, wrap), `Toggle`, interactive `Item`, `CommandItem` and
+  the `Attachment` trigger are 44 px on a coarse pointer from their own
+  classes; `xs` and `icon-xs` keep their height. Write `[44px]`, not
+  `min-h-11`: the root is 14 px, so 11 spacing units are 38.5 px. A new
+  per-call `pointer-coarse:` class is unnecessary; the CSS ownership check
+  does not see Tailwind utilities, so reviewers catch it, not lint.
+- **The CSS ownership check reads TSX now.** A class passed as `className`
+  to an official import makes every appearance rule on that class a finding;
+  a rule whose `kubecode-*` class no product file mentions, or a className
+  with no rule, is dead. Regenerate with `node
+  scripts/check-css-ownership.mjs --write-baseline` only to *remove* entries.
 
 ## Validation
 

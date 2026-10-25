@@ -1,15 +1,6 @@
 import { useState } from 'react'
 import type { ReactNode } from 'react'
-import {
-  ArrowRight,
-  CircleAlert,
-  CircleCheck,
-  Clock,
-  LoaderCircle,
-  Pause,
-  Play,
-  Users,
-} from 'lucide-react'
+import { ArrowRight, CircleAlert, CircleCheck, Clock, LoaderCircle, Pause, Play, Users } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -25,12 +16,12 @@ import {
   ItemTitle,
 } from '@/components/ui/item'
 import { Textarea } from '@/components/ui/textarea'
-import { StatusBadge, type StatusTone } from '@/components/workspace/StatusBadge'
 import type { TranslationKey, Translator } from '@/lib/i18n'
 
 import type { KubecodeApi, TeamSnapshot } from '../api'
 import { TEAM_STATUS_ICONS } from '../icons/statusIcons'
-import { SystemMessageNotice } from '../SystemMessageNotice'
+import { statusToneVariant, type StatusTone } from '../statusTone'
+import { InlineNotice } from '../InlineNotice'
 
 export function TeamStatusView({
   api,
@@ -94,10 +85,10 @@ export function TeamStatusView({
           </div>
         </div>
         <div className="kubecode-team-settings">
-          <StatusBadge tone={teamStatusTone(snapshot.team.status)}>
+          <Badge variant={statusToneVariant(teamStatusTone(snapshot.team.status))}>
             <StatusIcon aria-hidden="true" />
             {teamStatusLabel(snapshot.team.status, t)}
-          </StatusBadge>
+          </Badge>
           <Badge data-mode={snapshot.team.mode} variant={snapshot.team.mode === 'yolo' ? 'warning' : 'outline'}>
             {snapshot.team.mode === 'yolo' ? t('kubecode.teamYolo') : t('kubecode.teamStandard')}
           </Badge>
@@ -129,21 +120,10 @@ export function TeamStatusView({
       </header>
 
       {error && (
-        <SystemMessageNotice
-          detailsLabel={t('kubecode.details')}
-          dismissLabel={t('window.close')}
-          level="error"
-          message={error}
-          onDismiss={() => setError(null)}
-        />
+<InlineNotice closeLabel={t('window.close')} detailsLabel={t('kubecode.details')} level="error" message={error} onClose={() => setError(null)} />
       )}
       {snapshot.team.mode_fallback && (
-        <SystemMessageNotice
-          detailsLabel={t('kubecode.details')}
-          dismissLabel={t('window.close')}
-          level="warning"
-          message={`${t('kubecode.teamYoloFallback')}: ${snapshot.team.mode_fallback.reason}`}
-        />
+<InlineNotice detailsLabel={t('kubecode.details')} level="warning" message={`${t('kubecode.teamYoloFallback')}: ${snapshot.team.mode_fallback.reason}`} />
       )}
 
       <ItemGroup className="kubecode-team-metrics">
@@ -154,7 +134,7 @@ export function TeamStatusView({
       </ItemGroup>
 
       {attention.length > 0 && (
-        <section aria-labelledby="team-attention-title" className="kubecode-team-attention flex flex-col gap-2">
+        <section aria-labelledby="team-attention-title" className="flex flex-col gap-2">
           <h3 className="flex items-center gap-2 text-sm font-medium" id="team-attention-title">
             <CircleAlert aria-hidden="true" className="size-4" />
             {t('kubecode.teamNeedsAttention')}
@@ -167,7 +147,7 @@ export function TeamStatusView({
               if (userRequest) {
                 const fieldId = `team-user-input-${userRequest.id}`
                 return (
-                  <Item className="kubecode-team-user-input" key={attentionItem.id} variant="outline">
+                  <Item key={attentionItem.id} variant="outline">
                     <ItemContent>
                       <Field>
                         <FieldLabel htmlFor={fieldId}>{userRequest.title}</FieldLabel>

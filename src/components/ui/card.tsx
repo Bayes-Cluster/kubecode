@@ -1,14 +1,33 @@
 import * as React from "react"
+import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "cn"
 
-function Card({ className, ...props }: React.ComponentProps<"div">) {
+// Kubecode (ADR 0256): a compact Card whose one child (a button, a row) owns the insets.
+const cardVariants = cva(
+  "flex flex-col rounded-xl border bg-card text-card-foreground shadow-sm",
+  {
+    variants: {
+      size: {
+        default: "gap-6 py-6",
+        compact: "gap-0 py-0",
+      },
+    },
+    defaultVariants: {
+      size: "default",
+    },
+  }
+)
+
+function Card({
+  className,
+  size = "default",
+  ...props
+}: React.ComponentProps<"div"> & VariantProps<typeof cardVariants>) {
   return (
     <div
       data-slot="card"
-      className={cn(
-        "flex flex-col gap-6 rounded-xl border bg-card py-6 text-card-foreground shadow-sm",
-        className
-      )}
+      data-size={size}
+      className={cn(cardVariants({ size, className }))}
       {...props}
     />
   )

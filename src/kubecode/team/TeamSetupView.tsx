@@ -29,9 +29,9 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { trackEvent } from '@/lib/telemetry'
 
 import type { AgentId, AgentSessionState, KubecodeApi, TeamMode, TeamSnapshot } from '../api'
-import { SystemMessageNotice } from '../SystemMessageNotice'
 import { NativeLeaderOptions } from './TeamPermissionView'
 import type { Translator } from '@/lib/i18n'
+import { InlineNotice } from '../InlineNotice'
 
 export function TeamSetup({
   api,
@@ -130,13 +130,7 @@ export function TeamSetup({
       </header>
 
       {error && (
-        <SystemMessageNotice
-          detailsLabel={t('kubecode.details')}
-          dismissLabel={t('window.close')}
-          level="error"
-          message={error}
-          onDismiss={() => setError(null)}
-        />
+<InlineNotice closeLabel={t('window.close')} detailsLabel={t('kubecode.details')} level="error" message={error} onClose={() => setError(null)} />
       )}
 
       <FieldGroup className="kubecode-team-setup-grid">

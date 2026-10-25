@@ -1,6 +1,7 @@
-import { useRef, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyDescription } from '@/components/ui/empty'
 import { FieldDescription, FieldGroup } from '@/components/ui/field'
@@ -14,9 +15,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from '@/components/ui/item'
+import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
-import { DecisionButton } from '@/components/workspace/DecisionButton'
-import { StatusBadge } from '@/components/workspace/StatusBadge'
 import type { Translator } from '@/lib/i18n'
 
 import type {
@@ -29,10 +29,10 @@ import type {
   ResearchRound,
 } from '../api'
 import { newClientMessageId } from '../session/sessionModel'
-import { authorLabel, findingKindLabel, sourceKindLabel } from './researchLabels'
+import { authorLabel, availabilityLabel, availabilityVariant, findingKindLabel, sourceKindLabel } from './researchLabels'
 import { ResearchPanel, ResearchSection } from './ResearchLayout'
-import { AvailabilityBadge, StaleBadge } from './SourceBadge'
 import { useAction } from './useAction'
+import { statusToneVariant } from '../statusTone'
 
 const FINDING_KINDS: ResearchFindingKind[] = ['finding', 'attempt', 'limitation', 'open_question']
 
@@ -60,6 +60,7 @@ export function ResearchFindingsPanel({
   const pendingOutcomes = outcomes.filter((outcome) => outcome.status === 'pending')
   const review = useAction(t)
   const [deciding, setDeciding] = useState<string | null>(null)
+  const heldId = useId()
   const decline = useAction(t)
   const roundNumber = (roundId: string | null) => rounds.find((round) => round.id === roundId)?.round ?? null
 
@@ -94,22 +95,25 @@ export function ResearchFindingsPanel({
                   </ItemContent>
                   {!detail.archived && (
                     <ItemActions aria-label={proposal.entry.body.slice(0, 60)} className="flex-wrap" role="group">
-                      <DecisionButton
-                        busy={deciding === `${proposal.entry.id}:accepted`}
-                        disabledReason={deciding === `${proposal.entry.id}:accepted` ? undefined : held}
-                        variant="primary"
-                        onDecide={() => decide('accepted')}
-                      >
-                        {t('kubecode.research.agree')}
-                      </DecisionButton>
-                      <DecisionButton
-                        busy={deciding === `${proposal.entry.id}:rejected`}
-                        disabledReason={deciding === `${proposal.entry.id}:rejected` ? undefined : held}
-                        variant="secondary"
-                        onDecide={() => decide('rejected')}
-                      >
-                        {t('kubecode.research.decline')}
-                      </DecisionButton>
+                      {(['accepted', 'rejected'] as const).map((verdict) => {
+                        const busy = deciding === `${proposal.entry.id}:${verdict}`
+                        return (
+                          <Button
+                            aria-busy={busy || undefined}
+                            aria-describedby={held && !busy ? `${heldId}-${proposal.entry.id}` : undefined}
+                            aria-disabled={busy || undefined}
+                            disabled={Boolean(held) && !busy}
+                            key={verdict}
+                            size="wrap"
+                            variant={verdict === 'accepted' ? 'default' : 'outline'}
+                            onClick={busy ? undefined : () => decide(verdict)}
+                          >
+                            {busy && <Spinner aria-hidden="true" data-icon="inline-start" />}
+                            {verdict === 'accepted' ? t('kubecode.research.agree') : t('kubecode.research.decline')}
+                          </Button>
+                        )
+                      })}
+                      {held && <FieldDescription className="basis-full" id={`${heldId}-${proposal.entry.id}`}>{held}</FieldDescription>}
                     </ItemActions>
                   )}
                 </Item>
@@ -155,7 +159,7 @@ export function ResearchFindingsPanel({
 
       <ResearchSection label={t('kubecode.research.findings')}>
         {findings.length === 0 && (
-          <Empty className="items-start p-0 text-left md:p-0">
+          <Empty size="compact">
             <EmptyDescription>{t('kubecode.research.noFindings')}</EmptyDescription>
           </Empty>
         )}
@@ -164,16 +168,16 @@ export function ResearchFindingsPanel({
             <Item key={finding.id} data-basis={finding.basis} role="listitem" size="sm" variant="outline">
               <ItemContent className="gap-1.5">
               <div className="flex flex-wrap items-center gap-2">
-                <StatusBadge tone="muted">{findingKindLabel(t, finding.kind)}</StatusBadge>
-                <StatusBadge
-                  tone={finding.basis === 'observation' ? 'ok' : 'warn'}
+                <Badge variant="secondary">{findingKindLabel(t, finding.kind)}</Badge>
+                <Badge
+                  variant={statusToneVariant(finding.basis === 'observation' ? 'ok' : 'warn')}
                   title={finding.basis === 'interpretation' ? t('kubecode.research.interpretationHint') : undefined}
                 >
                   {finding.basis === 'observation'
                     ? t('kubecode.research.basis.observation')
                     : t('kubecode.research.basis.interpretation')}
-                </StatusBadge>
-                {finding.stale && <StaleBadge t={t} />}
+                </Badge>
+                {finding.stale && <Badge title={t('kubecode.research.staleHint')} variant="warning">{t('kubecode.research.stale')}</Badge>}
               </div>
               <p className="m-0 whitespace-pre-wrap text-sm [overflow-wrap:anywhere]">{finding.statement}</p>
               <ItemDescription>
@@ -187,7 +191,7 @@ export function ResearchFindingsPanel({
                   {finding.producer_state.map((source) => (
                     <li className={SOURCE_ROW} key={`${source.kind}:${source.id}`}>
                       <span>{t('kubecode.research.producedByItem', { kind: sourceKindLabel(t, source.kind) })}</span>
-                      <AvailabilityBadge availability={source.availability} t={t} />
+                      <Badge variant={availabilityVariant(source.availability)}>{availabilityLabel(t, source.availability)}</Badge>
                     </li>
                   ))}
                 </ul>
@@ -198,7 +202,7 @@ export function ResearchFindingsPanel({
                     <li className={SOURCE_ROW} key={`${source.kind}:${source.id}`}>
                       <span>{sourceKindLabel(t, source.kind)}</span>
                       <code className="[overflow-wrap:anywhere]">{source.id}</code>
-                      <AvailabilityBadge availability={source.availability} t={t} />
+                      <Badge variant={availabilityVariant(source.availability)}>{availabilityLabel(t, source.availability)}</Badge>
                     </li>
                   ))}
                 </ul>
@@ -221,11 +225,11 @@ export function ResearchFindingsPanel({
                 <ItemContent>
                   <p className="m-0 whitespace-pre-wrap text-sm [overflow-wrap:anywhere]">{proposal.entry.body}</p>
                 </ItemContent>
-                <StatusBadge tone={proposal.review?.decision === 'accepted' ? 'ok' : 'muted'}>
+                <Badge variant={statusToneVariant(proposal.review?.decision === 'accepted' ? 'ok' : 'muted')}>
                   {proposal.review?.decision === 'accepted'
                     ? t('kubecode.research.accepted')
                     : t('kubecode.research.rejected')}
-                </StatusBadge>
+                </Badge>
               </Item>
             ))}
           </ItemGroup>
@@ -257,7 +261,7 @@ function CaptureForm({
 
   if (sources.length === 0) {
     return (
-      <Empty className="items-start p-0 text-left md:p-0">
+      <Empty size="compact">
         <EmptyDescription>{t('kubecode.research.captureNeedsLink')}</EmptyDescription>
       </Empty>
     )

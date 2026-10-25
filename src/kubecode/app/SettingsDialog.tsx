@@ -11,6 +11,7 @@ import {
 import { trackEvent } from '@/lib/telemetry'
 
 import { AiAgentIcon } from '@/components/AiAgentIcon'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -60,7 +61,6 @@ import {
 import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { StatusBadge } from '@/components/workspace/StatusBadge'
 
 import { MemberDefaultsPanel } from '../members/MemberDefaultsPanel'
 
@@ -89,6 +89,7 @@ import type { Translator } from '@/lib/i18n'
 
 import type { WeChatBinding } from './useWeChatBinding'
 import { WeChatSettingsPanel } from './WeChatSettingsPanel'
+import { statusToneVariant } from '../statusTone'
 
 export type SettingsSection = 'general' | 'notifications' | 'agents' | 'members' | 'wechat' | 'terminal' | 'editor'
 
@@ -431,9 +432,9 @@ export function SettingsDialog({
               <FieldTitle>{t('kubecode.notificationPermission')}</FieldTitle>
               <FieldDescription>{t(`kubecode.notifications.permission.${browserPermission}`)}</FieldDescription>
               {notificationTestStatus && (
-                <StatusBadge className="w-fit" tone={notificationTestStatus === 'sent' ? 'ok' : 'danger'}>
+                <Badge className="w-fit" variant={statusToneVariant(notificationTestStatus === 'sent' ? 'ok' : 'danger')}>
                   <span role="status">{notificationTestMessage(t, notificationTestStatus, browserPermission)}</span>
-                </StatusBadge>
+                </Badge>
               )}
             </FieldContent>
             <div className="flex flex-wrap gap-2">
@@ -496,9 +497,9 @@ export function SettingsDialog({
                     <span className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
                       <AiAgentIcon agent={agent.id} size={18} />
                       <span>{agentName(agent.id)}</span>
-                      <StatusBadge tone={agent.available ? 'ok' : 'danger'}>
+                      <Badge variant={agent.available ? 'success' : 'destructive'}>
                         {agent.available ? agent.version ?? t('kubecode.ready') : t('kubecode.unavailable')}
-                      </StatusBadge>
+                      </Badge>
                     </span>
                   </AccordionTrigger>
                   <AccordionContent className="flex flex-col gap-3">
@@ -592,7 +593,7 @@ export function SettingsDialog({
       )
     }
     return (
-      <Empty className="border">
+      <Empty variant="outline">
         <EmptyHeader>
           <EmptyMedia variant="icon"><TerminalSquare /></EmptyMedia>
           <EmptyDescription>{t('kubecode.settingsComingSoon')}</EmptyDescription>
@@ -774,9 +775,9 @@ function AgentDiagnosticRow({
         {detail && <code className="break-all text-xs">{detail}</code>}
       </ItemContent>
       <ItemActions>
-        <StatusBadge tone={status === 'ready' ? 'ok' : 'danger'}>
+        <Badge variant={statusToneVariant(status === 'ready' ? 'ok' : 'danger')}>
           {status === 'ready' ? t('kubecode.ready') : t('kubecode.unavailable')}
-        </StatusBadge>
+        </Badge>
       </ItemActions>
     </Item>
   )

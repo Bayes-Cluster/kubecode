@@ -33,10 +33,11 @@ export function InspectorPanel({ actions, children, icon, meta, recovery, status
   useEffect(() => { setTitle(title) }, [setTitle, title])
 
   return (
-    <div className="kubecode-inspector-panel" data-status={status}>
+    <div data-status={status}>
       <ViewHeader
         {...header}
         actions={status === 'ready' ? actions : undefined}
+        className="px-(--ws-space-4) pt-(--ws-space-3) pb-(--ws-space-2)"
         icon={icon}
         meta={status === 'ready' ? meta : undefined}
         title={title}

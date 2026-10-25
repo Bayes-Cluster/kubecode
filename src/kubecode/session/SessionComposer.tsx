@@ -16,7 +16,6 @@ import { ComposerAddMenu } from '../ComposerAddMenu'
 import { ComposerContextInput } from '../ComposerContextInput'
 import { composerDraftHasStaleContext } from '../composerDraft'
 import { SideQuestionPanel, type SideQuestionItem } from '../SideQuestionPanel'
-import { SystemMessageNotice } from '../SystemMessageNotice'
 import type { TerminalContextSource } from '../TerminalWorkspace'
 import { SessionPlanSummary, type SessionPlanEntry } from './SessionPlanSummary'
 import {
@@ -28,6 +27,7 @@ import {
 } from './sessionModel'
 import type { ComposerController } from './useComposerController'
 import type { SessionStateController } from './useSessionState'
+import { InlineNotice } from '../InlineNotice'
 
 type SessionComposerProps = {
   agentLabel: string
@@ -138,22 +138,10 @@ export function SessionComposer({
     >
       <SideQuestionPanel items={sideQuestions} t={t} />
       {error && (
-        <SystemMessageNotice
-          detailsLabel={t('kubecode.details')}
-          dismissLabel={t('window.close')}
-          level="error"
-          message={error}
-          onDismiss={onDismissError}
-        />
+<InlineNotice closeLabel={t('window.close')} detailsLabel={t('kubecode.details')} level="error" message={error} onClose={onDismissError} />
       )}
       {workspaceWarning && (
-        <SystemMessageNotice
-          detailsLabel={t('kubecode.details')}
-          dismissLabel={t('window.close')}
-          level="warning"
-          message={workspaceWarning}
-          onDismiss={onDismissWorkspaceWarning}
-        />
+<InlineNotice closeLabel={t('window.close')} detailsLabel={t('kubecode.details')} level="warning" message={workspaceWarning} onClose={onDismissWorkspaceWarning} />
       )}
       {pendingPermission && (
         <PermissionPrompt
@@ -192,7 +180,7 @@ export function SessionComposer({
       )}
       <div className="kubecode-session-composer">
         {hardReadOnly || viewRevisionId ? (
-          <Alert className="kubecode-read-only-session" role="status">
+          <Alert role="status">
             <LockKeyhole />
             <AlertDescription>{viewRevisionId
               ? t('kubecode.revisionReadOnly')

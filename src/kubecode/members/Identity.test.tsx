@@ -1,40 +1,34 @@
 import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
-import { createTranslator } from '@/lib/i18n'
-
-import { fakeNavigation } from '../app/inspector/inspectorTesting'
-import { WorkspaceNavigationContext } from '../app/location/WorkspaceNavigation'
+import { WorkspaceNavigationContext, type WorkspaceNavigation } from '../app/location/WorkspaceNavigation'
 import { Identity } from './Identity'
-import { analyst, writer } from './memberFixtures'
-import { memberView } from './memberIdentity'
-
-const t = createTranslator('en')
 
 describe('Identity', () => {
-  it('opens a live member’s profile from the name and returns focus where it came from', () => {
-    const navigation = fakeNavigation()
+  it('opens a live member profile from the official link Button inside the official Item', () => {
+    const inspect = vi.fn()
     render(
-      <WorkspaceNavigationContext.Provider value={navigation}>
-        <Identity from="message:m1" view={memberView(analyst, t)} />
+      <WorkspaceNavigationContext.Provider value={{ inspect } as unknown as WorkspaceNavigation}>
+        <Identity from="message-1" view={{ key: 'm', memberId: 'member-1', name: 'General', role: 'manager', handle: 'general', roleLabel: 'Project manager' }} />
       </WorkspaceNavigationContext.Provider>,
     )
-    expect(screen.getByText('@analyst')).toBeInTheDocument()
-    expect(screen.getByText('Specialist · Analysis')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Analyst' }))
-    expect(navigation.inspect).toHaveBeenCalledWith({ kind: 'member', id: 'a' }, { from: 'message:m1' })
+    const name = screen.getByRole('button', { name: 'General' })
+    expect(name).toHaveAttribute('data-slot', 'button')
+    expect(name).toHaveAttribute('data-variant', 'link')
+    expect(name).toHaveAttribute('data-size', 'inline')
+    fireEvent.click(name)
+    expect(inspect).toHaveBeenCalledWith({ kind: 'member', id: 'member-1' }, { from: 'message-1' })
+    // ADR 0256: the official Item owns the structure; the avatar is its media, the words its description.
+    expect(name.closest('[data-slot="item"]')).not.toBeNull()
+    expect(screen.getByTestId('member-avatar').closest('[data-slot="item-media"]')).not.toBeNull()
+    expect(screen.getByTestId('member-avatar')).toHaveAttribute('data-slot', 'avatar')
+    expect(screen.getByTestId('member-avatar')).toHaveAttribute('data-role', 'manager')
+    expect(screen.getByText('@general').closest('[data-slot="item-description"]')).not.toBeNull()
   })
 
-  it('is plain text for a removed member, and outside the shell', () => {
-    const navigation = fakeNavigation()
-    render(
-      <WorkspaceNavigationContext.Provider value={navigation}>
-        <Identity view={memberView({ ...writer, state: 'removed' }, t)} />
-      </WorkspaceNavigationContext.Provider>,
-    )
-    expect(screen.queryByRole('button', { name: 'Writer' })).not.toBeInTheDocument()
-    expect(screen.getByText('Removed')).toBeInTheDocument()
-    render(<Identity view={memberView(analyst, t)} />)
-    expect(screen.queryByRole('button', { name: 'Analyst' })).not.toBeInTheDocument()
+  it('is plain text for the researcher, Kubecode and removed members', () => {
+    render(<Identity view={{ key: 'r', name: 'You', role: 'researcher' }} />)
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+    expect(screen.getByText('You').closest('[data-slot="item-title"]')).not.toBeNull()
   })
 })

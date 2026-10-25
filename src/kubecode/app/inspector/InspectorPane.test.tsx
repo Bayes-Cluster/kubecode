@@ -198,7 +198,7 @@ describe('InspectorPane header', () => {
     const view = mount({ initial: [task, evidenceA1] })
     await screen.findByRole('button', { name: 'Back to Pruning heads' })
     for (const depth of [0, 1]) {
-      expect(entrySection(view.container, depth).querySelectorAll('header.kubecode-view-header')).toHaveLength(1)
+      expect(entrySection(view.container, depth).querySelectorAll('header[data-level]')).toHaveLength(1)
     }
   })
 

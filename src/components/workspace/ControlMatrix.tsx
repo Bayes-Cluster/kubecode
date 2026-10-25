@@ -1,5 +1,11 @@
 import { useId, useMemo, useState, type ReactNode } from 'react'
 
+import { PromptInputSubmit } from '@/components/ai-elements/prompt-input'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { FieldDescription } from '@/components/ui/field'
+import { Spinner } from '@/components/ui/spinner'
+import { Toggle } from '@/components/ui/toggle'
 import { Icon } from '@/kubecode/icons'
 import {
   WORKSPACE_COMMAND_ICONS,
@@ -11,14 +17,11 @@ import {
 import { translate, type AppLocale, type TranslationKey, type TranslationValues, type Translator } from '@/lib/i18n'
 
 import { longestTranslation } from './controlMatrixRoute'
-import { DecisionButton } from './DecisionButton'
 import { IconButton } from './IconButton'
 import { MemberIdentity } from './MemberIdentity'
 import { MoreActions } from './MoreActions'
 import { OfficialComponentMatrix } from './OfficialComponentMatrix'
 import { ReferenceChip } from './ReferenceChip'
-import { PauseButton, SendButton, StopButton } from './SendButton'
-import { StatusBadge } from './StatusBadge'
 import { ViewHeader } from './ViewHeader'
 
 function Row({ children, label }: { children: ReactNode; label: string }) {
@@ -56,6 +59,7 @@ function Captioned({ entry, role, t }: { entry: WorkspaceIconEntry; role: 'navig
  * translations, and touch targets can be checked in one place.
  */
 export function ControlMatrix({ t }: { t: Translator }) {
+  const reasonId = useId()
   const [paused, setPaused] = useState(false)
   const [cited, setCited] = useState(true)
   // Each long sample is written in one locale — the one whose translation of
@@ -115,66 +119,72 @@ export function ControlMatrix({ t }: { t: Translator }) {
 
       <Section title={t('kubecode.matrix.section.sendStop')}>
         <Row label={t('kubecode.matrix.state.default')}>
-          <SendButton canSend label={t('kubecode.vocab.command.send')} onSend={() => undefined} />
-          <StopButton label={t('kubecode.matrix.sample.stopAnalyst')} shortLabel={t('kubecode.vocab.command.stopRun')} onStop={() => undefined} />
-          <PauseButton label={t('kubecode.matrix.sample.pauseWork')} paused={paused} onToggle={() => setPaused(!paused)} />
+          <PromptInputSubmit aria-label={t('kubecode.vocab.command.send')} data-testid="matrix-send" title={t('kubecode.vocab.command.send')} type="button">
+            <Icon role="command" source={WORKSPACE_COMMAND_ICONS.send.Icon} />
+          </PromptInputSubmit>
+          <Button aria-label={t('kubecode.matrix.sample.stopAnalyst')} data-testid="matrix-stop" size="sm" variant="outline">
+            <Icon role="status" source={WORKSPACE_COMMAND_ICONS.stopRun.Icon} />
+            <span aria-hidden="true" className="pointer-fine:sr-only" data-testid="matrix-stop-text">{t('kubecode.vocab.command.stopRun')}</span>
+          </Button>
+          <Toggle aria-label={t('kubecode.matrix.sample.pauseWork')} data-testid="matrix-pause" pressed={paused} size="sm" variant="outline" onPressedChange={setPaused}>
+            <Icon role="command" source={paused ? WORKSPACE_COMMAND_ICONS.resumeOrchestration.Icon : WORKSPACE_COMMAND_ICONS.pauseOrchestration.Icon} />
+          </Toggle>
         </Row>
         <Row label={t('kubecode.matrix.state.disabled')}>
-          <SendButton canSend={false} label={t('kubecode.vocab.command.send')} onSend={() => undefined} />
+          <PromptInputSubmit aria-label={t('kubecode.vocab.command.send')} disabled title={t('kubecode.vocab.command.send')} type="button">
+            <Icon role="command" source={WORKSPACE_COMMAND_ICONS.send.Icon} />
+          </PromptInputSubmit>
         </Row>
         <Row label={t('kubecode.matrix.state.busy')}>
-          <SendButton busy canSend label={t('kubecode.vocab.command.send')} onSend={() => undefined} />
-          <PauseButton busy label={t('kubecode.matrix.sample.pauseWork')} paused={false} onToggle={() => undefined} />
+          <PromptInputSubmit aria-busy aria-disabled aria-label={t('kubecode.vocab.command.send')} status="submitted" title={t('kubecode.vocab.command.send')} type="button" />
+          <Toggle aria-busy aria-disabled aria-label={t('kubecode.matrix.sample.pauseWork')} pressed={false} size="sm" variant="outline">
+            <Spinner aria-hidden="true" />
+          </Toggle>
         </Row>
       </Section>
 
       <Section title={t('kubecode.matrix.section.decisions')}>
         <Row label={t('kubecode.matrix.state.default')}>
-          <DecisionButton variant="primary" onDecide={() => undefined}>{t('kubecode.task.acceptResults')}</DecisionButton>
-          <DecisionButton onDecide={() => undefined}>{t('kubecode.task.sendBack')}</DecisionButton>
-          <DecisionButton variant="destructive" onDecide={() => undefined}>{t('kubecode.vocab.command.remove')}</DecisionButton>
+          <Button size="wrap">{t('kubecode.task.acceptResults')}</Button>
+          <Button size="wrap" variant="outline">{t('kubecode.task.sendBack')}</Button>
+          <Button size="wrap" variant="destructive">{t('kubecode.vocab.command.remove')}</Button>
         </Row>
         <Row label={t('kubecode.matrix.state.disabled')}>
-          <DecisionButton
-            disabledReason={t('kubecode.matrix.sample.disabledReason')}
-            variant="primary"
-            onDecide={() => undefined}
-          >
-            {t('kubecode.task.acceptResults')}
-          </DecisionButton>
+          <span className="flex max-w-full flex-col items-start gap-1">
+            <Button aria-describedby={`${reasonId}-disabled`} disabled size="wrap">{t('kubecode.task.acceptResults')}</Button>
+            <FieldDescription id={`${reasonId}-disabled`}>{t('kubecode.matrix.sample.disabledReason')}</FieldDescription>
+          </span>
         </Row>
         <Row label={t('kubecode.matrix.state.busy')}>
-          <DecisionButton busy variant="primary" onDecide={() => undefined}>{t('kubecode.task.acceptResults')}</DecisionButton>
+          <Button aria-busy aria-disabled size="wrap">
+            <Spinner aria-hidden="true" data-icon="inline-start" />
+            {t('kubecode.task.acceptResults')}
+          </Button>
         </Row>
         <Row label={t('kubecode.matrix.state.longest')}>
           <div className="kubecode-control-matrix-narrow">
-            {lang(long.accept.locale, (
-              <DecisionButton variant="primary" onDecide={() => undefined}>{long.accept.in('kubecode.task.acceptResults')}</DecisionButton>
-            ))}
-            {lang(long.sendBack.locale, (
-              <DecisionButton onDecide={() => undefined}>{long.sendBack.in('kubecode.task.sendBack')}</DecisionButton>
-            ))}
+            {lang(long.accept.locale, <Button size="wrap">{long.accept.in('kubecode.task.acceptResults')}</Button>)}
+            {lang(long.sendBack.locale, <Button size="wrap" variant="outline">{long.sendBack.in('kubecode.task.sendBack')}</Button>)}
             {lang(long.reason.locale, (
-              <DecisionButton disabledReason={long.reason.in('kubecode.matrix.sample.disabledReason')} onDecide={() => undefined}>
-                {long.reason.in('kubecode.task.acceptResults')}
-              </DecisionButton>
+              <span className="flex max-w-full flex-col items-start gap-1">
+                <Button aria-describedby={`${reasonId}-long`} disabled size="wrap" variant="outline">{long.reason.in('kubecode.task.acceptResults')}</Button>
+                <FieldDescription id={`${reasonId}-long`}>{long.reason.in('kubecode.matrix.sample.disabledReason')}</FieldDescription>
+              </span>
             ))}
           </div>
           <div className="kubecode-control-matrix-tight" data-testid="decision-wrap-sample">
-            {lang(long.reference.locale, (
-              <DecisionButton onDecide={() => undefined}>{long.reference.in('kubecode.matrix.sample.longTitle')}</DecisionButton>
-            ))}
+            {lang(long.reference.locale, <Button size="wrap" variant="outline">{long.reference.in('kubecode.matrix.sample.longTitle')}</Button>)}
           </div>
         </Row>
       </Section>
 
       <Section title={t('kubecode.matrix.section.status')}>
         <Row label={t('kubecode.matrix.state.default')}>
-          <StatusBadge tone="muted">{t('kubecode.matrix.sample.muted')}</StatusBadge>
-          <StatusBadge tone="info">{t('kubecode.matrix.sample.info')}</StatusBadge>
-          <StatusBadge tone="ok">{t('kubecode.matrix.sample.ok')}</StatusBadge>
-          <StatusBadge tone="warn">{t('kubecode.matrix.sample.needsSetup')}</StatusBadge>
-          <StatusBadge tone="danger">{t('kubecode.matrix.sample.danger')}</StatusBadge>
+          <Badge variant="secondary">{t('kubecode.matrix.sample.muted')}</Badge>
+          <Badge variant="info">{t('kubecode.matrix.sample.info')}</Badge>
+          <Badge variant="success">{t('kubecode.matrix.sample.ok')}</Badge>
+          <Badge variant="warning">{t('kubecode.matrix.sample.needsSetup')}</Badge>
+          <Badge variant="destructive">{t('kubecode.matrix.sample.danger')}</Badge>
         </Row>
       </Section>
 
@@ -288,7 +298,7 @@ export function ControlMatrix({ t }: { t: Translator }) {
         <ViewHeader
           close={{ label: t('kubecode.vocab.command.close'), onClose: () => undefined }}
           level={3}
-          meta={<StatusBadge tone="info">{t('kubecode.matrix.sample.info')}</StatusBadge>}
+          meta={<Badge variant="info">{t('kubecode.matrix.sample.info')}</Badge>}
           title="Structured pruning"
         />
         <div className="kubecode-control-matrix-narrow">

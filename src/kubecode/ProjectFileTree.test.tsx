@@ -32,6 +32,16 @@ describe('ProjectFileTree', () => {
     globalThis.sessionStorage?.clear()
   })
 
+  it('keeps its 26px rows on a coarse pointer: the row Button is xs, with no touch minimum (ADR 0256 §2)', async () => {
+    const api = {
+      listEntries: vi.fn().mockResolvedValue([{ name: 'docs', path: 'docs', kind: 'directory' }]),
+    } as unknown as KubecodeApi
+    renderTree(api)
+    const row = await screen.findByRole('treeitem', { name: /docs/ })
+    expect(row).toHaveAttribute('data-size', 'xs')
+    expect(row.className).not.toContain('pointer-coarse:')
+  })
+
   it('renders the Project as a root and lazily expands nested directories', async () => {
     const onOpenFile = vi.fn()
     const api = {

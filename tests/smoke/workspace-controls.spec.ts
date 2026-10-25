@@ -9,14 +9,14 @@ import { expect, test, type Page } from '@playwright/test'
  * touch targets, and long translations that wrap instead of overflowing.
  */
 const CONTROLS = [
-  '.kubecode-icon-button:not(:disabled)',
-  '.kubecode-send-button:not(:disabled)',
-  '.kubecode-stop-button',
-  '.kubecode-pause-button',
-  '.kubecode-decision-button:not(:disabled)',
+  '[data-size^="icon-"]:not(:disabled)',
+  '[data-testid="matrix-send"]',
+  '[data-testid="matrix-stop"]',
+  '[data-testid="matrix-pause"]',
+  '[data-size="wrap"]:not(:disabled)',
   '[data-reference-chip-action="open"]:is(button)',
   '[data-reference-chip-action="remove"]',
-  'button.kubecode-member-identity-name',
+  'button[data-size="inline"]',
 ].join(', ')
 
 function catalog(locale: string): Record<string, string> {
@@ -58,7 +58,7 @@ async function overflowing(page: Page): Promise<string[]> {
 
 /** A decision whose words do not fit wraps onto more lines instead of being cut. */
 async function wrapsDecision(page: Page): Promise<boolean> {
-  return page.getByTestId('decision-wrap-sample').locator('.kubecode-decision-button').evaluate((element) => {
+  return page.getByTestId('decision-wrap-sample').locator('[data-size="wrap"]').evaluate((element) => {
     const lineHeight = Number.parseFloat(getComputedStyle(element).lineHeight) || 20
     return element.getBoundingClientRect().height > lineHeight * 1.8
   })
@@ -123,8 +123,11 @@ test.describe('on a phone', () => {
     await open(page, '?theme=light&lang=de-DE', 'de-DE')
     await expect(page.locator('html')).toHaveAttribute('lang', 'de-DE')
     expect(await page.evaluate(() => window.matchMedia('(pointer: coarse)').matches)).toBe(true)
-    // A member's name is inline text that opens the profile; inline targets are exempt from the size rule.
-    const targets = CONTROLS.replaceAll(':not(:disabled)', '').replace(', button.kubecode-member-identity-name', '')
+    // The touch minimum belongs to the roomy sizes (ADR 0256 §2): xs, icon-xs (dense rows, message actions)
+    // and the inline name link keep their own height.
+    const targets = CONTROLS.replaceAll(':not(:disabled)', '')
+      .replace(', button[data-size="inline"]', '')
+      .replace('[data-size^="icon-"]', '[data-size="icon"], [data-size="icon-sm"], [data-size="icon-lg"]')
     const small = await page.locator(targets).evaluateAll((elements) => elements
       .map((element) => ({ box: element.getBoundingClientRect(), name: element.getAttribute('aria-label') ?? element.textContent }))
       .filter(({ box }) => box.width < 44 || box.height < 44)
@@ -132,7 +135,7 @@ test.describe('on a phone', () => {
       .map(({ box, name }) => `${name}: ${Math.round(box.width)}x${Math.round(box.height)}`))
     expect(small).toEqual([])
     // On touch, a stop says in text what it stops.
-    await expect(page.locator('.kubecode-stop-button-text').first()).toBeVisible()
+    await expect(page.getByTestId('matrix-stop-text')).toBeVisible()
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
     expect(await overflowing(page)).toEqual([])
     expect(await unnamedControls(page)).toEqual([])

@@ -1,10 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type SetStateAction } from 'react'
-import { Bell } from 'lucide-react'
 import { createTranslator, resolveEffectiveLocale, type Translator } from '@/lib/i18n'
 import { trackEvent } from '@/lib/telemetry'
 
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Button } from '@/components/ui/button'
 import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
 import { SidebarProvider } from '@/components/ui/sidebar'
@@ -57,7 +54,7 @@ import {
   type TerminalInfo,
 } from '../api'
 import { TerminalWorkspace, type TerminalContextSource } from '../TerminalWorkspace'
-import { SystemMessageProvider } from '../SystemMessageNotice'
+import { SystemMessageProvider } from '../SystemMessages'
 import { WorkspaceNotificationBridge } from '../WorkspaceNotificationBridge'
 import type { PreferenceStorage } from '../preferenceStorage'
 import {
@@ -115,6 +112,7 @@ import { useWorkspaceReconciliation } from './useWorkspaceReconciliation'
 import { togglePanel } from './panelToggles'
 import { WorkbenchTitlebar } from './WorkbenchTitlebar'
 import { mergeConversations, upsertConversation } from './sessionCatalog'
+import { useNotificationOnboardingToast } from './useNotificationOnboardingToast'
 
 const browserApi = new KubecodeApi()
 
@@ -818,6 +816,13 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     && !notifications.onboardingDismissed
     && browserPermission === 'default'
     && reconciliation.workspaceEvents.some((event) => event.kind === 'run_started')
+  // Notification onboarding is one official toast (ADR 0256), offered once agents start working.
+  useNotificationOnboardingToast({
+    onDismiss: dismissNotificationOnboarding,
+    onEnable: requestNotificationPermission,
+    open: notificationOnboardingOpen,
+    t,
+  })
 
   useEffect(() => {
     const focusNavigatorSearch = (event: KeyboardEvent) => {
@@ -1217,7 +1222,7 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   )
 
   return (
-    <SystemMessageProvider detailsLabel={t('kubecode.details')} dismissLabel={t('window.close')}>
+    <SystemMessageProvider closeLabel={t('window.close')} regionLabel={t('kubecode.settings.notifications')} theme={appearance.colorScheme}>
     <PlaceMemoryProvider memory={placeMemory}>
     <WorkspaceNavigationContext.Provider value={navigation}>
     <MemberDirectoryContext.Provider value={directory}>
@@ -1573,26 +1578,6 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
         preferences={notifications}
         projects={projects}
       />
-      {notificationOnboardingOpen && (
-        <Alert
-          className="absolute bottom-4 left-1/2 z-50 w-[min(42rem,calc(100vw-2rem))] -translate-x-1/2 shadow-lg"
-          role="status"
-        >
-          <Bell aria-hidden="true" />
-          <AlertTitle>{t('kubecode.notificationOnboardingTitle')}</AlertTitle>
-          <AlertDescription>
-            <p>{t('kubecode.notificationOnboardingDescription')}</p>
-            <div className="flex flex-wrap gap-2">
-              <Button size="sm" onClick={() => void requestNotificationPermission()}>
-                {t('kubecode.enableNotifications')}
-              </Button>
-              <Button size="sm" variant="ghost" onClick={dismissNotificationOnboarding}>
-                {t('kubecode.notNow')}
-              </Button>
-            </div>
-          </AlertDescription>
-        </Alert>
-      )}
 
       <GlobalCommandPalette
         catalog={commandPaletteSession?.catalog ?? null}

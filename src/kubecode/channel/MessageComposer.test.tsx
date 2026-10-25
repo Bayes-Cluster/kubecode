@@ -229,10 +229,10 @@ describe('MessageComposer', () => {
       fireEvent.click(await screen.findByRole('button', { name }))
     }
     const about = document.querySelector('[data-composer-about]') as HTMLElement
-    expect(about.querySelectorAll('.kubecode-reference-chip')).toHaveLength(3)
+    expect(about.querySelectorAll('[data-reference-state]')).toHaveLength(3)
     expect(within(about).getByText('Quantization')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Remove reference results.csv' }))
-    expect(about.querySelectorAll('.kubecode-reference-chip')).toHaveLength(2)
+    expect(about.querySelectorAll('[data-reference-state]')).toHaveLength(2)
   })
 
   it('names each attached reference by kind, title and version, replaces another version, and announces it', async () => {
@@ -244,7 +244,7 @@ describe('MessageComposer', () => {
     expect(within(about).getByText('v3')).toBeInTheDocument()
     await addContext()
     fireEvent.click(await screen.findByRole('button', { name: 'pick newer results' }))
-    expect(about.querySelectorAll('.kubecode-reference-chip')).toHaveLength(1)
+    expect(about.querySelectorAll('[data-reference-state]')).toHaveLength(1)
     expect(within(about).getByText('v4')).toBeInTheDocument()
     expect(screen.getByText('Updated results.csv to the version you previewed.')).toBeInTheDocument()
   })

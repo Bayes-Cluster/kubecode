@@ -435,6 +435,8 @@ function TreeRow({
       aria-setsize={row.siblingCount}
       className="kubecode-file-tree-row"
       data-active={active || undefined}
+      // A 26px virtual row (ADR 0256 §2): xs keeps its height on a coarse pointer.
+      size="xs"
       data-tree-row-path={row.path}
       id={treeRowId(row.path)}
       role="treeitem"

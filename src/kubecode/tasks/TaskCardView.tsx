@@ -41,7 +41,7 @@ export function TaskCardView({ card, locale, onOpen, selected, t }: {
   const progress = progressOf(card.work)
   const event = card.last_event ? eventLabel(t, card.last_event, locale) : null
   return (
-    <Card className="gap-0 overflow-hidden py-0">
+    <Card className="overflow-hidden" size="compact">
       <button
         aria-current={selected ? 'true' : undefined}
         className="flex w-full min-w-0 flex-col items-start gap-2 rounded-[inherit] p-3 text-left outline-none ring-inset focus-visible:ring-[3px] focus-visible:ring-ring aria-[current=true]:ring-2 aria-[current=true]:ring-primary"

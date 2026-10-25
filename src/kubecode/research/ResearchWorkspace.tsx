@@ -2,10 +2,10 @@ import { useEffect, useState } from 'react'
 import { Archive, CircleAlert, Info } from 'lucide-react'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { IconButton } from '@/components/workspace/IconButton'
-import { StatusBadge } from '@/components/workspace/StatusBadge'
 import type { ViewHeaderProps } from '@/components/workspace/ViewHeader'
 import { Icon } from '@/kubecode/icons'
 import { WORKSPACE_COMMAND_ICONS } from '@/kubecode/icons/workspaceIcons'
@@ -31,6 +31,7 @@ import { ResearchThreadsPanel } from './ResearchThreadsPanel'
 import { useAction } from './useAction'
 import { useResearchBundle, useResearchImports } from './useResearch'
 import { ReaderLoading, ReaderNotice } from '../resources/ReaderStates'
+import { statusToneVariant } from '../statusTone'
 
 export type ResearchWorkspaceProps = {
   agents: AgentDescriptor[]
@@ -173,14 +174,14 @@ export function ResearchWorkspace({
           <h2 className="my-1 text-lg font-semibold [overflow-wrap:anywhere]">{detail.brief.title}</h2>
           <div className="flex flex-wrap items-center gap-2">
             {task ? (
-              <StatusBadge tone={task.stage === 'done' ? 'ok' : 'info'}>{stageLabel(t, task.stage)}</StatusBadge>
+              <Badge variant={statusToneVariant(task.stage === 'done' ? 'ok' : 'info')}>{stageLabel(t, task.stage)}</Badge>
             ) : (
-              <StatusBadge tone={detail.status === 'open' ? 'ok' : 'muted'}>
+              <Badge variant={statusToneVariant(detail.status === 'open' ? 'ok' : 'muted')}>
                 {detail.status === 'open' ? t('kubecode.research.status.open') : t('kubecode.research.status.resolved')}
-              </StatusBadge>
+              </Badge>
             )}
             {detail.archived && (
-              <StatusBadge tone="muted">{t('kubecode.research.status.archived')}</StatusBadge>
+              <Badge variant="secondary">{t('kubecode.research.status.archived')}</Badge>
             )}
             <span className="text-xs text-muted-foreground">
               {t('kubecode.research.revision', { revision: detail.revision })}
@@ -211,7 +212,7 @@ export function ResearchWorkspace({
           <Alert role="status">
             <CircleAlert />
             <AlertDescription>
-              <Button className="h-auto p-0" size="sm" variant="link" onClick={() => setTab('findings')}>
+              <Button size="inline" variant="link" onClick={() => setTab('findings')}>
                 {t('kubecode.research.pendingDecisions', { count: pendingDecisions })}
               </Button>
             </AlertDescription>

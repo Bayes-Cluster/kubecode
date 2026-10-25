@@ -16,8 +16,8 @@ import {
 } from '@/components/ui/dialog'
 import { Field, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet } from '@/components/ui/field'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
-import { DecisionButton } from '@/components/workspace/DecisionButton'
 import { ReferenceChip } from '@/components/workspace/ReferenceChip'
 import type { Translator } from '@/lib/i18n'
 
@@ -210,7 +210,7 @@ export function DmShareDialog({
                     id={id}
                     onCheckedChange={() => toggle(turn.run_id)}
                   />
-                  <FieldLabel className="min-w-0 font-normal [overflow-wrap:anywhere]" htmlFor={id}>
+                  <FieldLabel className="min-w-0 [overflow-wrap:anywhere]" variant="option" htmlFor={id}>
                     {turn.user.slice(0, 120) || turn.run_id.slice(0, 8)}
                   </FieldLabel>
                 </Field>
@@ -249,10 +249,11 @@ export function DmShareDialog({
         )}
         <DialogFooter>
           {preview ? (
-            <DecisionButton
-              busy={busy}
-              variant="primary"
-              onDecide={() => void run(async () => {
+            <Button
+              aria-busy={busy || undefined}
+              aria-disabled={busy || undefined}
+              size="wrap"
+              onClick={busy ? undefined : () => void run(async () => {
                 const message = await api.shareDm(projectId, member.id, {
                   ...request(),
                   digest: preview.digest,
@@ -262,8 +263,9 @@ export function DmShareDialog({
                 close(false)
               })}
             >
+              {busy && <Spinner aria-hidden="true" data-icon="inline-start" />}
               {t('kubecode.dm.shareConfirm')}
-            </DecisionButton>
+            </Button>
           ) : (
             <Button
               disabled={busy || chosen.length === 0}

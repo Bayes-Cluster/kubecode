@@ -2,15 +2,13 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 import type { ComponentType } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
-import { DecisionButton } from '@/components/workspace/DecisionButton'
 import { MemberAvatar, MemberIdentity } from '@/components/workspace/MemberIdentity'
 import { MoreActions } from '@/components/workspace/MoreActions'
 import { ReferenceChip } from '@/components/workspace/ReferenceChip'
-import { PauseButton, StopButton } from '@/components/workspace/SendButton'
 import { ViewHeader } from '@/components/workspace/ViewHeader'
 import { SidebarProvider } from '@/components/ui/sidebar'
 import { WorkspaceNav } from '@/kubecode/app/WorkspaceNav'
-import { WORKSPACE_COMMAND_ICONS, WORKSPACE_DESTINATION_ICONS } from '@/kubecode/icons/workspaceIcons'
+import { WORKSPACE_DESTINATION_ICONS } from '@/kubecode/icons/workspaceIcons'
 
 /** The lucide class of the glyph a component renders, to compare what is drawn with the map. */
 function glyphClass(Glyph: ComponentType) {
@@ -61,7 +59,7 @@ describe('MemberIdentity (ADR 0227)', () => {
         roleLabel="Project manager"
       />,
     )
-    expect(screen.getByText('Needs setup')).toHaveAttribute('data-tone', 'warn')
+    expect(screen.getByText('Needs setup')).toHaveAttribute('data-variant', 'warning')
   })
 
   it('derives initials from one word, many words, and symbols', () => {
@@ -186,32 +184,6 @@ describe('ViewHeader (ADR 0227)', () => {
   })
 })
 
-describe('DecisionButton (ADR 0227)', () => {
-  it('decides in words, says why it cannot, and keeps focus while it records', () => {
-    const onDecide = vi.fn()
-    const { rerender } = render(<DecisionButton variant="primary" onDecide={onDecide}>Accept results</DecisionButton>)
-    fireEvent.click(screen.getByRole('button', { name: 'Accept results' }))
-    expect(onDecide).toHaveBeenCalledTimes(1)
-    expect(screen.getByRole('button', { name: 'Accept results' })).toHaveAttribute('data-variant', 'primary')
-    rerender(<DecisionButton variant="destructive" onDecide={onDecide}>Discard</DecisionButton>)
-    expect(screen.getByRole('button', { name: 'Discard' })).toHaveAttribute('data-variant', 'destructive')
-    rerender(<DecisionButton onDecide={onDecide}>Send back</DecisionButton>)
-    expect(screen.getByRole('button', { name: 'Send back' })).toHaveAttribute('data-variant', 'secondary')
-    rerender(<DecisionButton disabledReason="Look at the changed evidence first." onDecide={onDecide}>Accept results</DecisionButton>)
-    const blocked = screen.getByRole('button', { name: 'Accept results' })
-    expect(blocked).toBeDisabled()
-    expect(blocked).toHaveAccessibleDescription('Look at the changed evidence first.')
-    rerender(<DecisionButton busy onDecide={onDecide}>Accept results</DecisionButton>)
-    const busy = screen.getByRole('button', { name: 'Accept results' })
-    expect(busy.querySelector('.animate-spin')).not.toBeNull()
-    busy.focus()
-    expect(busy).toHaveFocus()
-    expect(busy).toHaveAttribute('aria-busy', 'true')
-    fireEvent.click(busy)
-    expect(onDecide).toHaveBeenCalledTimes(1)
-  })
-})
-
 describe('MoreActions (ADR 0227)', () => {
   it('keeps secondary actions behind one labelled control and runs the chosen one', async () => {
     const copy = vi.fn()
@@ -224,55 +196,7 @@ describe('MoreActions (ADR 0227)', () => {
   })
 })
 
-describe('PauseButton and StopButton (ADR 0227)', () => {
-  it('pauses new work in the scope it names, apart from stopping a run; its name never flips', () => {
-    const onToggle = vi.fn()
-    const { rerender } = render(
-      <>
-        <PauseButton label="Pause new work on this Task" paused={false} onToggle={onToggle} />
-        <StopButton label="Stop Analyst's run" onStop={vi.fn()} />
-      </>,
-    )
-    const pause = screen.getByRole('button', { name: 'Pause new work on this Task' })
-    expect(pause).toHaveAttribute('aria-pressed', 'false')
-    fireEvent.click(pause)
-    expect(onToggle).toHaveBeenCalledTimes(1)
-    rerender(<PauseButton label="Pause new work on this Task" paused onToggle={onToggle} />)
-    expect(screen.getByRole('button', { name: 'Pause new work on this Task' })).toHaveAttribute('aria-pressed', 'true')
-    rerender(<PauseButton busy label="Pause new work on this Task" paused onToggle={onToggle} />)
-    const busy = screen.getByRole('button', { name: 'Pause new work on this Task' })
-    expect(busy).not.toBeDisabled()
-    expect(busy).toHaveAttribute('aria-busy', 'true')
-    expect(busy.querySelector('.animate-spin')).not.toBeNull()
-    fireEvent.click(busy)
-    expect(onToggle).toHaveBeenCalledTimes(1)
-  })
-
-  it('can show a short visible label that starts its accessible name', () => {
-    render(<PauseButton label="Pause new work on this Task" paused={false} text="Pause new work" onToggle={vi.fn()} />)
-    const pause = screen.getByRole('button', { name: 'Pause new work on this Task' })
-    expect(pause).toHaveTextContent('Pause new work')
-    expect(pause).toHaveAttribute('data-size', 'sm')
-  })
-})
-
 describe('what the controls draw (ADR 0227)', () => {
-  it('draws stop, pause, resume, and send with the glyphs the map names, all different', () => {
-    const { rerender } = render(
-      <>
-        <StopButton label="Stop run" onStop={vi.fn()} />
-        <PauseButton label="Pause new work" paused={false} onToggle={vi.fn()} />
-      </>,
-    )
-    const stop = renderedGlyph(screen.getByRole('button', { name: 'Stop run' }))
-    const pause = renderedGlyph(screen.getByRole('button', { name: 'Pause new work' }))
-    expect(stop).toBe(glyphClass(WORKSPACE_COMMAND_ICONS.stopRun.Icon))
-    expect(pause).toBe(glyphClass(WORKSPACE_COMMAND_ICONS.pauseOrchestration.Icon))
-    expect(stop).not.toBe(pause)
-    rerender(<PauseButton label="Pause new work" paused onToggle={vi.fn()} />)
-    expect(renderedGlyph(screen.getByRole('button', { name: 'Pause new work' }))).toBe(glyphClass(WORKSPACE_COMMAND_ICONS.resumeOrchestration.Icon))
-  })
-
   it('draws each navigation destination with its own glyph from the map', () => {
     const t = ((key: string) => key) as never
     render(

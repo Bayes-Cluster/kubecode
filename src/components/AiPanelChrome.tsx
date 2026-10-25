@@ -17,7 +17,8 @@ import {
   EmptyTitle,
 } from '@/components/ui/empty'
 import { FieldDescription, FieldError } from '@/components/ui/field'
-import { StopButton } from '@/components/workspace/SendButton'
+import { Spinner } from '@/components/ui/spinner'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { ICON_SIZES } from '@/kubecode/icons'
 import { WORKSPACE_COMMAND_ICONS } from '@/kubecode/icons/workspaceIcons'
 import { WikilinkChatInput } from './WikilinkChatInput'
@@ -138,6 +139,7 @@ function ComposerInput({
 }
 
 const SendIcon = WORKSPACE_COMMAND_ICONS.send.Icon
+const StopIcon = WORKSPACE_COMMAND_ICONS.stopRun.Icon
 
 function ComposerSendButton({
   canSend,
@@ -157,8 +159,6 @@ function ComposerSendButton({
   return (
     <PromptInputSubmit
       aria-label={label}
-      className="kubecode-send-button"
-      data-can-send={canSend}
       data-testid="agent-send"
       disabled={!canSend}
       title={label}
@@ -176,10 +176,13 @@ function ComposerStopButton({
   failedLabel,
   label,
   onStop,
+  shortLabel,
 }: {
   failedLabel: string
   label: string
   onStop: () => void | Promise<unknown>
+  /** The words shown on touch screens, where there are no tooltips. */
+  shortLabel: string
 }) {
   const [busy, setBusy] = useState(false)
   const [announcement, setAnnouncement] = useState('')
@@ -195,7 +198,26 @@ function ComposerStopButton({
   }
   return (
     <>
-      <StopButton busy={busy} label={label} testId="agent-stop" onStop={stop} />
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              aria-busy={busy || undefined}
+              aria-disabled={busy || undefined}
+              aria-label={label}
+              data-testid="agent-stop"
+              size="sm"
+              type="button"
+              variant="outline"
+              onClick={busy ? undefined : stop}
+            >
+              {busy ? <Spinner aria-hidden="true" /> : <StopIcon aria-hidden fill="currentColor" size={ICON_SIZES.status} />}
+              <span aria-hidden="true" className="pointer-fine:sr-only">{shortLabel}</span>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{label}</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
       <span className="sr-only" role="status">{announcement}</span>
     </>
   )
@@ -433,6 +455,7 @@ export function AiPanelComposer({
           <ComposerStopButton
             failedLabel={t('kubecode.composer.stopFailed', { target: agentLabel })}
             label={t('kubecode.composer.stopTarget', { target: agentLabel })}
+            shortLabel={t('kubecode.vocab.command.stopRun')}
             onStop={onStop}
           />
           {onActiveSend && (

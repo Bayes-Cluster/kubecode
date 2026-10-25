@@ -74,7 +74,7 @@ async function send(page: Page, text: string) {
 /** Nothing waits: the navigation counts a quiet zero. */
 async function nothingWaits(page: Page) {
   await expect(needsYouPlace(page).locator('[data-slot="badge"]')).toHaveText('0', { timeout: 20_000 })
-  await expect(needsYouPlace(page).locator('[data-slot="badge"]')).toHaveAttribute('data-tone', 'muted')
+  await expect(needsYouPlace(page).locator('[data-slot="badge"]')).toHaveAttribute('data-variant', 'secondary')
 }
 
 test.describe('on a desktop', () => {
@@ -265,7 +265,7 @@ test.describe('on a phone', () => {
       // On a 4K-wide pane (ADR 0240) the strip, its list and the card share one width, centred.
       await page.setViewportSize({ width: 2560, height: 1440 })
       {
-        const card = (await page.locator('.kubecode-conversation-dock .kubecode-prompt-input').boundingBox())!
+        const card = (await page.locator('.kubecode-conversation-dock [data-testid="conversation-prompt-input"]').boundingBox())!
         const stripWide = (await strip(page).boundingBox())!
         const pane = (await page.locator('.kubecode-channel-main').boundingBox())!
         expect(Math.abs(card.width - stripWide.width)).toBeLessThanOrEqual(2)
@@ -273,6 +273,8 @@ test.describe('on a phone', () => {
         expect(card.width).toBeLessThanOrEqual(960)
         expect(Math.abs((card.x - pane.x) - (pane.x + pane.width - card.x - card.width))).toBeLessThanOrEqual(2)
         await running.click()
+        // The official Popover zooms in as it opens; measure it once it has settled.
+        await list.evaluate((element) => Promise.all(element.getAnimations({ subtree: true }).map((animation) => animation.finished)))
         const wideList = (await list.boundingBox())!
         expect(Math.abs(wideList.width - card.width)).toBeLessThanOrEqual(2)
         await page.keyboard.press('Escape')

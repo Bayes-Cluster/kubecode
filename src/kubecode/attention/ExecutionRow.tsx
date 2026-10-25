@@ -1,13 +1,21 @@
 import { QueueItem } from '@/components/ai-elements/queue'
 import { Shimmer } from '@/components/ai-elements/shimmer'
+import { useId } from 'react'
+
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Item, ItemActions, ItemContent, ItemDescription, ItemTitle } from '@/components/ui/item'
+import { Spinner } from '@/components/ui/spinner'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { MemberIdentity } from '@/components/workspace/MemberIdentity'
-import { StopButton } from '@/components/workspace/SendButton'
+import { ICON_SIZES } from '@/kubecode/icons'
+import { WORKSPACE_COMMAND_ICONS } from '@/kubecode/icons/workspaceIcons'
 import type { Translator } from '@/lib/i18n'
 
 import type { AttentionTaskRef, ExecutionView } from '../api'
 import { askerName } from './attentionTargets'
+
+const StopGlyph = WORKSPACE_COMMAND_ICONS.stopRun.Icon
 
 export type ExecutionRowProps = {
   /** The only running work at the dock: framed as an outline Item on its own. */
@@ -38,40 +46,55 @@ export function ExecutionRow({ alone = false, entryKey, onStop, runs, stopping, 
   const queued = runs.reduce((sum, run) => sum + run.queued, 0)
   const waiting = waitText(runs, t)
   const title = task ? task.title : t('kubecode.execution.replying')
+  const stopHintId = useId()
+  const stopLabel = task ? t('kubecode.execution.stopTask', { task: task.title }) : t('kubecode.execution.stopReply', { name })
   return (
     // A Queue item (ADR 0242) holding one Item: who and the Stop on the first line, the work on the second.
-    <QueueItem className="kubecode-execution-row list-none p-0" data-entry={entryKey}>
+    <QueueItem className="list-none p-0" data-entry={entryKey}>
       <Item className="w-full flex-nowrap py-1.5" size="sm" variant={alone ? 'outline' : 'default'}>
         <ItemContent className="min-w-0 gap-0.5">
           <ItemTitle className="flex w-full min-w-0 items-center gap-2">
             <span className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
               {runs.map((run) => (run.member
-                ? <MemberIdentity className="min-w-0 truncate whitespace-nowrap" handle={run.member.handle} key={run.run_id} name={run.member.name} role={run.member.role === 'general' ? 'manager' : 'specialist'} size="sm" />
+                ? <MemberIdentity className="min-w-0 overflow-hidden whitespace-nowrap" handle={run.member.handle} key={run.run_id} name={run.member.name} role={run.member.role === 'general' ? 'manager' : 'specialist'} size="sm" />
                 : <strong key={run.run_id}>{askerName(run, t)}</strong>))}
             </span>
-            {queued > 0 && <Badge className="kubecode-execution-queued shrink-0" variant="secondary">{t('kubecode.execution.queuedCount', { count: queued })}</Badge>}
+            {queued > 0 && <Badge className="shrink-0" data-testid="execution-queued" variant="secondary">{t('kubecode.execution.queuedCount', { count: queued })}</Badge>}
           </ItemTitle>
-          <ItemDescription className="kubecode-execution-state line-clamp-1">
+          <ItemDescription className="line-clamp-1">
             {stopping
               ? t('kubecode.execution.stopping')
               : waiting
-                ? <>{waiting}{' · '}<span className="kubecode-execution-title" title={title}>{title}</span></>
-                : <span className="kubecode-execution-title" title={title}><Shimmer as="span" className="kubecode-shimmer">{title}</Shimmer></span>}
+                ? <>{waiting}{' · '}<span data-testid="execution-title" title={title}>{title}</span></>
+                : <span data-testid="execution-title" title={title}><Shimmer as="span">{title}</Shimmer></span>}
           </ItemDescription>
         </ItemContent>
         <ItemActions>
-          <StopButton
-            busy={stopping}
-            description={task
-              ? t('kubecode.execution.stopTaskHint', { task: task.title })
-              : t('kubecode.execution.stopReplyHint', { name })}
-            label={task
-              ? t('kubecode.execution.stopTask', { task: task.title })
-              : t('kubecode.execution.stopReply', { name })}
-            shortLabel={task ? t('kubecode.execution.stopTaskShort') : t('kubecode.execution.stopReplyShort')}
-            variant="ghost"
-            onStop={onStop}
-          />
+          {/* Stops every turn of this row now, apart from sending; on touch it says so in text (ADR 0227, ADR 0256). */}
+          <span className="sr-only" id={stopHintId}>
+            {task ? t('kubecode.execution.stopTaskHint', { task: task.title }) : t('kubecode.execution.stopReplyHint', { name })}
+          </span>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  aria-busy={stopping || undefined}
+                  aria-describedby={stopHintId}
+                  aria-disabled={stopping || undefined}
+                  aria-label={stopLabel}
+                  size="sm"
+                  variant="ghost"
+                  onClick={stopping ? undefined : onStop}
+                >
+                  {stopping ? <Spinner aria-hidden="true" /> : <StopGlyph aria-hidden fill="currentColor" size={ICON_SIZES.status} />}
+                  <span aria-hidden="true" className="pointer-fine:sr-only">
+                    {task ? t('kubecode.execution.stopTaskShort') : t('kubecode.execution.stopReplyShort')}
+                  </span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{stopLabel}</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </ItemActions>
       </Item>
     </QueueItem>

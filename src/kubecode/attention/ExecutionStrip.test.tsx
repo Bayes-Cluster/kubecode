@@ -61,7 +61,7 @@ describe('ExecutionStrip', () => {
     expect(region).toHaveTextContent('Analyst')
     expect(region).toHaveTextContent('2 queued')
     // Work in progress shimmers, in words (AI Elements Shimmer, #232).
-    expect(region.querySelector('.kubecode-shimmer')).toHaveTextContent('Structured pruning')
+    expect(within(region).getByTestId('execution-title')).toHaveTextContent('Structured pruning')
     // One run is one compact row, never folded behind a count.
     expect(within(region).queryByRole('button', { name: /running/ })).not.toBeInTheDocument()
     const stop = within(region).getByRole('button', { name: 'Stop Structured pruning' })
@@ -145,7 +145,7 @@ describe('ExecutionStrip', () => {
     const list = await screen.findByRole('dialog', { name: 'Working now' })
     // The list is the official Queue (ADR 0242): one section, each piece of work an Item with its Stop.
     expect(within(list).getByRole('button', { name: /3 running/ })).toHaveAttribute('data-state', 'open')
-    expect(list.querySelectorAll('li [data-slot="item"]')).toHaveLength(3)
+    expect(list.querySelectorAll('li > [data-slot="item"]')).toHaveLength(3)
     expect(within(list).getByText('Coder')).toBeInTheDocument()
     expect(within(list).getByRole('button', { name: 'Stop Structured pruning' })).toBeInTheDocument()
     expect(within(list).getByRole('button', { name: 'Stop Quantization' })).toBeInTheDocument()

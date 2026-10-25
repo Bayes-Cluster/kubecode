@@ -75,7 +75,7 @@ type ComposerAddMenuProps = {
 /** One choice in the add menu: an official Item rendered as a button. */
 function MenuRow({ className, ...props }: ComponentProps<'button'>) {
   return (
-    <Item asChild className={cn('text-left pointer-coarse:min-h-11', className)} size="sm">
+    <Item asChild className={cn('text-left', className)} size="sm">
       <button type="button" {...props} />
     </Item>
   )
@@ -595,7 +595,7 @@ export function ComposerAddMenu({
                         {visibleCapabilities.map((item, index) => (
                           <CommandItem
                             aria-describedby={item.enabled ? undefined : `${item.id}-reason-${index}`}
-                            className="min-h-12 items-start pointer-coarse:min-h-11"
+                            className="min-h-12 items-start"
                             disabled={!item.enabled}
                             key={item.id}
                             onSelect={() => chooseCapability(item)}

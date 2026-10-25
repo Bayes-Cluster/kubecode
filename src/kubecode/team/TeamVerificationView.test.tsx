@@ -32,8 +32,8 @@ describe('TeamVerificationView', () => {
 
     const rejected = screen.getByText('The parser still fails.').closest('[data-slot="item"]')
     expect(rejected).not.toBeNull()
-    expect(screen.getByText('Rejected')).toHaveAttribute('data-tone', 'danger')
-    expect(screen.getByText('Running')).toHaveAttribute('data-tone', 'info')
+    expect(screen.getByText('Rejected')).toHaveAttribute('data-variant', 'destructive')
+    expect(screen.getByText('Running')).toHaveAttribute('data-variant', 'info')
   })
 
   it('renders nothing before the first round', () => {

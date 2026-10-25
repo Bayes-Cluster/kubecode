@@ -58,7 +58,7 @@ export function TaskActivity({ bundle = null, detail, onBundleChanged, projectId
                   </ItemContent>
                   {step.message_id && (
                     <ItemActions>
-                      <Button className="pointer-coarse:min-h-11" size="xs" variant="ghost" onClick={() => showInGeneral(step.message_id as string)}>
+                      <Button size="xs" variant="ghost" onClick={() => showInGeneral(step.message_id as string)}>
                         {t('kubecode.task.showInGeneral')}
                       </Button>
                     </ItemActions>
@@ -140,7 +140,7 @@ function RecentInGeneral({ onShow, projectId, taskId }: {
     <section aria-label={t('kubecode.task.activity.inGeneral')} className="flex flex-col gap-2">
       <h4 className="text-sm font-semibold">{t('kubecode.task.activity.inGeneral')}</h4>
       {failed ? (
-        <ReaderNotice action={<Button className="pointer-coarse:min-h-11" size="xs" variant="outline" onClick={retry}>{t('kubecode.retry')}</Button>} failed>
+        <ReaderNotice action={<Button size="xs" variant="outline" onClick={retry}>{t('kubecode.retry')}</Button>} failed>
           {t('kubecode.task.activity.inGeneralFailed')}
         </ReaderNotice>
       ) : list === null ? (
@@ -213,7 +213,7 @@ function ExecutionRecords({ bundle, detail, onBundleChanged }: {
                   <ItemActions>
                   <Button
                     aria-label={t('kubecode.task.openSessionOf', { title: work.title })}
-                    className="pointer-coarse:min-h-11"
+                   
                     size="xs"
                     variant="outline"
                     onClick={() => openSession(work.conversation_id as string)}

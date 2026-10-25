@@ -285,7 +285,7 @@ export function WorkBoard({
               id="work-include-closed"
               onCheckedChange={(checked) => patch({ include_closed: checked === true })}
             />
-            <FieldLabel className="font-normal" htmlFor="work-include-closed">
+            <FieldLabel variant="option" htmlFor="work-include-closed">
               {t('kubecode.work.filter.includeClosed')}
             </FieldLabel>
           </Field>
@@ -472,8 +472,8 @@ function FilterSelect({
   value: string
 }) {
   return (
-    <Field className="kubecode-work-filter w-auto" orientation="horizontal">
-      <FieldLabel className="shrink-0 font-normal text-muted-foreground">{label}</FieldLabel>
+    <Field className="w-auto" orientation="horizontal">
+      <FieldLabel className="shrink-0" variant="option">{label}</FieldLabel>
       <Select value={value || ALL} onValueChange={(next) => onChange(next === ALL ? '' : next)}>
         <SelectTrigger aria-label={label} className="max-w-48" size="sm">
           <SelectValue />

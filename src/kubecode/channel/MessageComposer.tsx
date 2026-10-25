@@ -372,7 +372,7 @@ export function MessageComposer({
         tools={(
           // Add context (ADR 0242): one menu for what a message can carry besides its words.
           <PromptInputActionMenu>
-            <PromptInputActionMenuTrigger aria-label={t('kubecode.vocab.command.addContext')} className="kubecode-add-context" tooltip={t('kubecode.vocab.command.addContext')}>
+            <PromptInputActionMenuTrigger aria-label={t('kubecode.vocab.command.addContext')} tooltip={t('kubecode.vocab.command.addContext')}>
               <Icon role="command" source={WORKSPACE_COMMAND_ICONS.addContext.Icon} />
             </PromptInputActionMenuTrigger>
             <PromptInputActionMenuContent

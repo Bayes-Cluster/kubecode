@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 
+import { Separator } from '@/components/ui/separator'
 import { ViewHeader } from '@/components/workspace/ViewHeader'
 import type { TranslationKey, Translator } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
@@ -39,20 +40,25 @@ export type DestinationHeaderProps = {
 
 /**
  * The header every Workspace destination shares (#231): its glyph and name as
- * a level-2 heading, a description, facts and actions, over the shell's
- * hairline. A destination is never "back" anywhere, so there is no Back.
+ * a level-2 heading, a description, facts and actions, over the official
+ * Separator (ADR 0256). A destination is never "back" anywhere, so there is
+ * no Back. The wrapper is the layout container; a parent that bleeds it to
+ * its edges passes the margins as `className`.
  */
 export function DestinationHeader({ actions, className, description, destination, meta, t, title }: DestinationHeaderProps) {
   return (
-    <ViewHeader
-      actions={actions}
-      className={cn('kubecode-destination-header', className)}
-      description={description}
-      destination={destination}
-      icon={<Icon role="navigation" source={GLYPHS[destination].Icon} />}
-      level={2}
-      meta={meta}
-      title={title ?? t(DESTINATION_TITLES[destination])}
-    />
+    <div className={cn('flex shrink-0 flex-col', className)}>
+      <ViewHeader
+        actions={actions}
+        className="p-(--ws-space-3) md:px-(--ws-space-5) md:py-(--ws-space-3)"
+        description={description}
+        destination={destination}
+        icon={<Icon role="navigation" source={GLYPHS[destination].Icon} />}
+        level={2}
+        meta={meta}
+        title={title ?? t(DESTINATION_TITLES[destination])}
+      />
+      <Separator />
+    </div>
   )
 }

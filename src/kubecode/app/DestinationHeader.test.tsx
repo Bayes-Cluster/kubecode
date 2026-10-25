@@ -12,9 +12,11 @@ describe('DestinationHeader', () => {
     for (const destination of Object.keys(DESTINATION_TITLES) as Array<keyof typeof DESTINATION_TITLES>) {
       const { container, unmount } = render(<DestinationHeader destination={destination} t={t} />)
       const header = container.querySelector('header')!
-      expect(header).toHaveClass('kubecode-destination-header')
       expect(header).toHaveAttribute('data-destination', destination)
-      expect(header.querySelector('.kubecode-view-header-icon svg')).not.toBeNull()
+      // ADR 0256: the official Item owns the header; the glyph is its media, the hairline the official Separator.
+      expect(header.querySelector('[data-slot="item-media"] svg')).not.toBeNull()
+      expect(header.querySelector('[data-slot="item-title"] h2')).toHaveTextContent(t(DESTINATION_TITLES[destination]))
+      expect(header.parentElement?.querySelector('[data-slot="separator"]')).not.toBeNull()
       expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent(t(DESTINATION_TITLES[destination]))
       unmount()
     }

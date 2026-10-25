@@ -30,7 +30,7 @@ describe('NeedsYouView', () => {
   it('is a Workspace destination with the same header as the others', () => {
     view()
     const region = screen.getByRole('region', { name: 'Needs you' })
-    const header = region.querySelector('header.kubecode-destination-header')
+    const header = region.querySelector('header[data-destination]')
     expect(header).toHaveAttribute('data-destination', 'needs-you')
     expect(within(region).getByRole('heading', { level: 2, name: 'Needs you' })).toBeInTheDocument()
   })

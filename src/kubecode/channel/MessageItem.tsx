@@ -10,7 +10,7 @@ import type { Translator } from '@/lib/i18n'
 
 import type { ChannelMessage, ChannelThread, ProjectContextRef } from '../api'
 import { DeliveryStatus } from '../attention/DeliveryStatus'
-import { ConversationIdentity } from '../members/ConversationIdentity'
+import { Identity } from '../members/Identity'
 import type { IdentityView, RecipientsView } from '../members/memberIdentity'
 import type { ReferenceLabel } from '../references/referenceLabels'
 import { ReferenceSources } from '../resources/ReferenceSources'
@@ -20,6 +20,11 @@ import { ConversationResponse } from './ConversationResponse'
 import type { MessageDeliveryView } from './delivery'
 import { messageDate, shortTime } from './timeline'
 
+
+/** A recipient in the researcher's own meta line: the name alone, on one line. */
+function nameOnly(view: IdentityView): IdentityView {
+  return { ...view, handle: undefined, roleLabel: undefined }
+}
 export type MessageItemProps = {
   message: ChannelMessage
   author: IdentityView
@@ -133,17 +138,19 @@ export function MessageItem({
   const time = date && (
     <time dateTime={date.toISOString()} title={date.toLocaleString(dateLocale)}>{shortTime(date, dateLocale)}</time>
   )
-  // Whom it reached sits in the author line: "Investigate → General" (#229).
+  // Whom it reached sits in the author line: "Investigate → General" (#229). The
+  // researcher's own meta stays one line: the recipient is named, not described.
+  const recipientClass = own ? 'min-w-0 overflow-hidden whitespace-nowrap' : undefined
   const recipientLine = recipients.kind !== 'none' && (
     <span className="kubecode-message-recipients inline-flex min-w-0 flex-wrap items-center gap-1 text-xs text-muted-foreground">
-      <span aria-hidden="true" className="kubecode-message-recipients-arrow text-muted-foreground">→</span>
+      <span aria-hidden="true" className="text-muted-foreground" data-testid="recipients-arrow">→</span>
       <span className="sr-only">
         {recipients.kind === 'members' && recipients.handedOff ? t('kubecode.channel.handedOff') : t('kubecode.channel.to')}
       </span>
       {recipients.kind === 'members'
-        ? recipients.members.map((member) => <ConversationIdentity from={focusKey} key={member.key} size="sm" view={member} />)
+        ? recipients.members.map((member) => <Identity className={recipientClass} from={focusKey} key={member.key} size="sm" view={own ? nameOnly(member) : member} />)
         : recipients.manager
-          ? <ConversationIdentity from={focusKey} size="sm" view={recipients.manager} />
+          ? <Identity className={recipientClass} from={focusKey} size="sm" view={own ? nameOnly(recipients.manager) : recipients.manager} />
           : <span>{t('kubecode.channel.toManager')}</span>}
     </span>
   )
@@ -173,7 +180,7 @@ export function MessageItem({
           </span>
         ) : (
           <>
-            <ConversationIdentity
+            <Identity
               className="kubecode-message-author"
               from={focusKey}
               meta={time}
@@ -200,7 +207,7 @@ export function MessageItem({
               <Icon role="command" source={WORKSPACE_COMMAND_ICONS.reply.Icon} />
             </MessageAction>
           )}
-          <MoreActions items={actions} label={t('kubecode.channel.messageActions', { author: author.name })} />
+          <MoreActions items={actions} label={t('kubecode.channel.messageActions', { author: author.name })} size={coarse ? 'md' : 'sm'} />
         </MessageActions>
       </div>
       <MessageContent className="kubecode-message-content">

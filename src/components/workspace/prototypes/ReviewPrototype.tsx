@@ -50,6 +50,7 @@ export function ReviewMain({ go, request, t }: ScreenProps) {
   return (
     <div className="kubecode-proto-review">
       <ViewHeader
+        className="px-(--ws-space-5) py-(--ws-space-3) max-md:p-(--ws-space-3)"
         back={{ label: t('kubecode.proto.backTo', { place: fromLabel }), onBack: () => go({ screen: request.from, state: 'default' }) }}
         icon={<Icon role="navigation" source={WORKSPACE_OBJECT_ICONS.task.Icon} />}
         level={1}

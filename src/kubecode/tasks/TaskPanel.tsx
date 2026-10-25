@@ -1,6 +1,7 @@
 import { CircleAlert } from 'lucide-react'
 import { useCallback, useState } from 'react'
 
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
@@ -15,8 +16,6 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Spinner } from '@/components/ui/spinner'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { DecisionButton } from '@/components/workspace/DecisionButton'
-import { StatusBadge } from '@/components/workspace/StatusBadge'
 import { MoreActions, type MoreActionItem } from '@/components/workspace/MoreActions'
 import { Icon } from '@/kubecode/icons'
 import { WORKSPACE_DESTINATION_ICONS, WORKSPACE_OBJECT_ICONS } from '@/kubecode/icons/workspaceIcons'
@@ -128,7 +127,7 @@ export function TaskPanel({ entry, projectId }: InspectorPanelProps<Extract<Insp
   if (status === 'error') {
     return (
       <InspectorPanel icon={<TaskIcon />} title={t('kubecode.nav.taskDetail')}>
-        <ReaderNotice action={<Button className="pointer-coarse:min-h-11" size="xs" variant="outline" onClick={reload}>{t('kubecode.retry')}</Button>} failed>
+        <ReaderNotice action={<Button size="xs" variant="outline" onClick={reload}>{t('kubecode.retry')}</Button>} failed>
           {t('kubecode.task.loadFailed')}
         </ReaderNotice>
       </InspectorPanel>
@@ -183,7 +182,7 @@ export function TaskPanel({ entry, projectId }: InspectorPanelProps<Extract<Insp
     >
       <div className="flex min-w-0 flex-col gap-3">
         {/* What happens next, and where it is said: the header keeps only the Task's own facts (360px inspector). */}
-        <Alert aria-label={t('kubecode.task.nextTitle')} className="kubecode-task-next-step" data-tone={next.tone} role="group">
+        <Alert aria-label={t('kubecode.task.nextTitle')} role="group" variant={next.tone === 'warn' ? 'warning' : 'default'}>
           {next.tone === 'warn' && <CircleAlert aria-hidden />}
           <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
             {/* A real basis: on a narrow inspector the action wraps below the sentence instead of squeezing it. */}
@@ -198,9 +197,10 @@ export function TaskPanel({ entry, projectId }: InspectorPanelProps<Extract<Insp
         {/* An accepted (Done) Task has no work left to run, pause or stop (#229). */}
         {detail && !archived && detail.stage !== 'done' && <TaskWork detail={detail} projectId={projectId} onChanged={changed} />}
         {archived && (
-          <DecisionButton busy={busy} variant="secondary" onDecide={() => void setArchived(false)}>
+          <Button aria-busy={busy || undefined} aria-disabled={busy || undefined} size="wrap" variant="outline" onClick={busy ? undefined : () => void setArchived(false)}>
+            {busy && <Spinner aria-hidden="true" data-icon="inline-start" />}
             {t('kubecode.task.restore')}
-          </DecisionButton>
+          </Button>
         )}
         {draft || !detail ? overview : (
           <Tabs className="min-w-0" value={tab} onValueChange={(value) => setTab(value as TaskTab)}>
@@ -208,7 +208,7 @@ export function TaskPanel({ entry, projectId }: InspectorPanelProps<Extract<Insp
               <TabsTrigger value="overview">{t('kubecode.task.tab.overview')}</TabsTrigger>
               <TabsTrigger value="results">
                 {t('kubecode.task.tab.results')}
-                {reviewCount > 0 && <StatusBadge tone="info">{reviewCount}</StatusBadge>}
+                {reviewCount > 0 && <Badge variant="info">{reviewCount}</Badge>}
               </TabsTrigger>
               <TabsTrigger value="activity">{t('kubecode.task.tab.activity')}</TabsTrigger>
             </TabsList>

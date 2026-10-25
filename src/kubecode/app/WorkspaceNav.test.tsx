@@ -107,7 +107,7 @@ describe('WorkspaceNav', () => {
     const place = screen.getByRole('button', { name: /^kubecode\.nav\.needsYou/ })
     expect(place).toHaveAttribute('aria-current', 'page')
     expect(place).toHaveTextContent('3')
-    expect(place.querySelector('[data-tone="warn"]')).not.toBeNull()
+    expect(place.querySelector('[data-variant="warning"]')).not.toBeNull()
     expect(screen.queryByRole('button', { name: /Run pytest/ })).not.toBeInTheDocument()
     fireEvent.click(place)
     expect(handlers.onOpen).toHaveBeenLastCalledWith('needs-you')
@@ -116,7 +116,7 @@ describe('WorkspaceNav', () => {
   it('counts nothing as a quiet zero while the list loads or nothing waits', () => {
     nav({ needsYou: [] })
     const place = screen.getByRole('button', { name: /^kubecode\.nav\.needsYou/ })
-    expect(place.querySelector('[data-tone="warn"]')).toBeNull()
+    expect(place.querySelector('[data-variant="warning"]')).toBeNull()
   })
 
   it('says on General how many of the researcher’s messages were not delivered', () => {

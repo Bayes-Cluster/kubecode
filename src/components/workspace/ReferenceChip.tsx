@@ -80,7 +80,7 @@ export function ReferenceChip({
   return (
     // On touch the covering trigger, inside the 1px border, is at least 44px tall.
     <Attachment
-      className={cn('kubecode-reference-chip min-w-0 pointer-coarse:min-h-[46px]', className)}
+      className={cn('min-w-0', className)}
       data-kind={kind}
       data-reference-state={state?.kind ?? 'current'}
       size="xs"
@@ -113,7 +113,7 @@ export function ReferenceChip({
         <AttachmentActions>
           <AttachmentAction
             aria-label={removeLabel}
-            className="pointer-coarse:size-[44px]"
+           
             data-reference-chip-action="remove"
             type="button"
             onClick={onRemove}

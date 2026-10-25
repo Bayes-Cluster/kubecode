@@ -56,6 +56,7 @@ import {
   type SessionListPreferences,
   type SessionSort,
 } from './sessionList'
+import { useSidebarMenuSize } from './app/useSidebarMenuSize'
 
 type SessionSidebarListProps = {
   activeConversationId: string | null
@@ -104,6 +105,7 @@ export function SessionSidebarList({
   teams = [],
   wechat,
 }: SessionSidebarListProps) {
+  const menuSize = useSidebarMenuSize()
   const [preferences, setPreferences] = useState<SessionListPreferences>(() => (
     readSessionListPreferences(localStorage)
   ))
@@ -306,7 +308,7 @@ export function SessionSidebarList({
               <SidebarMenu>
                 {!searching && (
                   <SidebarMenuItem>
-                    <SidebarMenuButton className="pointer-coarse:min-h-(--ws-touch-target)" onClick={() => onNewSession(project.id)}>
+                    <SidebarMenuButton size={menuSize} onClick={() => onNewSession(project.id)}>
                       <Plus aria-hidden="true" />
                       <span>{t('kubecode.newSession')}</span>
                     </SidebarMenuButton>
@@ -372,7 +374,7 @@ export function SessionSidebarList({
 /** An empty execution history: the official Empty, compact for the navigation. */
 function SidebarEmpty({ children }: { children: ReactNode }) {
   return (
-    <Empty className="p-4">
+    <Empty size="compact">
       <EmptyHeader>
         <EmptyDescription>{children}</EmptyDescription>
       </EmptyHeader>
@@ -412,6 +414,7 @@ function SessionRow({
   teamRole,
   wechat,
 }: SessionRowProps) {
+  const menuSize = useSidebarMenuSize()
   const title = conversation.title || t('kubecode.untitledSession')
   const wechatBound = Boolean(wechat?.linked && wechat.boundConversationId === conversation.id)
   const unbindable = wechatUnbindableReason(conversation)
@@ -446,8 +449,7 @@ function SessionRow({
       <DropdownMenuTrigger asChild>
         <SidebarMenuAction
           aria-label={t('kubecode.sessionListActions', { title })}
-          // Centred on the taller touch-sized row.
-          className="pointer-coarse:translate-y-[calc((var(--ws-touch-target)-2rem)/2)]"
+         
         >
           <Ellipsis aria-hidden="true" />
         </SidebarMenuAction>
@@ -504,7 +506,7 @@ function SessionRow({
   if (nested) {
     return (
       <SidebarMenuSubItem data-archived={conversation.archived}>
-        <SidebarMenuSubButton asChild className="pointer-coarse:min-h-(--ws-touch-target) pr-8" isActive={active}>
+        <SidebarMenuSubButton asChild className="pr-8" isActive={active} size={menuSize === 'lg' ? 'lg' : 'md'}>
           <button aria-label={label} type="button" onClick={() => onSelect(conversation.id)}>
             {content}
           </button>
@@ -515,7 +517,7 @@ function SessionRow({
   }
   return (
     <SidebarMenuItem data-archived={conversation.archived}>
-      <SidebarMenuButton className="pointer-coarse:min-h-(--ws-touch-target)" aria-label={label} isActive={active} onClick={() => onSelect(conversation.id)}>
+      <SidebarMenuButton aria-label={label} isActive={active} size={menuSize} onClick={() => onSelect(conversation.id)}>
         {content}
       </SidebarMenuButton>
       {actions}

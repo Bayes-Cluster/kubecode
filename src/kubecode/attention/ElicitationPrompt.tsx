@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 
 import {
   Confirmation,
+  ConfirmationAction,
   ConfirmationActions,
   ConfirmationRequest,
   ConfirmationTitle,
@@ -16,13 +17,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import type { Translator } from '@/lib/i18n'
 
 import type { ElicitationAnswer, PendingElicitation } from '../session/conversationReducer'
 import { elicitationComplete } from '../session/sessionModel'
 import { isGone } from './attentionContext'
-import { PromptDecision, PromptOutcome } from './PromptDecision'
+import { PromptOutcome } from './PromptOutcome'
 
 export type ElicitationPromptProps = {
   elicitation: PendingElicitation
@@ -61,6 +63,11 @@ export function ElicitationPrompt({ answers, elicitation, heading, onAnswerChang
     }
   }
   const complete = elicitationComplete(elicitation, answers)
+  const declining = busy === 'decline' || resolving
+  const submitting = busy === 'submit' || resolving
+  // Why the answers cannot be sent yet, in words beside the decision.
+  const incomplete = complete ? undefined : t('kubecode.attention.answerRequired')
+  const incompleteId = useId()
   return (
     // The official Confirmation with a Field per answer (ADR 0242); a named group the dock can focus.
     <Confirmation
@@ -120,17 +127,28 @@ export function ElicitationPrompt({ answers, elicitation, heading, onAnswerChang
         </FieldGroup>
       </ConfirmationRequest>
       <ConfirmationActions className="flex-wrap justify-start self-stretch">
-        <PromptDecision busy={busy === 'decline' || resolving} variant="secondary" onDecide={() => void resolve(false)}>
-          {t('kubecode.decline')}
-        </PromptDecision>
-        <PromptDecision
-          busy={busy === 'submit' || resolving}
-          disabledReason={complete ? undefined : t('kubecode.attention.answerRequired')}
-          variant="primary"
-          onDecide={() => void resolve(true)}
+        <ConfirmationAction
+          aria-busy={declining || undefined}
+          aria-disabled={declining || undefined}
+          size="wrap"
+          variant="outline"
+          onClick={declining ? undefined : () => void resolve(false)}
         >
+          {declining && <Spinner aria-hidden="true" data-icon="inline-start" />}
+          {t('kubecode.decline')}
+        </ConfirmationAction>
+        <ConfirmationAction
+          aria-busy={submitting || undefined}
+          aria-describedby={incomplete ? incompleteId : undefined}
+          aria-disabled={submitting || undefined}
+          disabled={Boolean(incomplete) && !submitting}
+          size="wrap"
+          onClick={submitting ? undefined : () => void resolve(true)}
+        >
+          {submitting && <Spinner aria-hidden="true" data-icon="inline-start" />}
           {t('kubecode.submitAnswers')}
-        </PromptDecision>
+        </ConfirmationAction>
+        {incomplete && <FieldDescription className="basis-full" id={incompleteId}>{incomplete}</FieldDescription>}
       </ConfirmationActions>
       <PromptOutcome outcome={outcome} resolving={resolving} t={t} />
     </Confirmation>

@@ -1,6 +1,7 @@
 import { FlaskConical, Plus } from 'lucide-react'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   SidebarGroup,
@@ -12,10 +13,10 @@ import {
   SidebarMenuItem,
 } from '@/components/ui/sidebar'
 import { Spinner } from '@/components/ui/spinner'
-import { StatusBadge } from '@/components/workspace/StatusBadge'
 import type { Translator } from '@/lib/i18n'
 
 import type { ResearchSummary } from '../api'
+import { useSidebarMenuSize } from '../app/useSidebarMenuSize'
 import type { ResearchLoadStatus } from './useResearch'
 
 export type ResearchNavigatorProps = {
@@ -42,6 +43,7 @@ export function ResearchNavigator({
   status,
   t,
 }: ResearchNavigatorProps) {
+  const menuSize = useSidebarMenuSize()
   return (
     <SidebarGroup aria-label={t('kubecode.research.title')} className="p-0" role="region">
       <SidebarGroupLabel>{t('kubecode.research.title')}</SidebarGroupLabel>
@@ -71,18 +73,19 @@ export function ResearchNavigator({
             {items.map((item) => (
               <SidebarMenuItem key={item.id}>
                 <SidebarMenuButton
-                  className="pointer-coarse:min-h-(--ws-touch-target)"
+                 
                   aria-current={item.id === activeResearchId ? 'true' : undefined}
                   isActive={item.id === activeResearchId}
+                  size={menuSize}
                   onClick={() => onSelect(item.id)}
                 >
                   <FlaskConical aria-hidden="true" />
                   <span className="min-w-0 flex-1 truncate">{item.title}</span>
                   {item.archived && (
-                    <StatusBadge tone="muted">{t('kubecode.research.status.archived')}</StatusBadge>
+                    <Badge variant="secondary">{t('kubecode.research.status.archived')}</Badge>
                   )}
                   {item.status === 'resolved' && (
-                    <StatusBadge tone="muted">{t('kubecode.research.status.resolved')}</StatusBadge>
+                    <Badge variant="secondary">{t('kubecode.research.status.resolved')}</Badge>
                   )}
                 </SidebarMenuButton>
               </SidebarMenuItem>

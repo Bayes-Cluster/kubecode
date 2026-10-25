@@ -48,7 +48,7 @@ export function ResourcesView({ api, events, locale, projectId, t, workspaceName
   return (
     <section aria-label={t('kubecode.nav.resources')} className="kubecode-resources">
       <DestinationHeader
-        className="kubecode-channel-header"
+        className="-mx-(--ws-space-4) mb-(--ws-space-2) md:mb-(--ws-space-3)"
         description={t('kubecode.resources.description')}
         destination="resources"
         t={t}

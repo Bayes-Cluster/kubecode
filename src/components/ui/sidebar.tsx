@@ -491,7 +491,8 @@ const sidebarMenuButtonVariants = cva(
       size: {
         default: "h-8 text-sm",
         sm: "h-7 text-xs",
-        lg: "h-12 text-sm group-data-[collapsible=icon]:p-0!",
+        // Kubecode (ADR 0256): lg is the touch row, 44px on a coarse pointer (h-12 is 42px on the 14px root).
+        lg: "h-12 text-sm group-data-[collapsible=icon]:p-0! pointer-coarse:min-h-[44px]",
       },
     },
     defaultVariants: {
@@ -642,7 +643,8 @@ function SidebarMenuSubButton({
   ...props
 }: React.ComponentProps<"a"> & {
   asChild?: boolean
-  size?: "sm" | "md"
+  // Kubecode (ADR 0256): `lg` is the touch-sized row, like SidebarMenuButton's.
+  size?: "sm" | "md" | "lg"
   isActive?: boolean
 }) {
   const Comp = asChild ? Slot.Root : "a"
@@ -654,10 +656,11 @@ function SidebarMenuSubButton({
       data-size={size}
       data-active={isActive}
       className={cn(
-        "flex h-7 min-w-0 -translate-x-px items-center gap-2 overflow-hidden rounded-md px-2 text-sidebar-foreground ring-sidebar-ring outline-hidden hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:text-sidebar-accent-foreground",
+        "peer/menu-button flex min-w-0 -translate-x-px items-center gap-2 overflow-hidden rounded-md px-2 text-sidebar-foreground ring-sidebar-ring outline-hidden hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:text-sidebar-accent-foreground",
         "data-[active=true]:bg-sidebar-accent data-[active=true]:text-sidebar-accent-foreground",
-        size === "sm" && "text-xs",
-        size === "md" && "text-sm",
+        size === "sm" && "h-7 text-xs",
+        size === "md" && "h-7 text-sm",
+        size === "lg" && "h-12 text-sm pointer-coarse:min-h-[44px]",
         "group-data-[collapsible=icon]:hidden",
         className
       )}

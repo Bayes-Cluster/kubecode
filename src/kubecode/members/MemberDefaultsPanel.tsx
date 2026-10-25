@@ -1,8 +1,8 @@
 import { CircleAlert, Lock, Plus, X } from 'lucide-react'
 import { useEffect, useId, useState } from 'react'
 
+import { Badge } from '@/components/ui/badge'
 import { IconButton } from '@/components/workspace/IconButton'
-import { StatusBadge } from '@/components/workspace/StatusBadge'
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -130,7 +130,7 @@ export function MemberDefaultsPanel({ agents, api, onLoaded, t }: MemberDefaults
         </ItemContent>
         {dirty && (
           <ItemActions>
-            <StatusBadge tone="warn">{t('kubecode.members.defaults.unsaved')}</StatusBadge>
+            <Badge variant="warning">{t('kubecode.members.defaults.unsaved')}</Badge>
           </ItemActions>
         )}
       </Item>

@@ -1,15 +1,16 @@
 import { useId, useState } from 'react'
 
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyDescription, EmptyHeader } from '@/components/ui/empty'
 import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from '@/components/ui/item'
 import { Spinner } from '@/components/ui/spinner'
 import type { Translator } from '@/lib/i18n'
 
-import { StatusBadge } from '@/components/workspace/StatusBadge'
 
 import type { NeedsYouEntry, NeedsYouTarget } from '../app/location/needsYou'
 import { ReaderNotice } from '../resources/ReaderStates'
+import { statusToneVariant } from '../statusTone'
 
 const SHOWN = 6
 
@@ -61,7 +62,7 @@ function Rows({ entries, label, onOpenTarget, t }: {
                   <ItemActions>
                     {resolving
                       ? <Spinner aria-hidden aria-label={undefined} className="motion-reduce:animate-none" role={undefined} />
-                      : <StatusBadge tone={entry.reason.tone}>{entry.reason.label}</StatusBadge>}
+                      : <Badge variant={statusToneVariant(entry.reason.tone)}>{entry.reason.label}</Badge>}
                   </ItemActions>
                 </button>
               </Item>
@@ -91,7 +92,7 @@ export function NeedsYouList({ entries, incomplete, onOpenTarget, onRetryLoad, s
 
 
   return (
-    <div className="kubecode-needs-you-list flex flex-col gap-3">
+    <div className="flex flex-col gap-3" data-testid="needs-you-list">
       {/* No live region of its own: the shell announces what newly waits (ADR 0234). */}
       {status === 'loading' && entries.length === 0 && (
         <div className="flex items-center gap-2 p-2 text-sm text-muted-foreground">
@@ -100,7 +101,7 @@ export function NeedsYouList({ entries, incomplete, onOpenTarget, onRetryLoad, s
         </div>
       )}
       {status === 'ready' && !incomplete && entries.length === 0 && (
-        <Empty className="p-6 md:p-6">
+        <Empty size="compact">
           <EmptyHeader>
             <EmptyDescription>{t('kubecode.nav.needsYouNone')}</EmptyDescription>
           </EmptyHeader>
@@ -108,7 +109,7 @@ export function NeedsYouList({ entries, incomplete, onOpenTarget, onRetryLoad, s
       )}
       {failed && (
         <ReaderNotice
-          action={<Button className="pointer-coarse:min-h-11" size="xs" variant="outline" onClick={onRetryLoad}>{t('kubecode.vocab.command.retry')}</Button>}
+          action={<Button size="xs" variant="outline" onClick={onRetryLoad}>{t('kubecode.vocab.command.retry')}</Button>}
           live={false}
         >
           {t('kubecode.nav.needsYouIncomplete')}

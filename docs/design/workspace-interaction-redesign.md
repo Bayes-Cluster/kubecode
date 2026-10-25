@@ -83,9 +83,9 @@ Relevant ownership points:
   presentation and the overlapping reply actions.
 - [MessageComposer](../../src/kubecode/channel/MessageComposer.tsx) owns message
   intent and scope through [ConversationComposer](../../src/kubecode/channel/ConversationComposer.tsx);
-  [IconButton](../../src/components/workspace/IconButton.tsx) and
-  [SendButton](../../src/components/workspace/SendButton.tsx) already supply
-  useful shared controls.
+  [IconButton](../../src/components/workspace/IconButton.tsx) and the official
+  `PromptInputSubmit` (the project `SendButton` was retired in ADR 0256)
+  already supply useful shared controls.
 
 ## Workspace Frame
 

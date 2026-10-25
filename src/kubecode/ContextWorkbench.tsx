@@ -1,18 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import {
-  ChevronDown,
-  File,
-  Folder,
-  GitCommitHorizontal,
-  GitCompare,
-  Minus,
-  Plus,
-  RotateCw,
-  Search,
-  Trash2,
-  TriangleAlert,
-  X
-} from 'lucide-react'
+import { ChevronDown, File, Folder, GitCommitHorizontal, GitCompare, Minus, Plus, RotateCw, Search, Trash2, TriangleAlert, X } from 'lucide-react'
 import { Virtuoso } from 'react-virtuoso'
 
 import { IconButton } from '@/components/workspace/IconButton'
@@ -69,7 +56,6 @@ import {
   type FileTreeInvalidation,
 } from './fileTreeInvalidation'
 import { searchProjectEntries } from './projectPathSearch'
-import { SystemMessageNotice } from './SystemMessageNotice'
 import { useSystemMessages } from './systemMessages'
 import { useGitStatusController } from './useGitStatusController'
 import { GitDiffView } from './GitDiffView'
@@ -81,6 +67,8 @@ import type {
   TextDocument,
   WorkspaceEvent,
 } from './api'
+import { InlineNotice } from './InlineNotice'
+import { useCoarsePointer } from './channel/useCoarsePointer'
 
 type EntryDialogState = { kind: Entry['kind'] } | null
 type OpenDocument = {
@@ -439,7 +427,7 @@ export function ContextWorkbench({
             section="changes"
           >
             {!gitStatus?.is_repository ? (
-              <Empty className="p-4 md:p-6">
+              <Empty size="compact">
                 <EmptyHeader>
                   <EmptyMedia variant="icon"><GitCompare /></EmptyMedia>
                   <EmptyTitle>{t('kubecode.createGitRepository')}</EmptyTitle>
@@ -450,7 +438,7 @@ export function ContextWorkbench({
                 </EmptyContent>
               </Empty>
             ) : gitStatus.files.length === 0 ? (
-              <Empty className="p-4">
+              <Empty size="compact">
                 <EmptyHeader>
                   <EmptyTitle>{t('kubecode.noChanges')}</EmptyTitle>
                   <EmptyDescription>{t('kubecode.reviewDescription')}</EmptyDescription>
@@ -635,13 +623,7 @@ export function ContextWorkbench({
         )}
       </Tabs>
       {error && (
-        <SystemMessageNotice
-          detailsLabel={t('kubecode.details')}
-          dismissLabel={t('window.close')}
-          level="error"
-          message={error}
-          onDismiss={() => setError(null)}
-        />
+<InlineNotice closeLabel={t('window.close')} detailsLabel={t('kubecode.details')} level="error" message={error} onClose={() => setError(null)} />
       )}
       <EntryDialog
         api={api}
@@ -800,9 +782,11 @@ function GitChangeGroup({
   t: Translator
 }) {
   const isVirtualized = changes.length > GIT_GROUP_VIRTUALIZATION_THRESHOLD
+  // The row Button is 44px on a coarse pointer (ADR 0256 §2); the virtual list's fixed row height follows it.
+  const rowHeight = useCoarsePointer() ? 44 : 36
 
   return (
-    <section className="kubecode-git-group" data-group={group} data-virtualized={isVirtualized || undefined}>
+    <section data-group={group} data-virtualized={isVirtualized || undefined}>
       {label && (
         <header className="flex h-7 items-center justify-between px-1.5 text-xs font-semibold uppercase text-muted-foreground">
           <span>{label}</span>
@@ -815,8 +799,8 @@ function GitChangeGroup({
           computeItemKey={(_index, change) => `${group}:${change.path}`}
           data={changes}
           data-testid={`git-change-virtual-list-${group}`}
-          defaultItemHeight={36}
-          fixedItemHeight={36}
+          defaultItemHeight={rowHeight}
+          fixedItemHeight={rowHeight}
           increaseViewportBy={{ bottom: 216, top: 216 }}
           itemContent={(_index, change) => (
             <GitChangeRow

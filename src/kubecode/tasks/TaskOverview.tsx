@@ -2,6 +2,7 @@ import { type ReactNode, useState } from 'react'
 
 import { Plan, PlanContent } from '@/components/ai-elements/plan'
 import { Task, TaskContent, TaskItem } from '@/components/ai-elements/task'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Item, ItemActions, ItemContent, ItemDescription, ItemTitle } from '@/components/ui/item'
 import { MemberIdentity } from '@/components/workspace/MemberIdentity'
@@ -16,7 +17,6 @@ import { conditionLabel } from './taskLabels'
 import { hasOpenReview, progressOf } from './taskLifecycle'
 import { useGeneralFromTask } from './taskNavigation'
 import { TaskQuestions } from './TaskQuestions'
-import { StatusBadge } from '@/components/workspace/StatusBadge'
 
 export type TaskOverviewProps = {
   /** An admitted Task; null for a proposal, which shows only its goal. */
@@ -64,19 +64,19 @@ export function TaskOverview({
         <section aria-label={t('kubecode.task.waitingOnYou')} className="flex flex-col gap-2">
           <h4 className="text-sm font-semibold">{t('kubecode.task.waitingOnYou')}</h4>
           {review && (
-            <Waiting action={<Button className="pointer-coarse:min-h-11" size="xs" variant="outline" onClick={onOpenResults}>{t('kubecode.task.openResults')}</Button>}>
+            <Waiting action={<Button size="xs" variant="outline" onClick={onOpenResults}>{t('kubecode.task.openResults')}</Button>}>
               {t('kubecode.task.reviewReady')}
             </Waiting>
           )}
           {questions && <TaskQuestions detail={detail} projectId={projectId} onChanged={onChanged} />}
           {suggestions && (
-            <Waiting action={<Button className="pointer-coarse:min-h-11" size="xs" variant="outline" onClick={onOpenResults}>{t('kubecode.task.goToResults')}</Button>}>
+            <Waiting action={<Button size="xs" variant="outline" onClick={onOpenResults}>{t('kubecode.task.goToResults')}</Button>}>
               {t('kubecode.task.suggestionsWaiting')}
             </Waiting>
           )}
           {approval && (
             <Waiting
-              action={<Button className="pointer-coarse:min-h-11" size="xs" variant="outline" onClick={onDiscuss}>{t('kubecode.task.discuss')}</Button>}
+              action={<Button size="xs" variant="outline" onClick={onDiscuss}>{t('kubecode.task.discuss')}</Button>}
               focusKey={`brief:${detail.id}:${detail.revision}`}
             >
               {t('kubecode.task.staleApproval', { approved: detail.approved_revision })}
@@ -108,7 +108,7 @@ export function TaskOverview({
                 ? t('kubecode.task.workingRevision', { approved: detail.approved_revision })
                 : bundle ? t('kubecode.task.revision', { revision: bundle.detail.revision }) : null}
               {!archived && (
-                <Button disabled={editing} className="pointer-coarse:min-h-11" size="xs" variant="ghost" onClick={onEdit}>{t('kubecode.research.editBrief')}</Button>
+                <Button disabled={editing} size="xs" variant="ghost" onClick={onEdit}>{t('kubecode.research.editBrief')}</Button>
               )}
             </p>
             {edited && detail && detail.revision > detail.approved_revision && (
@@ -186,7 +186,7 @@ function Provenance({ detail, t }: { detail: TaskDetail; t: Translator }) {
       </ItemContent>
       <ItemActions>
         <Button
-          className="pointer-coarse:min-h-11"
+         
           size="xs"
           variant="ghost"
           // Narrowed to the Task when the message is in its scope; otherwise all of General.
@@ -245,8 +245,8 @@ function Progress({ detail, t }: { detail: TaskDetail; t: Translator }) {
               return (
                 <TaskItem className="flex flex-wrap items-center gap-2" key={work.id} role="listitem">
                   <strong className="text-foreground [overflow-wrap:anywhere]">{work.title}</strong>
-                  <StatusBadge>{t(`kubecode.work.stage.${work.stage}`)}</StatusBadge>
-                  {condition && <StatusBadge tone="warn">{condition}</StatusBadge>}
+                  <Badge variant="secondary">{t(`kubecode.work.stage.${work.stage}`)}</Badge>
+                  {condition && <Badge variant="warning">{condition}</Badge>}
                   {work.assignee && <small>@{work.assignee.handle}</small>}
                   <small>
                     {t('kubecode.task.workCounts', { attempts: work.attempts, experiments: work.experiments })}

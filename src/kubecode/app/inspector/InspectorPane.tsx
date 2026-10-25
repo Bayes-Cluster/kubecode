@@ -200,7 +200,7 @@ export function InspectorPane({
 
 /** Focuses an entry's heading (made focusable for it), or the entry itself. */
 function focusHeading(section: HTMLElement) {
-  const heading = section.querySelector<HTMLElement>('.kubecode-view-header-title')
+  const heading = section.querySelector<HTMLElement>('header[data-level] :is(h1, h2, h3)')
   if (!heading) {
     section.focus({ preventScroll: true })
     return

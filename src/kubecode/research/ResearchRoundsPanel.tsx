@@ -2,6 +2,7 @@ import { useId, useMemo, useRef, useState } from 'react'
 import { ChevronDown, Info } from 'lucide-react'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -25,7 +26,6 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import { StatusBadge } from '@/components/workspace/StatusBadge'
 import type { Translator } from '@/lib/i18n'
 
 import type {
@@ -50,9 +50,9 @@ import { ExecutionEnvelopeFields } from './ExecutionEnvelopeFields'
 import { defaultEnvelopeDraft, limitsFromDraft, unixNow, type EnvelopeDraft } from './executionEnvelope'
 import { ResearchExecutionSection } from './ResearchExecutionSection'
 import { ResearchPanel, ResearchSection } from './ResearchLayout'
-import { agentLabel, phaseLabel, sourceKindLabel } from './researchLabels'
-import { AvailabilityBadge, StaleBadge } from './SourceBadge'
+import { agentLabel, availabilityLabel, availabilityVariant, phaseLabel, sourceKindLabel } from './researchLabels'
 import { useAction } from './useAction'
+import { statusToneVariant } from '../statusTone'
 
 const MAX_CARRIED_SOURCES = 20
 
@@ -261,11 +261,11 @@ export function ResearchRoundsPanel({
                               return next
                             })}
                           />
-                          <FieldLabel className="flex-wrap font-normal" htmlFor={controlId}>
+                          <FieldLabel className="flex-wrap" variant="option" htmlFor={controlId}>
                             <span>{sourceKindLabel(t, source.kind)}</span>
                             <code className="[overflow-wrap:anywhere]">{source.id}</code>
                           </FieldLabel>
-                          {!usable && <AvailabilityBadge availability={source.availability} t={t} />}
+                          {!usable && <Badge variant={availabilityVariant(source.availability)}>{availabilityLabel(t, source.availability)}</Badge>}
                         </Field>
                       )
                     })}
@@ -292,7 +292,7 @@ export function ResearchRoundsPanel({
                             })}
                           />
                           <FieldContent>
-                            <FieldLabel className="font-normal" htmlFor={controlId}>{item.label}</FieldLabel>
+                            <FieldLabel variant="option" htmlFor={controlId}>{item.label}</FieldLabel>
                             {item.stale && (
                               <FieldDescription>
                                 {t('kubecode.research.import.stale', {
@@ -323,7 +323,7 @@ export function ResearchRoundsPanel({
                     setAllowExecution(checked === true)
                   }}
                 />
-                <FieldLabel className="font-normal" htmlFor={`${fieldId}-allow-execution`}>{t('kubecode.research.exec.allowExecution')}</FieldLabel>
+                <FieldLabel variant="option" htmlFor={`${fieldId}-allow-execution`}>{t('kubecode.research.exec.allowExecution')}</FieldLabel>
               </Field>
               {allowExecution && (
                 <ExecutionEnvelopeFields
@@ -349,7 +349,7 @@ export function ResearchRoundsPanel({
 
       <ResearchSection label={t('kubecode.research.rounds')}>
         {rounds.length === 0 && (
-          <Empty className="items-start p-0 text-left md:p-0">
+          <Empty size="compact">
             <EmptyDescription>{t('kubecode.research.noRounds')}</EmptyDescription>
           </Empty>
         )}
@@ -369,16 +369,16 @@ export function ResearchRoundsPanel({
                 >
                   <div className="flex flex-wrap items-center gap-2">
                     <ItemTitle>{t('kubecode.research.roundShort', { round: round.round })}</ItemTitle>
-                    <StatusBadge tone="muted">
+                    <Badge variant="secondary">
                       {round.kind === 'team' ? t('kubecode.research.mode.team') : t('kubecode.research.mode.solo')}
-                    </StatusBadge>
+                    </Badge>
                     <span className="text-xs text-muted-foreground">
                       {t('kubecode.research.contextRevision', { revision: round.brief_revision })}
                     </span>
-                    {round.stale && <StaleBadge t={t} />}
-                    <StatusBadge tone={round.phase === 'started' ? 'ok' : 'warn'}>
+                    {round.stale && <Badge title={t('kubecode.research.staleHint')} variant="warning">{t('kubecode.research.stale')}</Badge>}
+                    <Badge variant={statusToneVariant(round.phase === 'started' ? 'ok' : 'warn')}>
                       {phaseLabel(t, round.phase)}
-                    </StatusBadge>
+                    </Badge>
                   </div>
                   {instructionText && <p className="m-0 whitespace-pre-wrap text-sm [overflow-wrap:anywhere]">{instructionText}</p>}
                   <div className="flex flex-wrap items-center gap-2">
@@ -388,7 +388,7 @@ export function ResearchRoundsPanel({
                         {round.team?.state ? ` · ${round.team.state}` : ''}
                       </span>
                     )}
-                    {target && <AvailabilityBadge availability={target.availability} t={t} />}
+                    {target && <Badge variant={availabilityVariant(target.availability)}>{availabilityLabel(t, target.availability)}</Badge>}
                     {sessionId && target?.availability !== 'removed' && (
                       <Button size="xs" variant="outline" onClick={() => onOpenSession(sessionId)}>
                         {round.kind === 'team' ? t('kubecode.research.openTeam') : t('kubecode.research.openSession')}
@@ -438,7 +438,7 @@ export function ResearchRoundsPanel({
                         <li className="flex flex-wrap items-center gap-1.5" key={`${source.kind}:${source.id}`}>
                           <span>{sourceKindLabel(t, source.kind)}</span>
                           <code className="[overflow-wrap:anywhere]">{source.id}</code>
-                          <AvailabilityBadge availability={source.availability} t={t} />
+                          <Badge variant={availabilityVariant(source.availability)}>{availabilityLabel(t, source.availability)}</Badge>
                         </li>
                       ))}
                     </ul>

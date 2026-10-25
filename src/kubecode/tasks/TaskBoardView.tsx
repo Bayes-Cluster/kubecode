@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader } from '@/components/ui/empty'
@@ -19,7 +20,6 @@ import { usePlaceState, useScrollMemory } from '../app/location/placeMemory'
 import { ReaderLoading } from '../resources/ReaderStates'
 import { TaskCardView } from './TaskCardView'
 import { TaskDisclosure } from './TaskDisclosure'
-import { StatusBadge } from '@/components/workspace/StatusBadge'
 import { initialBoardStage, inspectedStage, requiredActionOf } from './taskLifecycle'
 import { outcomeLabel, stageLabel, TASK_STAGES } from './taskLabels'
 import type { TaskBoardStatus } from './useTaskBoard'
@@ -119,6 +119,7 @@ export function TaskBoardView({
   return (
     <section aria-label={t('kubecode.nav.board')} className="kubecode-task-board" ref={scroller}>
       <DestinationHeader
+        className="-mx-(--ws-space-4)"
         actions={(
           <Field className="w-auto" orientation="horizontal">
             <Switch checked={needsYou} id={switchId} onCheckedChange={setNeedsYou} />
@@ -132,7 +133,7 @@ export function TaskBoardView({
         <Alert variant="destructive">
           <AlertDescription className="flex flex-wrap items-center gap-2">
             <span>{t('kubecode.task.loadFailed')}</span>
-            <Button className="pointer-coarse:min-h-11" size="xs" variant="outline" onClick={onReload}>{t('kubecode.retry')}</Button>
+            <Button size="xs" variant="outline" onClick={onReload}>{t('kubecode.retry')}</Button>
           </AlertDescription>
         </Alert>
       )}
@@ -152,7 +153,7 @@ export function TaskBoardView({
       )}
       {drafts.length > 0 && (
         <Collapsible
-          className="kubecode-task-drafts"
+          data-testid="task-drafts"
           defaultOpen={board !== null && board.cards.length === 0}
           key={board !== null && board.cards.length === 0 ? 'open' : 'closed'}
         >
@@ -167,7 +168,7 @@ export function TaskBoardView({
                   title={draft.title}
                   onOpen={onOpenTask}
                 >
-                  <StatusBadge>{t('kubecode.task.revision', { revision: draft.revision })}</StatusBadge>
+                  <Badge variant="secondary">{t('kubecode.task.revision', { revision: draft.revision })}</Badge>
                 </BoardRow>
               ))}
             </ItemGroup>
@@ -182,7 +183,7 @@ export function TaskBoardView({
         </Empty>
       )}
       {board && !nothingNeedsYou && (
-        <Tabs className="kubecode-task-stages" value={stage} onValueChange={(value) => setStage(value as TaskStage)}>
+        <Tabs value={stage} onValueChange={(value) => setStage(value as TaskStage)}>
           <TabsList aria-label={t('kubecode.task.stagePicker')} className="kubecode-task-stage-tabs" variant="line">
             {TASK_STAGES.map((value) => (
               <TabsTrigger key={value} value={value}>
@@ -211,10 +212,10 @@ export function TaskBoardView({
                   >
                     <h3 className="kubecode-task-column-heading flex items-center gap-2 text-sm font-medium text-muted-foreground">
                       {stageLabel(t, value)}
-                      <StatusBadge>{column.length}</StatusBadge>
+                      <Badge variant="secondary">{column.length}</Badge>
                     </h3>
                     {column.length === 0 ? (
-                      <Empty className="border p-4 md:p-4">
+                      <Empty size="compact" variant="outline">
                         <EmptyHeader>
                           <EmptyDescription>{t('kubecode.task.columnEmpty')}</EmptyDescription>
                         </EmptyHeader>
@@ -242,7 +243,7 @@ export function TaskBoardView({
         </Tabs>
       )}
       {archived.length > 0 && (
-        <Collapsible className="kubecode-task-archived">
+        <Collapsible data-testid="task-archived">
           <TaskDisclosure>{t('kubecode.task.archivedList', { count: archived.length })}</TaskDisclosure>
           <CollapsibleContent>
             <ItemGroup className="gap-1">
@@ -250,10 +251,10 @@ export function TaskBoardView({
                 const outcome = outcomeLabel(t, item.outcome)
                 return (
                   <BoardRow current={selectedId === item.id} id={item.id} key={item.id} title={item.title} onOpen={onOpenTask}>
-                    <StatusBadge>
+                    <Badge variant="secondary">
                       {item.stage ? stageLabel(t, item.stage) : t('kubecode.task.archivedProposal')}
-                    </StatusBadge>
-                    {outcome && <StatusBadge tone="ok">{outcome}</StatusBadge>}
+                    </Badge>
+                    {outcome && <Badge variant="success">{outcome}</Badge>}
                   </BoardRow>
                 )
               })}

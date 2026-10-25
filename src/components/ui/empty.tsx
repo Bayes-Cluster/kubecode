@@ -1,14 +1,40 @@
 import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "cn"
 
-function Empty({ className, ...props }: React.ComponentProps<"div">) {
+// Kubecode (ADR 0256): a compact size for sidebars, inspectors and dialogs,
+// and an outline variant for an Empty that stands inside a panel.
+const emptyVariants = cva(
+  "flex min-w-0 flex-1 flex-col items-center justify-center rounded-lg border-dashed text-center text-balance",
+  {
+    variants: {
+      variant: {
+        default: "",
+        outline: "border",
+      },
+      size: {
+        default: "gap-6 p-6 md:p-12",
+        compact: "gap-4 p-4",
+      },
+    },
+    defaultVariants: {
+      variant: "default",
+      size: "default",
+    },
+  }
+)
+
+function Empty({
+  className,
+  variant = "default",
+  size = "default",
+  ...props
+}: React.ComponentProps<"div"> & VariantProps<typeof emptyVariants>) {
   return (
     <div
       data-slot="empty"
-      className={cn(
-        "flex min-w-0 flex-1 flex-col items-center justify-center gap-6 rounded-lg border-dashed p-6 text-center text-balance md:p-12",
-        className
-      )}
+      data-variant={variant}
+      data-size={size}
+      className={cn(emptyVariants({ variant, size, className }))}
       {...props}
     />
   )

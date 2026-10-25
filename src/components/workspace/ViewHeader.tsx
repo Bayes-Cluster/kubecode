@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 
+import { Item, ItemActions, ItemContent, ItemDescription, ItemHeader, ItemMedia, ItemTitle } from '@/components/ui/item'
 import { Icon } from '@/kubecode/icons'
 import { WORKSPACE_COMMAND_ICONS } from '@/kubecode/icons/workspaceIcons'
 import { cn } from '@/lib/utils'
@@ -26,12 +27,21 @@ export type ViewHeaderProps = {
   close?: { label: string; onClose: () => void }
   /** Heading level; a page uses 1, views 2, details 3. */
   level?: 1 | 2 | 3
+  /** Layout only: the padding its context gives the header. */
   className?: string
   /** The Workspace destination this header titles, for the shell's shared frame. */
   destination?: string
 }
 
-/** The one header of every Workspace view and detail (ADR 0227). */
+/**
+ * The one header of every Workspace view and detail (ADR 0227): the official
+ * Item with its header row (Back, glyph as the media, the heading as the
+ * title, the view's actions, Close), facts as its content and the
+ * description as its description (ADR 0256). The `header` element is the
+ * context's layout container; the Item owns the appearance. It is kept as a
+ * composition because the shell, the inspector and the destinations share
+ * its Back/Close and heading-level contract.
+ */
 export function ViewHeader({
   actions,
   back,
@@ -46,30 +56,35 @@ export function ViewHeader({
 }: ViewHeaderProps) {
   const Heading = (['h1', 'h2', 'h3'] as const)[level - 1]
   return (
-    <header className={cn('kubecode-view-header', className)} data-destination={destination} data-level={level}>
-      <div className="kubecode-view-header-row">
-        {back && (
-          <IconButton
-            icon={<Icon role="navigation" source={WORKSPACE_COMMAND_ICONS.back.Icon} />}
-            label={back.label}
-            size="md"
-            onClick={back.onBack}
-          />
-        )}
-        {icon && <span aria-hidden="true" className="kubecode-view-header-icon">{icon}</span>}
-        <Heading className="kubecode-view-header-title">{title}</Heading>
-        {actions && <div className="kubecode-view-header-actions">{actions}</div>}
-        {close && (
-          <IconButton
-            icon={<Icon role="command" source={WORKSPACE_COMMAND_ICONS.close.Icon} />}
-            label={close.label}
-            size="md"
-            onClick={close.onClose}
-          />
-        )}
-      </div>
-      {meta && <div className="kubecode-view-header-meta">{meta}</div>}
-      {description && <p className="kubecode-view-header-description">{description}</p>}
+    // The container takes only layout: a context passes its padding as utilities (ADR 0256).
+    <header className={cn('pb-(--ws-space-2)', className)} data-destination={destination} data-level={level}>
+      <Item className="flex-col items-stretch gap-1" size="compact">
+        <ItemHeader className="flex-wrap justify-start">
+          {back && (
+            <IconButton
+              icon={<Icon role="navigation" source={WORKSPACE_COMMAND_ICONS.back.Icon} />}
+              label={back.label}
+              size="md"
+              onClick={back.onBack}
+            />
+          )}
+          {icon && <ItemMedia aria-hidden="true">{icon}</ItemMedia>}
+          <ItemTitle className="min-w-0 flex-1 basis-[14ch] [overflow-wrap:anywhere]">
+            <Heading className="min-w-0 flex-1">{title}</Heading>
+          </ItemTitle>
+          {actions && <ItemActions className="ml-auto max-w-full flex-wrap justify-end gap-1">{actions}</ItemActions>}
+          {close && (
+            <IconButton
+              icon={<Icon role="command" source={WORKSPACE_COMMAND_ICONS.close.Icon} />}
+              label={close.label}
+              size="md"
+              onClick={close.onClose}
+            />
+          )}
+        </ItemHeader>
+        {meta && <ItemContent className="flex-row flex-wrap items-center gap-2">{meta}</ItemContent>}
+        {description && <ItemDescription className="max-w-(--ws-reading-width)">{description}</ItemDescription>}
+      </Item>
     </header>
   )
 }

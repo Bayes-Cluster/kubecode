@@ -84,7 +84,7 @@ function QuestionItem({ busy, memoryKey, onAnswered, onBusy, onError, projectId,
         {question.options.length > 0 ? (
           <div className="flex flex-wrap gap-2">
             {question.options.map((option) => (
-              <Button disabled={busy} key={option} className="pointer-coarse:min-h-11" size="xs" variant="outline" onClick={() => void send(option)}>
+              <Button disabled={busy} key={option} size="xs" variant="outline" onClick={() => void send(option)}>
                 {option}
               </Button>
             ))}
@@ -94,7 +94,7 @@ function QuestionItem({ busy, memoryKey, onAnswered, onBusy, onError, projectId,
             <FieldLabel className="sr-only" htmlFor={fieldId}>{t('kubecode.task.answerField')}</FieldLabel>
             <Textarea id={fieldId} rows={2} value={answer} onChange={(event) => setAnswer(event.target.value)} />
             <div>
-              <Button disabled={busy || answer.trim() === ''} className="pointer-coarse:min-h-11" size="xs" onClick={() => void send(answer.trim())}>
+              <Button disabled={busy || answer.trim() === ''} size="xs" onClick={() => void send(answer.trim())}>
                 {t('kubecode.work.question.answer')}
               </Button>
             </div>

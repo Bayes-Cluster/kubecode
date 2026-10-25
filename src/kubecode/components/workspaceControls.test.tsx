@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { IconButton } from '@/components/workspace/IconButton'
@@ -9,8 +9,7 @@ import {
   mentionQueryAt,
   type MentionOption,
 } from '@/components/workspace/mentions'
-import { PauseButton, SendButton, StopButton } from '@/components/workspace/SendButton'
-import { StatusBadge } from '@/components/workspace/StatusBadge'
+import { statusToneVariant } from '@/kubecode/statusTone'
 
 const members: MentionOption[] = [
   { id: 's-general', handle: 'general', label: 'General' },
@@ -40,7 +39,7 @@ describe('mention helpers', () => {
   })
 })
 
-describe('IconButton and StatusBadge', () => {
+describe('IconButton and status tones', () => {
   it('names an icon-only button, runs it, and waits while busy', () => {
     const onClick = vi.fn()
     const { rerender } = render(<IconButton icon={<svg />} label="Remove Analyst" onClick={onClick} />)
@@ -61,25 +60,18 @@ describe('IconButton and StatusBadge', () => {
     expect(onClick).toHaveBeenCalledTimes(1)
   })
 
-  it('renders a status with its tone but always with its words', () => {
-    render(<StatusBadge tone="warn" title="Needs attention">Needs setup</StatusBadge>)
-    const badge = screen.getByText('Needs setup')
-    expect(badge).toHaveAttribute('data-tone', 'warn')
-    expect(badge).toHaveAttribute('title', 'Needs attention')
-    // ADR 0247: the official Badge owns its appearance; the tone picks a variant.
-    expect(badge).toHaveAttribute('data-slot', 'badge')
-    expect(badge).toHaveAttribute('data-variant', 'warning')
-  })
-
   it.each([
     ['ok', 'success'],
     ['info', 'info'],
     ['warn', 'warning'],
     ['danger', 'destructive'],
     ['muted', 'secondary'],
-  ] as const)('maps the %s tone onto the official %s Badge variant', (tone, variant) => {
-    render(<StatusBadge tone={tone}>State</StatusBadge>)
-    expect(screen.getByText('State')).toHaveAttribute('data-variant', variant)
+  ] as const)('maps the %s tone onto the official %s Badge variant (ADR 0256)', (tone, variant) => {
+    expect(statusToneVariant(tone)).toBe(variant)
+  })
+
+  it('reads a status as muted when no tone is given', () => {
+    expect(statusToneVariant()).toBe('secondary')
   })
 })
 
@@ -98,49 +90,13 @@ describe('filtering and ranking', () => {
   })
 })
 
-describe('SendButton and StopButton', () => {
-  it('sends only when it can, and waits while a send is in flight', () => {
-    const onSend = vi.fn()
-    const { rerender } = render(<SendButton canSend label="Send" onSend={onSend} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
-    expect(onSend).toHaveBeenCalledTimes(1)
-    rerender(<SendButton canSend={false} label="Send" onSend={onSend} />)
-    expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()
-    rerender(<SendButton busy canSend label="Send" onSend={onSend} />)
-    const waiting = screen.getByRole('button', { name: 'Send' })
-    waiting.focus()
-    expect(waiting).toHaveFocus()
-    expect(waiting).toHaveAttribute('aria-disabled', 'true')
-    expect(waiting).toHaveAttribute('aria-busy', 'true')
-    fireEvent.click(waiting)
-    expect(onSend).toHaveBeenCalledTimes(1)
-  })
-
-  it('stops the thing it names and nothing else', () => {
-    const onStop = vi.fn()
-    render(<StopButton label="Stop Analyst" testId="stop" onStop={onStop} />)
-    fireEvent.click(screen.getByTestId('stop'))
-    expect(onStop).toHaveBeenCalledTimes(1)
-    expect(screen.getByRole('button', { name: 'Stop Analyst' })).toHaveAttribute('type', 'button')
-  })
-
-  it('uses the official Button variants instead of redrawn colours (ADR 0247)', () => {
-    render(<SendButton canSend label="Send" onSend={vi.fn()} />)
-    expect(screen.getByRole('button', { name: 'Send' })).toHaveAttribute('data-variant', 'default')
-    cleanup()
-    const { rerender } = render(<PauseButton label="Pause new work" paused={false} onToggle={vi.fn()} />)
-    expect(screen.getByRole('button', { name: 'Pause new work' })).toHaveAttribute('data-variant', 'outline')
-    rerender(<PauseButton label="Pause new work" paused onToggle={vi.fn()} />)
-    expect(screen.getByRole('button', { name: 'Pause new work' })).toHaveAttribute('data-variant', 'secondary')
-  })
-})
-
 describe('IconButton sizes', () => {
   it('is compact by default, regular on request, and honours disabled', () => {
     const { rerender } = render(<IconButton icon={<svg />} label="Open" />)
-    expect(screen.getByRole('button', { name: 'Open' })).toHaveAttribute('data-size', 'sm')
+    // ADR 0256: the official Button's icon sizes, nothing of its own.
+    expect(screen.getByRole('button', { name: 'Open' })).toHaveAttribute('data-size', 'icon-xs')
     rerender(<IconButton icon={<svg />} label="Open" size="md" />)
-    expect(screen.getByRole('button', { name: 'Open' })).toHaveAttribute('data-size', 'md')
+    expect(screen.getByRole('button', { name: 'Open' })).toHaveAttribute('data-size', 'icon-sm')
     rerender(<IconButton disabled icon={<svg />} label="Open" />)
     expect(screen.getByRole('button', { name: 'Open' })).toBeDisabled()
   })

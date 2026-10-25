@@ -1,6 +1,6 @@
 import { X } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 import { IconButton } from '@/components/workspace/IconButton'
-import { StatusBadge } from '@/components/workspace/StatusBadge'
 import { useEffect, useId, useState, type ReactNode } from 'react'
 
 import { Button } from '@/components/ui/button'
@@ -177,16 +177,16 @@ export function WorkInspector({
         <div>
           <h3>{item.title}</h3>
           <div className="kubecode-work-card-badges">
-            <StatusBadge tone="info">{t(STAGE_LABELS[item.stage])}</StatusBadge>
+            <Badge variant="info">{t(STAGE_LABELS[item.stage])}</Badge>
             {item.condition !== 'none' && (
-              <StatusBadge tone="warn">
+              <Badge variant="warning">
                 {t(CONDITION_LABELS[item.condition])}
-              </StatusBadge>
+              </Badge>
             )}
             {item.lifecycle !== 'active' && (
-              <StatusBadge tone="muted">
+              <Badge variant="secondary">
                 {t(LIFECYCLE_LABELS[item.lifecycle as Exclude<WorkLifecycle, 'active'>])}
-              </StatusBadge>
+              </Badge>
             )}
           </div>
         </div>
@@ -415,9 +415,9 @@ export function WorkInspector({
                   />
                 )}
                 {staleIds.has(result.id) && (
-                  <StatusBadge tone="warn">
+                  <Badge variant="warning">
                     {t(`kubecode.work.stale.${detail.stale_evidence.find((entry) => entry.result_id === result.id)?.status ?? 'changed'}` as 'kubecode.work.stale.changed')}
-                  </StatusBadge>
+                  </Badge>
                 )}
               </ItemContent></Item>
             ))}
