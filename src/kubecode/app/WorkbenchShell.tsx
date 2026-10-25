@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type SetStateAction } from 'react'
-import { toast } from 'sonner'
 import { createTranslator, resolveEffectiveLocale, type Translator } from '@/lib/i18n'
 import { trackEvent } from '@/lib/telemetry'
 
@@ -113,6 +112,7 @@ import { useWorkspaceReconciliation } from './useWorkspaceReconciliation'
 import { togglePanel } from './panelToggles'
 import { WorkbenchTitlebar } from './WorkbenchTitlebar'
 import { mergeConversations, upsertConversation } from './sessionCatalog'
+import { useNotificationOnboardingToast } from './useNotificationOnboardingToast'
 
 const browserApi = new KubecodeApi()
 
@@ -129,8 +129,6 @@ function browserStorage(): PreferenceStorage | null {
   }
 }
 
-
-const NOTIFICATION_ONBOARDING_TOAST = 'notification-onboarding'
 export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
   const locale = useMemo(() => resolveEffectiveLocale(null), [])
   const t = useMemo(() => createTranslator(locale), [locale])
@@ -819,21 +817,12 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
     && browserPermission === 'default'
     && reconciliation.workspaceEvents.some((event) => event.kind === 'run_started')
   // Notification onboarding is one official toast (ADR 0256), offered once agents start working.
-  useEffect(() => {
-    if (!notificationOnboardingOpen) {
-      toast.dismiss(NOTIFICATION_ONBOARDING_TOAST)
-      return
-    }
-    toast(t('kubecode.notificationOnboardingTitle'), {
-      action: { label: t('kubecode.enableNotifications'), onClick: () => void requestNotificationPermission() },
-      cancel: { label: t('kubecode.notNow'), onClick: dismissNotificationOnboarding },
-      description: t('kubecode.notificationOnboardingDescription'),
-      duration: Infinity,
-      id: NOTIFICATION_ONBOARDING_TOAST,
-      // Closing the toast is the same choice as Not now.
-      onDismiss: dismissNotificationOnboarding,
-    })
-  }, [dismissNotificationOnboarding, notificationOnboardingOpen, requestNotificationPermission, t])
+  useNotificationOnboardingToast({
+    onDismiss: dismissNotificationOnboarding,
+    onEnable: requestNotificationPermission,
+    open: notificationOnboardingOpen,
+    t,
+  })
 
   useEffect(() => {
     const focusNavigatorSearch = (event: KeyboardEvent) => {

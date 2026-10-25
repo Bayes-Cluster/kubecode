@@ -25,9 +25,12 @@ what is still open. The row-by-row record is
 - **Official components own their base appearance** (ADR 0247). Product CSS
   lays out elements it owns. `pnpm lint` runs `scripts/check-css-ownership.mjs`,
   which fails on any new `[data-slot=…]`, `[cmdk-…]`, `[data-radix-…]` or
-  `!important` rule. `scripts/css-ownership-baseline.json` holds 10 entries,
-  all exceptions: overlay zoom compensation (5), no text selection on controls
-  (2), the xterm viewport (1) and `prefers-reduced-motion` (2).
+  `!important` rule, and since ADR 0256 on appearance rules reaching official
+  components by class, element reach-ins, third-party internals and dead
+  classes. `scripts/css-ownership-baseline.json` holds 123 entries: the ten
+  #254 exceptions (overlay zoom compensation 5, no text selection on controls
+  2, the xterm viewport 1, `prefers-reduced-motion` 2) and 113 findings owned
+  by the UI2 slices, which only shrink.
 - **Shared vocabulary** (`docs/design/ui-shared-contract.md`): `ViewHeader`,
   `IconButton`, `StatusBadge`, `MemberIdentity`/`MemberAvatar`,
   `ReferenceChip`, `PauseButton`/`StopButton`, `MoreActions`,
