@@ -16,8 +16,8 @@ const TOASTS = {
 
 /**
  * Application messages as official toasts (Sonner, ADR 0256): one host, the
- * newest three visible, a message published twice shown once, and a warning
- * or error kept until it is closed.
+ * newest three visible, a message published twice shown once, and every
+ * message kept until it is closed.
  */
 export function SystemMessageProvider({
   children,
@@ -33,10 +33,10 @@ export function SystemMessageProvider({
   theme?: ThemeMode
 }) {
   const publish = useCallback((message: SystemMessage) => {
-    const urgent = message.level === 'warning' || message.level === 'error'
     TOASTS[message.level](message.message, {
       description: message.source,
-      duration: urgent ? Infinity : undefined,
+      // Every message stays until it is closed, as the notices it replaces did.
+      duration: Infinity,
       // The same message from the same source is one toast, not a stack.
       id: `${message.level}\u0000${message.source ?? ''}\u0000${message.message}`,
     })

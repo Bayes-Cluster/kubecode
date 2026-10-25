@@ -830,6 +830,8 @@ export function WorkbenchShell({ api = browserApi }: { api?: KubecodeApi }) {
       description: t('kubecode.notificationOnboardingDescription'),
       duration: Infinity,
       id: NOTIFICATION_ONBOARDING_TOAST,
+      // Closing the toast is the same choice as Not now.
+      onDismiss: dismissNotificationOnboarding,
     })
   }, [dismissNotificationOnboarding, notificationOnboardingOpen, requestNotificationPermission, t])
 
