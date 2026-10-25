@@ -61,7 +61,7 @@ describe('ExecutionStrip', () => {
     expect(region).toHaveTextContent('Analyst')
     expect(region).toHaveTextContent('2 queued')
     // Work in progress shimmers, in words (AI Elements Shimmer, #232).
-    expect(region.querySelector('.kubecode-shimmer')).toHaveTextContent('Structured pruning')
+    expect(within(region).getByTestId('execution-title')).toHaveTextContent('Structured pruning')
     // One run is one compact row, never folded behind a count.
     expect(within(region).queryByRole('button', { name: /running/ })).not.toBeInTheDocument()
     const stop = within(region).getByRole('button', { name: 'Stop Structured pruning' })

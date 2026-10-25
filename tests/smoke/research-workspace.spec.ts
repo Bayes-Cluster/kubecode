@@ -132,8 +132,8 @@ test('@smoke research workspace carries a Task from discussion to an accepted ne
   await expect(proposalMessage.getByRole('button', { name: /add to|admit|approve|confirm|start/i })).toHaveCount(0)
   await workspaceNav(page).getByRole('button', { name: /^Kanban/ }).click()
   // With nothing on the board, the proposals are open above the stages.
-  await expect(page.locator('.kubecode-task-drafts')).toHaveAttribute('data-state', 'open')
-  await page.locator('.kubecode-task-drafts').getByRole('button', { name: /Structured pruning/ }).click()
+  await expect(page.getByTestId('task-drafts')).toHaveAttribute('data-state', 'open')
+  await page.getByTestId('task-drafts').getByRole('button', { name: /Structured pruning/ }).click()
   const draftDetail = page.getByRole('complementary', { name: 'Task details' })
   await expect(draftDetail.getByText(/This is a proposal and is not on the board/)).toBeVisible()
   await expect(draftDetail.getByText('Draft', { exact: true })).toBeVisible()

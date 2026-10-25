@@ -101,7 +101,7 @@ describe('MessageItem', () => {
     const recipients = header.querySelector('.kubecode-message-recipients') as HTMLElement
     expect(recipients).not.toBeNull()
     expect(within(recipients).getByText('Handed to')).toHaveClass('sr-only')
-    expect(recipients.querySelector('.kubecode-message-recipients-arrow')).toHaveAttribute('aria-hidden', 'true')
+    expect(recipients.querySelector('[data-testid="recipients-arrow"]')).toHaveAttribute('aria-hidden', 'true')
     expect(within(recipients).getByText('Analyst')).toBeInTheDocument()
   })
 

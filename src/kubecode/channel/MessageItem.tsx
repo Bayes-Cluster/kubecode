@@ -143,7 +143,7 @@ export function MessageItem({
   const recipientClass = own ? 'min-w-0 overflow-hidden whitespace-nowrap' : undefined
   const recipientLine = recipients.kind !== 'none' && (
     <span className="kubecode-message-recipients inline-flex min-w-0 flex-wrap items-center gap-1 text-xs text-muted-foreground">
-      <span aria-hidden="true" className="kubecode-message-recipients-arrow text-muted-foreground">→</span>
+      <span aria-hidden="true" className="text-muted-foreground" data-testid="recipients-arrow">→</span>
       <span className="sr-only">
         {recipients.kind === 'members' && recipients.handedOff ? t('kubecode.channel.handedOff') : t('kubecode.channel.to')}
       </span>

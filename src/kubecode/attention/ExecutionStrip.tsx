@@ -247,7 +247,7 @@ export function ExecutionStrip({ api, prompts = true, scope, t }: ExecutionStrip
   )
   const busy = stopping.size > 0
   return (
-    <section aria-label={t('kubecode.execution.workingNow')} className="kubecode-execution-strip flex flex-col gap-2" ref={section}>
+    <section aria-label={t('kubecode.execution.workingNow')} className="flex flex-col gap-2" ref={section}>
       {/* Decisions are never folded away; on a phone their body is capped and scrolls. */}
       {items.length > 0 && (
         <div aria-label={t('kubecode.execution.waitingForYou')} className="kubecode-execution-body flex min-h-0 flex-col gap-2" role="group">
@@ -256,7 +256,7 @@ export function ExecutionStrip({ api, prompts = true, scope, t }: ExecutionStrip
             : item.kind === 'input' ? <InputRow api={api} item={item} key={item.key} t={t} /> : null))}
         </div>
       )}
-      {entries.length === 1 && <ul className="kubecode-execution-rows flex flex-col gap-1">{entries.map((entry) => row(entry, true))}</ul>}
+      {entries.length === 1 && <ul className="flex flex-col gap-1">{entries.map((entry) => row(entry, true))}</ul>}
       {entries.length > 1 && (
         <Popover onOpenChange={measure}>
           <PopoverTrigger asChild>
@@ -269,7 +269,7 @@ export function ExecutionStrip({ api, prompts = true, scope, t }: ExecutionStrip
               onKeyDown={() => setOpenedBy('keyboard')}
               onPointerDown={() => setOpenedBy('pointer')}
             >
-              <Shimmer as="span" className="kubecode-shimmer">{t('kubecode.execution.runningCount', { count: entries.length })}</Shimmer>
+              <Shimmer as="span">{t('kubecode.execution.runningCount', { count: entries.length })}</Shimmer>
               <ChevronDown aria-hidden data-icon="inline-end" />
             </Button>
           </PopoverTrigger>
@@ -296,7 +296,7 @@ export function ExecutionStrip({ api, prompts = true, scope, t }: ExecutionStrip
                 </QueueSectionTrigger>
                 <QueueSectionContent>
                   {/* The popover scrolls; a second scroll area inside it would clip the rows. */}
-                  <ul className="kubecode-execution-rows flex flex-col gap-1">{entries.map((entry) => row(entry))}</ul>
+                  <ul className="flex flex-col gap-1">{entries.map((entry) => row(entry))}</ul>
                 </QueueSectionContent>
               </QueueSection>
             </Queue>

@@ -108,7 +108,7 @@ export function PromptQueueDock({
                     </>
                   ) : (
                     <>
-                      <QueueItemContent className="kubecode-session-queue-text" title={item.content}>
+                      <QueueItemContent title={item.content}>
                         {item.content}
                       </QueueItemContent>
                       <QueueItemActions>

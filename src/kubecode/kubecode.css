@@ -1338,9 +1338,6 @@
 /* On a phone the strip never pushes the composer off screen: what waits on
    the researcher is capped and scrolls. */
 
-@media (pointer: coarse) {
-  .kubecode-delivery-failure button { min-height: var(--ws-touch-target); }
-}
 
 /* ------------------------------------------------------------------
    Workspace foundation for AI Elements (ADR 0233). Proportions follow the

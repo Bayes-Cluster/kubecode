@@ -153,7 +153,7 @@ export function TaskBoardView({
       )}
       {drafts.length > 0 && (
         <Collapsible
-          className="kubecode-task-drafts"
+          data-testid="task-drafts"
           defaultOpen={board !== null && board.cards.length === 0}
           key={board !== null && board.cards.length === 0 ? 'open' : 'closed'}
         >
@@ -183,7 +183,7 @@ export function TaskBoardView({
         </Empty>
       )}
       {board && !nothingNeedsYou && (
-        <Tabs className="kubecode-task-stages" value={stage} onValueChange={(value) => setStage(value as TaskStage)}>
+        <Tabs value={stage} onValueChange={(value) => setStage(value as TaskStage)}>
           <TabsList aria-label={t('kubecode.task.stagePicker')} className="kubecode-task-stage-tabs" variant="line">
             {TASK_STAGES.map((value) => (
               <TabsTrigger key={value} value={value}>
@@ -243,7 +243,7 @@ export function TaskBoardView({
         </Tabs>
       )}
       {archived.length > 0 && (
-        <Collapsible className="kubecode-task-archived">
+        <Collapsible data-testid="task-archived">
           <TaskDisclosure>{t('kubecode.task.archivedList', { count: archived.length })}</TaskDisclosure>
           <CollapsibleContent>
             <ItemGroup className="gap-1">

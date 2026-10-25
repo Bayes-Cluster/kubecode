@@ -189,7 +189,7 @@ test('@smoke a Task is reviewed at the version that was shown, sent back through
     await expect(card).toHaveCount(0)
     await expect(task.getByText('Archived. It is off the board; restore it to continue.')).toBeVisible()
     await page.getByText('Archived (1)').click()
-    await expect(page.locator('.kubecode-task-archived').getByRole('button', { name: /Pruning heads/ })).toContainText('Inconclusive')
+    await expect(page.getByTestId('task-archived').getByRole('button', { name: /Pruning heads/ })).toContainText('Inconclusive')
     await task.getByRole('button', { name: 'Restore to the board' }).click()
     await expect(column(page, 'Done').getByTestId(`task-card-${seed.taskId}`)).toBeVisible()
     await expect(page.getByText('Archived (1)')).toHaveCount(0)

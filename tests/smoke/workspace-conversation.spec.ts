@@ -95,7 +95,7 @@ test.describe('on a desktop', () => {
       await expect(row(page, 'Should we prune the attention heads?').locator('.kubecode-message-recipients')).toContainText(manager.name)
       // One input surface (#232): the text and its controls in the Prompt Input card, whom it reaches in its footer;
       // the researcher's own message reads as theirs.
-      const promptCard = page.locator('.kubecode-prompt-input')
+      const promptCard = page.getByTestId('conversation-prompt-input')
       await expect(promptCard.getByRole('combobox', { name: 'Message the Workspace' })).toBeVisible()
       await expect(promptCard.getByRole('button', { name: 'Add context' })).toBeVisible()
       await expect(promptCard.locator('.kubecode-composer-to')).toHaveCount(0)
@@ -169,7 +169,7 @@ test.describe('on a desktop', () => {
         const wideBoxes = async () => ({
           widePane: (await page.locator('.kubecode-channel-main').boundingBox())!,
           wideDock: (await page.locator('.kubecode-conversation-dock').boundingBox())!,
-          card: (await page.locator('.kubecode-conversation-dock .kubecode-prompt-input').boundingBox())!,
+          card: (await page.locator('.kubecode-conversation-dock [data-testid="conversation-prompt-input"]').boundingBox())!,
         })
         await expect.poll(async () => {
           const { widePane, wideDock, card } = await wideBoxes()

@@ -333,7 +333,7 @@ describe('Workspace navigation and routes', () => {
     const shellStatus = () => document.querySelector('main.kubecode-app > [role="status"]')
     await waitFor(() => expect(shellStatus()).toHaveTextContent('Review the results of Pruning needs you'))
     // The navigation only counts what waits: the list is the Needs you view, never folded into the sheet.
-    expect(nav.querySelector('.kubecode-needs-you-list')).toBeNull()
+    expect(nav.querySelector('[data-testid="needs-you-list"]')).toBeNull()
   })
 
   it('keeps Files and Git out of the research views until asked for', async () => {

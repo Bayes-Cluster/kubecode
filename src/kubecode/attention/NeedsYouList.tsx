@@ -92,7 +92,7 @@ export function NeedsYouList({ entries, incomplete, onOpenTarget, onRetryLoad, s
 
 
   return (
-    <div className="kubecode-needs-you-list flex flex-col gap-3">
+    <div className="flex flex-col gap-3" data-testid="needs-you-list">
       {/* No live region of its own: the shell announces what newly waits (ADR 0234). */}
       {status === 'loading' && entries.length === 0 && (
         <div className="flex items-center gap-2 p-2 text-sm text-muted-foreground">

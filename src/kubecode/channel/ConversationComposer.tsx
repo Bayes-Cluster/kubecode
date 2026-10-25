@@ -270,7 +270,7 @@ export function ConversationComposer({
         </PopoverContent>
       )}
       {/* The form never submits on its own: Enter and the send button go through `submit`. */}
-      <PromptInput className="kubecode-prompt-input" uploadLabel={attachLabel} onSubmit={() => submit()}>
+      <PromptInput data-testid="conversation-prompt-input" uploadLabel={attachLabel} onSubmit={() => submit()}>
         {header && <PromptInputHeader className="kubecode-composer-context">{header}</PromptInputHeader>}
         <PromptInputBody>
           <PromptInputTextarea

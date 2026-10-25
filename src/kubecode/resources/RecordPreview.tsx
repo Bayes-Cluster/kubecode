@@ -230,7 +230,8 @@ export function RecordPreview({
           ) : (
             // The block scrolls as one region so a long file reads from the keyboard.
             <CodeBlock
-              className={cn('kubecode-record-code overflow-auto outline-none focus-visible:ring-2 focus-visible:ring-ring', compact ? 'max-h-[40vh]' : 'max-h-60')}
+              className={cn('overflow-auto outline-none focus-visible:ring-2 focus-visible:ring-ring', compact ? 'max-h-[40vh]' : 'max-h-60')}
+              data-testid="record-code"
               code={section.text}
               language={format.markdown ? ('text' as BundledLanguage) : format.language}
               tabIndex={0}

@@ -50,7 +50,7 @@ export function ExecutionRow({ alone = false, entryKey, onStop, runs, stopping, 
   const stopLabel = task ? t('kubecode.execution.stopTask', { task: task.title }) : t('kubecode.execution.stopReply', { name })
   return (
     // A Queue item (ADR 0242) holding one Item: who and the Stop on the first line, the work on the second.
-    <QueueItem className="kubecode-execution-row list-none p-0" data-entry={entryKey}>
+    <QueueItem className="list-none p-0" data-entry={entryKey}>
       <Item className="w-full flex-nowrap py-1.5" size="sm" variant={alone ? 'outline' : 'default'}>
         <ItemContent className="min-w-0 gap-0.5">
           <ItemTitle className="flex w-full min-w-0 items-center gap-2">
@@ -59,14 +59,14 @@ export function ExecutionRow({ alone = false, entryKey, onStop, runs, stopping, 
                 ? <MemberIdentity className="min-w-0 overflow-hidden whitespace-nowrap" handle={run.member.handle} key={run.run_id} name={run.member.name} role={run.member.role === 'general' ? 'manager' : 'specialist'} size="sm" />
                 : <strong key={run.run_id}>{askerName(run, t)}</strong>))}
             </span>
-            {queued > 0 && <Badge className="kubecode-execution-queued shrink-0" variant="secondary">{t('kubecode.execution.queuedCount', { count: queued })}</Badge>}
+            {queued > 0 && <Badge className="shrink-0" data-testid="execution-queued" variant="secondary">{t('kubecode.execution.queuedCount', { count: queued })}</Badge>}
           </ItemTitle>
-          <ItemDescription className="kubecode-execution-state line-clamp-1">
+          <ItemDescription className="line-clamp-1">
             {stopping
               ? t('kubecode.execution.stopping')
               : waiting
-                ? <>{waiting}{' · '}<span className="kubecode-execution-title" title={title}>{title}</span></>
-                : <span className="kubecode-execution-title" title={title}><Shimmer as="span" className="kubecode-shimmer">{title}</Shimmer></span>}
+                ? <>{waiting}{' · '}<span data-testid="execution-title" title={title}>{title}</span></>
+                : <span data-testid="execution-title" title={title}><Shimmer as="span">{title}</Shimmer></span>}
           </ItemDescription>
         </ItemContent>
         <ItemActions>
