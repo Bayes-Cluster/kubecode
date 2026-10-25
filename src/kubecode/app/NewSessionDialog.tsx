@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react'
-import { CircleAlert, Download, Plus, User, Users, X } from 'lucide-react'
+import { Download, Plus, User, Users } from 'lucide-react'
 import { trackEvent } from '@/lib/telemetry'
 
 import { AiAgentIcon } from '@/components/AiAgentIcon'
-import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -57,6 +56,7 @@ import {
 } from '../api'
 import { errorMessage } from './errors'
 import type { Translator } from '@/lib/i18n'
+import { InlineNotice } from '../InlineNotice'
 
 export type NewSessionDialogProps = {
   agents: AgentDescriptor[]
@@ -183,12 +183,12 @@ export function NewSessionDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="kubecode-new-session-dialog">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>{t('kubecode.newSession')}</DialogTitle>
           <DialogDescription>{t('kubecode.newSessionDescription')}</DialogDescription>
         </DialogHeader>
-        <FieldGroup className="kubecode-new-session-form">
+        <FieldGroup>
           <ToggleGroup
             aria-label={t('kubecode.newSession')}
             className="w-full"
@@ -320,28 +320,16 @@ export function NewSessionDialog({
                 <Empty><EmptyHeader><EmptyDescription>{t('kubecode.noProviderSessions')}</EmptyDescription></EmptyHeader></Empty>
               )}
               {providerError && (
-<Alert variant="destructive">
-          <CircleAlert />
-          <AlertDescription className="[overflow-wrap:anywhere] whitespace-pre-wrap">{providerError}</AlertDescription>
-          <Button aria-label={t('window.close')} className="absolute top-1.5 right-1.5" size="icon-xs" variant="ghost" onClick={() => setProviderError(null)}>
-            <X />
-          </Button>
-        </Alert>
+<InlineNotice closeLabel={t('window.close')} detailsLabel={t('kubecode.details')} level="error" message={providerError} onClose={() => setProviderError(null)} />
               )}
             </ItemGroup>
           )}
           {createError && (
             <div className="flex flex-col gap-2">
-<Alert variant="destructive">
-          <CircleAlert />
-          <AlertDescription className="[overflow-wrap:anywhere] whitespace-pre-wrap">{createError}</AlertDescription>
-          <Button aria-label={t('window.close')} className="absolute top-1.5 right-1.5" size="icon-xs" variant="ghost" onClick={() => {
+<InlineNotice closeLabel={t('window.close')} detailsLabel={t('kubecode.details')} level="error" message={createError} onClose={() => {
             setCreateError(null)
             setCreateFailure(null)
-          }}>
-            <X />
-          </Button>
-        </Alert>
+          }} />
               {createFailure && (
                 <code className="text-xs text-muted-foreground">
                   {createFailure.code}

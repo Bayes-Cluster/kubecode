@@ -1,4 +1,4 @@
-import { CircleAlert, LockKeyhole, ShieldAlert, TriangleAlert, X } from 'lucide-react'
+import { LockKeyhole, ShieldAlert } from 'lucide-react'
 
 import { AiPanelComposer } from '@/components/AiPanelChrome'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -27,6 +27,7 @@ import {
 } from './sessionModel'
 import type { ComposerController } from './useComposerController'
 import type { SessionStateController } from './useSessionState'
+import { InlineNotice } from '../InlineNotice'
 
 type SessionComposerProps = {
   agentLabel: string
@@ -137,22 +138,10 @@ export function SessionComposer({
     >
       <SideQuestionPanel items={sideQuestions} t={t} />
       {error && (
-<Alert variant="destructive">
-          <CircleAlert />
-          <AlertDescription className="[overflow-wrap:anywhere] whitespace-pre-wrap">{error}</AlertDescription>
-          <Button aria-label={t('window.close')} className="absolute top-1.5 right-1.5" size="icon-xs" variant="ghost" onClick={onDismissError}>
-            <X />
-          </Button>
-        </Alert>
+<InlineNotice closeLabel={t('window.close')} detailsLabel={t('kubecode.details')} level="error" message={error} onClose={onDismissError} />
       )}
       {workspaceWarning && (
-<Alert variant="warning">
-          <TriangleAlert />
-          <AlertDescription className="[overflow-wrap:anywhere] whitespace-pre-wrap">{workspaceWarning}</AlertDescription>
-          <Button aria-label={t('window.close')} className="absolute top-1.5 right-1.5" size="icon-xs" variant="ghost" onClick={onDismissWorkspaceWarning}>
-            <X />
-          </Button>
-        </Alert>
+<InlineNotice closeLabel={t('window.close')} detailsLabel={t('kubecode.details')} level="warning" message={workspaceWarning} onClose={onDismissWorkspaceWarning} />
       )}
       {pendingPermission && (
         <PermissionPrompt
@@ -191,7 +180,7 @@ export function SessionComposer({
       )}
       <div className="kubecode-session-composer">
         {hardReadOnly || viewRevisionId ? (
-          <Alert className="kubecode-read-only-session" role="status">
+          <Alert role="status">
             <LockKeyhole />
             <AlertDescription>{viewRevisionId
               ? t('kubecode.revisionReadOnly')

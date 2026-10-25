@@ -17,7 +17,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { ChevronDown, CircleAlert, PanelLeft, Plus, SquareSplitHorizontal, SquareSplitVertical, SquareTerminal, Trash2, X } from 'lucide-react'
+import { ChevronDown, PanelLeft, Plus, SquareSplitHorizontal, SquareSplitVertical, SquareTerminal, Trash2, X } from 'lucide-react'
 
 import { AiAgentIcon } from '@/components/AiAgentIcon'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -30,7 +30,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia } from '@/components/ui/empty'
 import { Input } from '@/components/ui/input'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { Spinner } from '@/components/ui/spinner'
@@ -57,6 +57,7 @@ import {
   type TerminalLayout,
 } from './terminalWorkspaceState'
 import { createPreferenceStorage } from './preferenceStorage'
+import { InlineNotice } from './InlineNotice'
 
 type TerminalWorkspaceProps = {
   agents: AgentDescriptor[]
@@ -371,13 +372,7 @@ export function TerminalWorkspace({
         </div>
       </div>
       {error && (
-<Alert className="kubecode-terminal-error" variant="destructive">
-          <CircleAlert />
-          <AlertDescription className="[overflow-wrap:anywhere] whitespace-pre-wrap">{error}</AlertDescription>
-          <Button aria-label={t('window.close')} className="absolute top-1.5 right-1.5" size="icon-xs" variant="ghost" onClick={() => setError(null)}>
-            <X />
-          </Button>
-        </Alert>
+<InlineNotice className="kubecode-terminal-error" closeLabel={t('window.close')} detailsLabel={t('kubecode.details')} level="error" message={error} onClose={() => setError(null)} />
       )}
       <ResizablePanelGroup className="kubecode-terminal-body" id="kubecode-terminal-body" orientation="horizontal">
         <ResizablePanel className="kubecode-terminal-canvas" id="terminal-canvas" minSize={120}>
@@ -406,9 +401,9 @@ export function TerminalWorkspace({
             <Empty className="h-full" size="compact">
               <EmptyHeader>
                 {creating && <EmptyMedia><Spinner /></EmptyMedia>}
-                <EmptyTitle className="text-sm font-normal text-muted-foreground">
+                <EmptyDescription>
                   {creating ? t('kubecode.loading') : t('kubecode.newTerminal')}
-                </EmptyTitle>
+                </EmptyDescription>
               </EmptyHeader>
             </Empty>
           )}

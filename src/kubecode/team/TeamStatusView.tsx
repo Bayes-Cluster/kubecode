@@ -1,8 +1,7 @@
 import { useState } from 'react'
 import type { ReactNode } from 'react'
-import { ArrowRight, CircleAlert, CircleCheck, Clock, LoaderCircle, Pause, Play, TriangleAlert, Users, X } from 'lucide-react'
+import { ArrowRight, CircleAlert, CircleCheck, Clock, LoaderCircle, Pause, Play, Users } from 'lucide-react'
 
-import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
@@ -22,6 +21,7 @@ import type { TranslationKey, Translator } from '@/lib/i18n'
 import type { KubecodeApi, TeamSnapshot } from '../api'
 import { TEAM_STATUS_ICONS } from '../icons/statusIcons'
 import { statusToneVariant, type StatusTone } from '../statusTone'
+import { InlineNotice } from '../InlineNotice'
 
 export function TeamStatusView({
   api,
@@ -120,19 +120,10 @@ export function TeamStatusView({
       </header>
 
       {error && (
-<Alert variant="destructive">
-          <CircleAlert />
-          <AlertDescription className="[overflow-wrap:anywhere] whitespace-pre-wrap">{error}</AlertDescription>
-          <Button aria-label={t('window.close')} className="absolute top-1.5 right-1.5" size="icon-xs" variant="ghost" onClick={() => setError(null)}>
-            <X />
-          </Button>
-        </Alert>
+<InlineNotice closeLabel={t('window.close')} detailsLabel={t('kubecode.details')} level="error" message={error} onClose={() => setError(null)} />
       )}
       {snapshot.team.mode_fallback && (
-<Alert variant="warning">
-          <TriangleAlert />
-          <AlertDescription className="[overflow-wrap:anywhere] whitespace-pre-wrap">{`${t('kubecode.teamYoloFallback')}: ${snapshot.team.mode_fallback.reason}`}</AlertDescription>
-        </Alert>
+<InlineNotice detailsLabel={t('kubecode.details')} level="warning" message={`${t('kubecode.teamYoloFallback')}: ${snapshot.team.mode_fallback.reason}`} />
       )}
 
       <ItemGroup className="kubecode-team-metrics">
@@ -143,7 +134,7 @@ export function TeamStatusView({
       </ItemGroup>
 
       {attention.length > 0 && (
-        <section aria-labelledby="team-attention-title" className="kubecode-team-attention flex flex-col gap-2">
+        <section aria-labelledby="team-attention-title" className="flex flex-col gap-2">
           <h3 className="flex items-center gap-2 text-sm font-medium" id="team-attention-title">
             <CircleAlert aria-hidden="true" className="size-4" />
             {t('kubecode.teamNeedsAttention')}
@@ -156,7 +147,7 @@ export function TeamStatusView({
               if (userRequest) {
                 const fieldId = `team-user-input-${userRequest.id}`
                 return (
-                  <Item className="kubecode-team-user-input" key={attentionItem.id} variant="outline">
+                  <Item key={attentionItem.id} variant="outline">
                     <ItemContent>
                       <Field>
                         <FieldLabel htmlFor={fieldId}>{userRequest.title}</FieldLabel>

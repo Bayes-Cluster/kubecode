@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { CircleAlert, TriangleAlert, Users, X } from 'lucide-react'
+import { TriangleAlert, Users } from 'lucide-react'
 
 import { AiAgentIcon } from '@/components/AiAgentIcon'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -31,6 +31,7 @@ import { trackEvent } from '@/lib/telemetry'
 import type { AgentId, AgentSessionState, KubecodeApi, TeamMode, TeamSnapshot } from '../api'
 import { NativeLeaderOptions } from './TeamPermissionView'
 import type { Translator } from '@/lib/i18n'
+import { InlineNotice } from '../InlineNotice'
 
 export function TeamSetup({
   api,
@@ -129,13 +130,7 @@ export function TeamSetup({
       </header>
 
       {error && (
-<Alert variant="destructive">
-          <CircleAlert />
-          <AlertDescription className="[overflow-wrap:anywhere] whitespace-pre-wrap">{error}</AlertDescription>
-          <Button aria-label={t('window.close')} className="absolute top-1.5 right-1.5" size="icon-xs" variant="ghost" onClick={() => setError(null)}>
-            <X />
-          </Button>
-        </Alert>
+<InlineNotice closeLabel={t('window.close')} detailsLabel={t('kubecode.details')} level="error" message={error} onClose={() => setError(null)} />
       )}
 
       <FieldGroup className="kubecode-team-setup-grid">

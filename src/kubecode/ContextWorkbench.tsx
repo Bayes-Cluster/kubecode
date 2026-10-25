@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { ChevronDown, CircleAlert, File, Folder, GitCommitHorizontal, GitCompare, Minus, Plus, RotateCw, Search, Trash2, TriangleAlert, X } from 'lucide-react'
+import { ChevronDown, File, Folder, GitCommitHorizontal, GitCompare, Minus, Plus, RotateCw, Search, Trash2, TriangleAlert, X } from 'lucide-react'
 import { Virtuoso } from 'react-virtuoso'
 
 import { IconButton } from '@/components/workspace/IconButton'
@@ -67,6 +67,7 @@ import type {
   TextDocument,
   WorkspaceEvent,
 } from './api'
+import { InlineNotice } from './InlineNotice'
 
 type EntryDialogState = { kind: Entry['kind'] } | null
 type OpenDocument = {
@@ -621,13 +622,7 @@ export function ContextWorkbench({
         )}
       </Tabs>
       {error && (
-<Alert variant="destructive">
-          <CircleAlert />
-          <AlertDescription className="[overflow-wrap:anywhere] whitespace-pre-wrap">{error}</AlertDescription>
-          <Button aria-label={t('window.close')} className="absolute top-1.5 right-1.5" size="icon-xs" variant="ghost" onClick={() => setError(null)}>
-            <X />
-          </Button>
-        </Alert>
+<InlineNotice closeLabel={t('window.close')} detailsLabel={t('kubecode.details')} level="error" message={error} onClose={() => setError(null)} />
       )}
       <EntryDialog
         api={api}
@@ -788,7 +783,7 @@ function GitChangeGroup({
   const isVirtualized = changes.length > GIT_GROUP_VIRTUALIZATION_THRESHOLD
 
   return (
-    <section className="kubecode-git-group" data-group={group} data-virtualized={isVirtualized || undefined}>
+    <section data-group={group} data-virtualized={isVirtualized || undefined}>
       {label && (
         <header className="flex h-7 items-center justify-between px-1.5 text-xs font-semibold uppercase text-muted-foreground">
           <span>{label}</span>
