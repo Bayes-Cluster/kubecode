@@ -478,13 +478,6 @@
     },
     {
       "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-delivery-failure button",
-      "context": "@media (pointer: coarse) / .kubecode-delivery-failure button",
-      "kind": "element-reach-in",
-      "owner": "unassigned (#276, a later slice)"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
       "text": ".kubecode-proto-switcher a, .kubecode-proto-places a, .kubecode-proto-link",
       "context": ".kubecode-proto-switcher a, .kubecode-proto-places a, .kubecode-proto-link",
       "kind": "element-reach-in",
@@ -1100,85 +1093,8 @@
       "owner": "unassigned (#276, a later slice)"
     },
     {
-      "file": "src/kubecode/ContextWorkbench.tsx",
-      "text": "kubecode-git-group",
-      "context": "",
-      "kind": "dead-class",
-      "owner": "unassigned (#276, a later slice)"
-    },
-    {
-      "file": "src/kubecode/app/NewSessionDialog.tsx",
-      "text": "kubecode-new-session-dialog",
-      "context": "",
-      "kind": "dead-class",
-      "owner": "unassigned (#276, a later slice)"
-    },
-    {
-      "file": "src/kubecode/app/NewSessionDialog.tsx",
-      "text": "kubecode-new-session-form",
-      "context": "",
-      "kind": "dead-class",
-      "owner": "unassigned (#276, a later slice)"
-    },
-    {
       "file": "src/kubecode/app/ProjectNavigator.tsx",
       "text": "kubecode-session-sidebar",
-      "context": "",
-      "kind": "dead-class",
-      "owner": "unassigned (#276, a later slice)"
-    },
-    {
-      "file": "src/kubecode/attention/ExecutionRow.tsx",
-      "text": "kubecode-execution-row",
-      "context": "",
-      "kind": "dead-class",
-      "owner": "unassigned (#276, a later slice)"
-    },
-    {
-      "file": "src/kubecode/attention/ExecutionRow.tsx",
-      "text": "kubecode-execution-queued",
-      "context": "",
-      "kind": "dead-class",
-      "owner": "unassigned (#276, a later slice)"
-    },
-    {
-      "file": "src/kubecode/attention/ExecutionRow.tsx",
-      "text": "kubecode-execution-state",
-      "context": "",
-      "kind": "dead-class",
-      "owner": "unassigned (#276, a later slice)"
-    },
-    {
-      "file": "src/kubecode/attention/ExecutionRow.tsx",
-      "text": "kubecode-execution-title",
-      "context": "",
-      "kind": "dead-class",
-      "owner": "unassigned (#276, a later slice)"
-    },
-    {
-      "file": "src/kubecode/attention/ExecutionRow.tsx",
-      "text": "kubecode-shimmer",
-      "context": "",
-      "kind": "dead-class",
-      "owner": "unassigned (#276, a later slice)"
-    },
-    {
-      "file": "src/kubecode/attention/ExecutionStrip.tsx",
-      "text": "kubecode-execution-strip",
-      "context": "",
-      "kind": "dead-class",
-      "owner": "unassigned (#276, a later slice)"
-    },
-    {
-      "file": "src/kubecode/attention/ExecutionStrip.tsx",
-      "text": "kubecode-execution-rows",
-      "context": "",
-      "kind": "dead-class",
-      "owner": "unassigned (#276, a later slice)"
-    },
-    {
-      "file": "src/kubecode/attention/NeedsYouList.tsx",
-      "text": "kubecode-needs-you-list",
       "context": "",
       "kind": "dead-class",
       "owner": "unassigned (#276, a later slice)"
@@ -1198,41 +1114,6 @@
       "owner": "unassigned (#276, a later slice)"
     },
     {
-      "file": "src/kubecode/channel/ConversationComposer.tsx",
-      "text": "kubecode-prompt-input",
-      "context": "",
-      "kind": "dead-class",
-      "owner": "unassigned (#276, a later slice)"
-    },
-    {
-      "file": "src/kubecode/channel/MessageComposer.tsx",
-      "text": "kubecode-add-context",
-      "context": "",
-      "kind": "dead-class",
-      "owner": "unassigned (#276, a later slice)"
-    },
-    {
-      "file": "src/kubecode/channel/MessageItem.tsx",
-      "text": "kubecode-message-recipients-arrow",
-      "context": "",
-      "kind": "dead-class",
-      "owner": "unassigned (#276, a later slice)"
-    },
-    {
-      "file": "src/kubecode/resources/RecordPreview.tsx",
-      "text": "kubecode-record-code",
-      "context": "",
-      "kind": "dead-class",
-      "owner": "unassigned (#276, a later slice)"
-    },
-    {
-      "file": "src/kubecode/session/PromptQueueDock.tsx",
-      "text": "kubecode-session-queue-text",
-      "context": "",
-      "kind": "dead-class",
-      "owner": "unassigned (#276, a later slice)"
-    },
-    {
       "file": "src/kubecode/session/RevisionNavigator.tsx",
       "text": "kubecode-revision-navigator",
       "context": "",
@@ -1242,13 +1123,6 @@
     {
       "file": "src/kubecode/session/RevisionNavigator.tsx",
       "text": "kubecode-recreated-context",
-      "context": "",
-      "kind": "dead-class",
-      "owner": "unassigned (#276, a later slice)"
-    },
-    {
-      "file": "src/kubecode/session/SessionComposer.tsx",
-      "text": "kubecode-read-only-session",
       "context": "",
       "kind": "dead-class",
       "owner": "unassigned (#276, a later slice)"
@@ -1268,27 +1142,6 @@
       "owner": "unassigned (#276, a later slice)"
     },
     {
-      "file": "src/kubecode/tasks/TaskBoardView.tsx",
-      "text": "kubecode-task-drafts",
-      "context": "",
-      "kind": "dead-class",
-      "owner": "unassigned (#276, a later slice)"
-    },
-    {
-      "file": "src/kubecode/tasks/TaskBoardView.tsx",
-      "text": "kubecode-task-stages",
-      "context": "",
-      "kind": "dead-class",
-      "owner": "unassigned (#276, a later slice)"
-    },
-    {
-      "file": "src/kubecode/tasks/TaskBoardView.tsx",
-      "text": "kubecode-task-archived",
-      "context": "",
-      "kind": "dead-class",
-      "owner": "unassigned (#276, a later slice)"
-    },
-    {
       "file": "src/kubecode/tasks/TaskWork.tsx",
       "text": "kubecode-task-waiting",
       "context": "",
@@ -1298,20 +1151,6 @@
     {
       "file": "src/kubecode/team/TeamProposalView.tsx",
       "text": "kubecode-team-proposal",
-      "context": "",
-      "kind": "dead-class",
-      "owner": "unassigned (#276, a later slice)"
-    },
-    {
-      "file": "src/kubecode/team/TeamStatusView.tsx",
-      "text": "kubecode-team-attention",
-      "context": "",
-      "kind": "dead-class",
-      "owner": "unassigned (#276, a later slice)"
-    },
-    {
-      "file": "src/kubecode/team/TeamStatusView.tsx",
-      "text": "kubecode-team-user-input",
       "context": "",
       "kind": "dead-class",
       "owner": "unassigned (#276, a later slice)"
@@ -1347,13 +1186,6 @@
     {
       "file": "src/kubecode/team/TeamVerificationView.tsx",
       "text": "kubecode-team-verification",
-      "context": "",
-      "kind": "dead-class",
-      "owner": "unassigned (#276, a later slice)"
-    },
-    {
-      "file": "src/kubecode/work/WorkBoard.tsx",
-      "text": "kubecode-work-filter",
       "context": "",
       "kind": "dead-class",
       "owner": "unassigned (#276, a later slice)"

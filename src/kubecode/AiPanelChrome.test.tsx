@@ -180,6 +180,12 @@ describe('AiPanelComposer', () => {
     fireEvent.click(stop)
     expect(onStop).toHaveBeenCalledOnce()
     expect(stop).toHaveAttribute('aria-busy', 'true')
+    // Busy keeps focus (it is not disabled) and shows the official Spinner; on touch it says what it does (ADR 0227, ADR 0256).
+    expect(stop).not.toBeDisabled()
+    stop.focus()
+    expect(stop).toHaveFocus()
+    expect(stop.querySelector('.animate-spin')).not.toBeNull()
+    expect(stop).toHaveTextContent('Stop run')
     fail(new Error('nope'))
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Codex could not be stopped. Try again.'))
     expect(stop).not.toHaveAttribute('aria-busy')

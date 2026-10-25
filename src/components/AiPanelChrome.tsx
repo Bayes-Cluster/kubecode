@@ -176,10 +176,13 @@ function ComposerStopButton({
   failedLabel,
   label,
   onStop,
+  shortLabel,
 }: {
   failedLabel: string
   label: string
   onStop: () => void | Promise<unknown>
+  /** The words shown on touch screens, where there are no tooltips. */
+  shortLabel: string
 }) {
   const [busy, setBusy] = useState(false)
   const [announcement, setAnnouncement] = useState('')
@@ -209,6 +212,7 @@ function ComposerStopButton({
               onClick={busy ? undefined : stop}
             >
               {busy ? <Spinner aria-hidden="true" /> : <StopIcon aria-hidden fill="currentColor" size={ICON_SIZES.status} />}
+              <span aria-hidden="true" className="pointer-fine:sr-only">{shortLabel}</span>
             </Button>
           </TooltipTrigger>
           <TooltipContent>{label}</TooltipContent>
@@ -451,6 +455,7 @@ export function AiPanelComposer({
           <ComposerStopButton
             failedLabel={t('kubecode.composer.stopFailed', { target: agentLabel })}
             label={t('kubecode.composer.stopTarget', { target: agentLabel })}
+            shortLabel={t('kubecode.vocab.command.stopRun')}
             onStop={onStop}
           />
           {onActiveSend && (

@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { createTranslator } from '@/lib/i18n'
@@ -22,7 +22,7 @@ describe('ExecutionRow', () => {
   it('names the member once, with the Task on its own line, and never repeats the name in the status', () => {
     const item = row()
     expect(within(item).getAllByText('Analyst')).toHaveLength(1)
-    const title = item.querySelector('.kubecode-execution-title') as HTMLElement
+    const title = within(item).getByTestId('execution-title')
     expect(title).toHaveTextContent('Structured pruning')
     expect(title).toHaveAttribute('title', 'Structured pruning')
     expect(item).not.toHaveTextContent(/Analyst is/)
@@ -36,7 +36,21 @@ describe('ExecutionRow', () => {
 
   it('shows queued messages as a small count', () => {
     const item = row({ runs: [execution({ queued: 3 })] })
-    expect(within(item).getByText('3 queued')).toHaveClass('kubecode-execution-queued')
+    expect(within(item).getByText('3 queued')).toHaveAttribute('data-testid', 'execution-queued')
+  })
+
+  it('keeps Stop focusable and quiet while the stop is in flight (ADR 0227)', () => {
+    const onStop = vi.fn()
+    const item = row({ stopping: true, onStop })
+    const stop = within(item).getByRole('button', { name: 'Stop Structured pruning' })
+    expect(stop).not.toBeDisabled()
+    expect(stop).toHaveAttribute('aria-busy', 'true')
+    stop.focus()
+    expect(stop).toHaveFocus()
+    expect(stop.querySelector('.animate-spin')).not.toBeNull()
+    fireEvent.click(stop)
+    expect(onStop).not.toHaveBeenCalled()
+    expect(item).toHaveTextContent('Stopping')
   })
 
   it('has no queued count when nothing waits', () => {
@@ -51,7 +65,7 @@ describe('ExecutionRow', () => {
 
   it('says Replying and Stop reply for a reply that belongs to no Task', () => {
     const item = row({ entryKey: 'run:run1', runs: [execution({ tasks: [] })], task: null })
-    expect(item.querySelector('.kubecode-execution-title')).toHaveTextContent('Replying')
+    expect(within(item).getByTestId('execution-title')).toHaveTextContent('Replying')
     expect(within(item).getByRole('button', { name: "Stop Analyst's reply" })).toHaveTextContent('Stop reply')
   })
 
