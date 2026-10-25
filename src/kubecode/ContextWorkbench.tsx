@@ -68,6 +68,7 @@ import type {
   WorkspaceEvent,
 } from './api'
 import { InlineNotice } from './InlineNotice'
+import { useCoarsePointer } from './channel/useCoarsePointer'
 
 type EntryDialogState = { kind: Entry['kind'] } | null
 type OpenDocument = {
@@ -781,6 +782,8 @@ function GitChangeGroup({
   t: Translator
 }) {
   const isVirtualized = changes.length > GIT_GROUP_VIRTUALIZATION_THRESHOLD
+  // The row Button is 44px on a coarse pointer (ADR 0256 §2); the virtual list's fixed row height follows it.
+  const rowHeight = useCoarsePointer() ? 44 : 36
 
   return (
     <section data-group={group} data-virtualized={isVirtualized || undefined}>
@@ -796,8 +799,8 @@ function GitChangeGroup({
           computeItemKey={(_index, change) => `${group}:${change.path}`}
           data={changes}
           data-testid={`git-change-virtual-list-${group}`}
-          defaultItemHeight={36}
-          fixedItemHeight={36}
+          defaultItemHeight={rowHeight}
+          fixedItemHeight={rowHeight}
           increaseViewportBy={{ bottom: 216, top: 216 }}
           itemContent={(_index, change) => (
             <GitChangeRow

@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { VirtuosoMockContext } from 'react-virtuoso'
 
 import { createTranslator } from '@/lib/i18n'
 
@@ -1010,18 +1011,55 @@ describe('ContextWorkbench', () => {
     } as unknown as KubecodeApi
 
     render(
-      <ContextWorkbench
-        api={api}
-        projectId="project-1"
-        t={createTranslator('en')}
-        width={440}
-        workspaceEvents={[]}
-      />,
+      <VirtuosoMockContext.Provider value={{ itemHeight: 36, viewportHeight: 360 }}>
+        <ContextWorkbench
+          api={api}
+          projectId="project-1"
+          t={createTranslator('en')}
+          width={440}
+          workspaceEvents={[]}
+        />
+      </VirtuosoMockContext.Provider>,
     )
 
     for (const group of ['conflict', 'staged', 'worktree']) {
       const list = await screen.findByTestId(`git-change-virtual-list-${group}`)
       expect(list.querySelectorAll('.kubecode-git-row').length).toBeLessThan(210)
+      // Fine pointer: 36px rows, as the row Button is.
+      expect(list.querySelector('[data-known-size]')).toHaveAttribute('data-known-size', '36')
+    }
+  })
+
+  it('gives the virtual Git rows the touch height on a coarse pointer, so the 44px row Button never outgrows its row (ADR 0256 §2)', async () => {
+    const originalMatchMedia = window.matchMedia
+    window.matchMedia = ((query: string) => ({
+      matches: query === '(pointer: coarse)',
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    })) as unknown as typeof window.matchMedia
+    try {
+      const api = {
+        listEntries: vi.fn().mockResolvedValue([]),
+        gitStatus: vi.fn().mockResolvedValue({
+          is_repository: true,
+          branch: 'main',
+          files: Array.from({ length: 210 }, (_value, index) => ({
+            path: `changed-${index}.txt`, index_status: null, worktree_status: 'M', conflict: false,
+          })),
+          truncated: false,
+        }),
+      } as unknown as KubecodeApi
+      render(
+        <VirtuosoMockContext.Provider value={{ itemHeight: 36, viewportHeight: 360 }}>
+          <ContextWorkbench api={api} projectId="project-1" t={createTranslator('en')} width={440} workspaceEvents={[]} />
+        </VirtuosoMockContext.Provider>,
+      )
+      const list = await screen.findByTestId('git-change-virtual-list-worktree')
+      expect(list.querySelector('[data-known-size]')).toHaveAttribute('data-known-size', '44')
+      expect(list.querySelector('.kubecode-git-path')?.className).toContain('pointer-coarse:min-h-[44px]')
+    } finally {
+      window.matchMedia = originalMatchMedia
     }
   })
 
