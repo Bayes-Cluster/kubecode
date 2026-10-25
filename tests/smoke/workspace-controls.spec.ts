@@ -123,8 +123,11 @@ test.describe('on a phone', () => {
     await open(page, '?theme=light&lang=de-DE', 'de-DE')
     await expect(page.locator('html')).toHaveAttribute('lang', 'de-DE')
     expect(await page.evaluate(() => window.matchMedia('(pointer: coarse)').matches)).toBe(true)
-    // A member's name is inline text that opens the profile; inline targets are exempt from the size rule.
-    const targets = CONTROLS.replaceAll(':not(:disabled)', '').replace(', button[data-size="inline"]', '')
+    // The touch minimum belongs to the roomy sizes (ADR 0256 §2): xs, icon-xs (dense rows, message actions)
+    // and the inline name link keep their own height.
+    const targets = CONTROLS.replaceAll(':not(:disabled)', '')
+      .replace(', button[data-size="inline"]', '')
+      .replace('[data-size^="icon-"]', '[data-size="icon"], [data-size="icon-sm"], [data-size="icon-lg"]')
     const small = await page.locator(targets).evaluateAll((elements) => elements
       .map((element) => ({ box: element.getBoundingClientRect(), name: element.getAttribute('aria-label') ?? element.textContent }))
       .filter(({ box }) => box.width < 44 || box.height < 44)

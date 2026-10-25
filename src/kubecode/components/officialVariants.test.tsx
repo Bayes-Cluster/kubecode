@@ -16,11 +16,13 @@ import { SidebarMenu, SidebarMenuItem, SidebarMenuSub, SidebarMenuSubButton, Sid
  * so no call site repaints a part by className.
  */
 describe('official component variants (ADR 0256)', () => {
-  it('Button meets the touch target on a coarse pointer in every size but inline, and wraps a decision', () => {
+  it('Button meets the touch target on a coarse pointer in the roomy sizes, not in xs, icon-xs or inline, and wraps a decision', () => {
     render(
       <>
-        <Button size="xs">Retry</Button>
-        <Button aria-label="Close" size="icon-xs">x</Button>
+        <Button size="sm">Retry</Button>
+        <Button aria-label="Close" size="icon-sm">x</Button>
+        <Button size="xs">Dense</Button>
+        <Button aria-label="Copy" size="icon-xs">c</Button>
         <Button size="wrap" variant="outline">Accept the results shown</Button>
         <Button size="inline" variant="link">Analyst</Button>
       </>,
@@ -36,8 +38,10 @@ describe('official component variants (ADR 0256)', () => {
     const inline = screen.getByRole('button', { name: 'Analyst' })
     expect(inline).toHaveAttribute('data-size', 'inline')
     expect(inline.className).toContain('p-0')
-    expect(inline.className).toContain('pointer-coarse:min-h-0')
     expect(inline.className).not.toContain('pointer-coarse:min-h-[44px]')
+    // Dense rows (file tree, terminal navigator, message actions) keep their height.
+    expect(screen.getByRole('button', { name: 'Dense' }).className).not.toContain('pointer-coarse:')
+    expect(screen.getByRole('button', { name: 'Copy' }).className).not.toContain('pointer-coarse:')
   })
 
   it('Empty has a compact size and an outline variant', () => {
