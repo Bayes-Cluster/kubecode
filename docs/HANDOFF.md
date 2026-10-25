@@ -189,11 +189,13 @@ composer reads the coarse pointer through the shared hook.
   test selectors. They are now `data-variant`, `header[data-destination]`,
   `[data-slot="item"]`, `[data-reference-state]`; prefer roles and
   `data-testid` for new hooks.
-- **Touch sizing lives in the component.** `Button`, `Toggle`, interactive
-  `Item`, `CommandItem` and `Attachment` are 44 px on a coarse pointer from
-  their own classes; the smoke suite runs with `hasTouch: true`, so a new
-  per-call `pointer-coarse:` class is both unnecessary and a lint finding
-  once its slice's baseline entries are gone.
+- **Touch sizing lives in the component.** `Button` (default, sm, lg, icon,
+  icon-sm, icon-lg, wrap), `Toggle`, interactive `Item`, `CommandItem` and
+  the `Attachment` trigger are 44 px on a coarse pointer from their own
+  classes; `xs` and `icon-xs` keep their height. Write `[44px]`, not
+  `min-h-11`: the root is 14 px, so 11 spacing units are 38.5 px. A new
+  per-call `pointer-coarse:` class is unnecessary; the CSS ownership check
+  does not see Tailwind utilities, so reviewers catch it, not lint.
 - **The CSS ownership check reads TSX now.** A class passed as `className`
   to an official import makes every appearance rule on that class a finding;
   a rule whose `kubecode-*` class no product file mentions, or a className

@@ -38,7 +38,7 @@ Each carries a `Kubecode (ADR 0256)` comment so a CLI re-run's diff shows it.
 
 | File | Change |
 | --- | --- |
-| `ui/button.tsx` | Base: `pointer-coarse:min-h-[44px]`; icon sizes also `pointer-coarse:min-w-[44px]`, so every Button is a 44 px target on a coarse pointer. New sizes: `wrap` (a text decision that wraps a long translation: `h-auto min-h-8 … whitespace-normal`) and `inline` (a link inside running text: `h-auto p-0`, opts out of the touch minimum). |
+| `ui/button.tsx` | The `default`, `sm`, `lg`, `icon`, `icon-sm`, `icon-lg` and `wrap` sizes are 44 px targets on a coarse pointer (`pointer-coarse:min-h-[44px]`, icon sizes also `min-w-[44px]`; `44px`, not `11`, because the root is 14 px). `xs` and `icon-xs` keep their height: they are the dense rows and small actions — the file tree rows (Virtuoso at 26 px), the terminal navigator rows and close, message actions, the Session message copy buttons, the title-bar and side-question icon buttons, the delivery-failure actions. New sizes: `wrap` (a text decision that wraps a long translation: `h-auto min-h-8 … whitespace-normal`) and `inline` (a link inside running text: `h-auto p-0`). |
 | `ui/empty.tsx` | `size`: `default` (`gap-6 p-6 md:p-12`) and `compact` (`gap-4 p-4`); `variant`: `default` and `outline` (`border`). |
 | `ui/card.tsx` | `size`: `default` (`gap-6 py-6`) and `compact` (`gap-0 py-0`, for a Card whose one child owns the insets). |
 | `ui/item.tsx` | `size="compact"` (`gap-2.5 p-0`); an Item rendered as `a` or `button` is a 44 px target on a coarse pointer. |
@@ -48,7 +48,8 @@ Each carries a `Kubecode (ADR 0256)` comment so a CLI re-run's diff shows it.
 | `ui/command.tsx` | Exports `CommandLoading`; `CommandItem` is a 44 px target on a coarse pointer. |
 | `ui/toggle.tsx` | 44 px target on a coarse pointer (ToggleGroup items inherit it). |
 | `ui/attachment.tsx` | An Attachment with a trigger is a 44 px target on a coarse pointer. |
-| `ui/sidebar.tsx` | `SidebarMenuSubButton size="lg"` (`h-12`), the touch row like `SidebarMenuButton`'s. Call sites pass `size` from `useSidebarMenuSize()` (`lg` on a coarse pointer). |
+| `ui/sidebar.tsx` | `SidebarMenuSubButton size="lg"` (`h-12`), the touch row like `SidebarMenuButton`'s; both `lg` sizes add `pointer-coarse:min-h-[44px]` (`h-12` is 42 px on the 14 px root), and the sub-button is a `peer/menu-button` so `SidebarMenuAction` centres on it. Call sites pass `size` from `useSidebarMenuSize()` (`lg` on a coarse pointer). |
+| `ui/input-group.tsx` | `InputGroup` is `h-auto min-h-9` so it grows with a touch-sized button or a textarea; `InputGroupButton` `sm` and `icon-sm` are 44 px targets on a coarse pointer (`xs`, `icon-xs` keep their height). |
 | `ai-elements/confirmation.tsx` | `ConfirmationAction` takes a Button `size` (default `sm`) instead of a fixed className, so a decision can take `wrap`. |
 
 Removed from call sites, repo-wide: `pointer-coarse:min-h-*`,
@@ -60,12 +61,14 @@ className="p-0"`, `FieldLabel className="font-normal"`.
 ### 3. Sonner
 
 `pnpm dlx shadcn@latest add sonner` installed `src/components/ui/sonner.tsx`
-with `sonner` 2.0.8 and `next-themes` 0.4.6 (new dependencies). The
-Toaster takes the app's `appearance.colorScheme` as its `theme`, so it
-follows `data-theme` rather than `next-themes`' provider.
-`SystemMessageProvider` publishes through `toast()`: one host, the newest
-three visible, a repeated message shown once (by id), warnings and errors kept
-until closed, the close button and the region named from the locale. The
+with `sonner` 2.0.8 (new dependency) and `next-themes`, which was removed
+again: the app has no `next-themes` provider, and the Toaster takes the
+app's `appearance.colorScheme` as its `theme` prop, so it follows
+`data-theme`. `SystemMessageProvider` publishes through `toast()`: one host,
+the newest three visible, a repeated message shown once (by id), every
+message kept until closed (as the notices it replaces were), the close
+button and the region named from the locale; closing the onboarding toast
+records the same choice as Not now. The
 hand-made host (`.kubecode-system-message-host`) and the expand/collapse
 notice are gone; the inline notices are official Alerts with a close Button;
 the notification onboarding is a toast with its action and cancel.
@@ -124,6 +127,7 @@ contract that would otherwise be repeated at every call site:
 | `ViewHeader` / `DestinationHeader` | `Item` with `ItemHeader` (Back, glyph as `ItemMedia`, heading in `ItemTitle`, `ItemActions`, Close), facts as `ItemContent`, description as `ItemDescription`; the destination adds the official `Separator`. The `header` element only takes its context's padding. | heading level; Back/Close semantics shared by the shell, the inspector and the destinations (slices C–K) |
 | `ReaderLoading` / `ReaderEmpty` / `ReaderNotice` | `Empty size="compact"` (the `Spinner` as `EmptyMedia`) and `Alert` | one role per reader state |
 | `MoreActions`, `ReferenceChip` | unchanged compositions over `DropdownMenu` + `IconButton` and `Attachment` | one labelled overflow menu; a reference that only opens |
+| `InlineNotice` (`src/kubecode/InlineNotice.tsx`) | `Alert` + `Collapsible`: the message on one line until the Details `CollapsibleTrigger` opens the `CollapsibleContent`, a close `Button` when the caller can dismiss it | a long diagnostic in place never widens its panel; it is read in full on request |
 
 The audit's header font (16 px, 600) becomes the official `ItemTitle` scale
 (14 px, 500) and the research decisions take the Button `wrap` size; as in
@@ -147,19 +151,30 @@ ADR 0247 §3, that is the intended scale, not a regression.
   that no stylesheet styles, and a rule whose `kubecode-*` class no product
   source mentions.
 
-`scripts/css-ownership-baseline.json` was regenerated: 187 entries
-(7 official-internal, 22 third-party-internal, 50 element-reach-in,
-2 important, 56 appearance-on-official, 50 dead-class), the ten #254
-exceptions keeping their owners and the rest marked for later slices. The
-list only shrinks; every later slice removes its entries.
+`scripts/css-ownership-baseline.json` was regenerated: 162 entries
+(7 official-internal, 22 third-party-internal, 48 element-reach-in,
+2 important, 56 appearance-on-official, 27 dead-class), the ten #254
+exceptions keeping their owners and the rest attributed to the UI2 slice
+that owns the file (by the slice issues' scope lists; by the class's TSX
+file for a CSS rule). The list only shrinks; every later slice removes its
+entries.
+
+What the checker cannot see, and reviewers still must: a repaint through
+Tailwind utilities in TSX (`className="h-auto p-0"` on a Button); a class
+forwarded to an official part through a project wrapper's `className`; an
+`asChild` element, whose class the checker attributes to the official tag
+rather than the rendered child; a class mentioned only in a comment or a
+`querySelector` string, which counts as a use; `width`, `margin` and `gap`
+declarations, which are layout by the contract and not in `APPEARANCE`;
+and `:is()`/`:where()` nested more than one level.
 
 ## Consequences
 
-- Every Button, Toggle, interactive Item, CommandItem and Attachment is a
-  44 px target on a coarse pointer by default; rows that are Buttons by
-  accident (file tree, terminal navigator) grow on touch until their slice
-  moves them to a list part.
-- Two new dependencies (`sonner`, `next-themes`).
+- Every Button in a roomy size, Toggle, interactive Item, CommandItem and
+  Attachment trigger is a 44 px target on a coarse pointer by default; `xs`
+  and `icon-xs` keep their height, so dense rows and small actions are
+  unchanged until their slice moves them to a list part or a roomier size.
+- One new dependency (`sonner`).
 - Statuses, decisions, identities and headers take the official scale and
   tones; screenshots change where the wrappers painted their own.
 - `git worktree` checkouts need their own `node_modules`: the CLI's `pnpm
