@@ -176,7 +176,7 @@ describe('TaskPanel', () => {
     expect(within(next).getByText('Results are ready for your decision.')).toBeInTheDocument()
     expect(within(next).getByRole('button', { name: 'Discuss in General' })).toBeInTheDocument()
     expect(panel().getAllByRole('button', { name: 'Discuss in General' })).toHaveLength(1)
-    const header = screen.getByRole('complementary', { name: 'Task details' }).querySelector('.kubecode-view-header') as HTMLElement
+    const header = screen.getByRole('complementary', { name: 'Task details' }).querySelector('header[data-level]') as HTMLElement
     expect(within(header).queryByRole('button', { name: 'Discuss in General' })).not.toBeInTheDocument()
     expect(within(header).getByRole('button', { name: 'More actions for this Task' })).toBeInTheDocument()
   })

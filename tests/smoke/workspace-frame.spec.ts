@@ -41,6 +41,14 @@ function header(page: Page, view: string) {
   return page.locator(`.kubecode-session-context-row header[data-destination="${view}"]`)
 }
 
+/** The title never sits flush at the pane edge: the header keeps its padding at every width (ADR 0256). */
+async function expectHeaderInset(page: Page, view: string) {
+  const box = (await header(page, view).boundingBox())!
+  const title = (await header(page, view).getByRole('heading', { level: 2 }).boundingBox())!
+  expect(title.x - box.x).toBeGreaterThanOrEqual(12)
+  expect(title.y - box.y).toBeGreaterThanOrEqual(8)
+}
+
 async function expectContained(page: Page) {
   const viewport = await page.evaluate(() => ({
     clientWidth: document.documentElement.clientWidth,
@@ -68,6 +76,7 @@ test.describe('the Workspace frame', () => {
         await expect(nav.getByRole('button', { name: destination.nav }).first()).toHaveAttribute('aria-current', 'page')
         await expect(header(page, destination.view).getByRole('button', { name: /^Back/ })).toHaveCount(0)
         tops.push(Math.round((await header(page, destination.view).boundingBox())!.y))
+        await expectHeaderInset(page, destination.view)
       }
       expect(new Set(tops).size).toBe(1)
 
@@ -102,6 +111,7 @@ test.describe('the Workspace frame', () => {
         await nav.getByRole('button', { name: destination.nav }).first().click()
         await closeNavigationSheet(page)
         await expect(header(page, destination.view)).toBeInViewport()
+        await expectHeaderInset(page, destination.view)
         await expectContained(page)
       }
     } finally {

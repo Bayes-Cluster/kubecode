@@ -56,7 +56,8 @@ export function ViewHeader({
 }: ViewHeaderProps) {
   const Heading = (['h1', 'h2', 'h3'] as const)[level - 1]
   return (
-    <header className={cn('kubecode-view-header', className)} data-destination={destination} data-level={level}>
+    // The container takes only layout: a context passes its padding as utilities (ADR 0256).
+    <header className={cn('pb-(--ws-space-2)', className)} data-destination={destination} data-level={level}>
       <Item className="flex-col items-stretch gap-1" size="compact">
         <ItemHeader className="flex-wrap justify-start">
           {back && (

@@ -429,13 +429,6 @@
     },
     {
       "file": "src/kubecode/kubecode.css",
-      "text": ".kubecode-channel-thread h3, .kubecode-channel-link",
-      "context": ".kubecode-channel-thread h3, .kubecode-channel-link",
-      "kind": "element-reach-in",
-      "owner": "unassigned (#276, a later slice)"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
       "text": ".kubecode-channel-filter label",
       "context": ".kubecode-channel-filter label",
       "kind": "element-reach-in",

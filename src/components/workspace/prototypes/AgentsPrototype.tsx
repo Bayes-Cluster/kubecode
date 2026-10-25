@@ -97,6 +97,7 @@ export function AgentsMain({ request, t }: Pick<ScreenProps, 'request' | 't'>) {
   return (
     <div className="kubecode-proto-conversation">
       <ViewHeader
+        className="px-(--ws-space-5) py-(--ws-space-3) max-md:p-(--ws-space-3)"
         icon={<Icon role="navigation" source={WORKSPACE_DESTINATION_ICONS.general.Icon} />}
         level={1}
         meta={empty ? undefined : <Badge variant="secondary">{t('kubecode.proto.agents.working', { count: 2 })}</Badge>}

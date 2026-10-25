@@ -889,7 +889,6 @@
   justify-content: space-between;
 }
 
-.kubecode-channel-thread h3,
 .kubecode-channel-link {
   align-items: center;
   display: flex;
@@ -1043,7 +1042,6 @@
 .kubecode-inspector-entry:focus { outline: none; }
 .kubecode-inspector-entry:focus-visible { box-shadow: inset 0 0 0 2px var(--state-focus-ring); }
 .kubecode-inspector-entry[data-top='false'] { visibility: hidden; }
-.kubecode-inspector-panel > .kubecode-view-header { padding: var(--ws-space-3) var(--ws-space-4) var(--ws-space-2); }
 .kubecode-inspector-body { padding: 0 var(--ws-space-4) var(--ws-space-4); }
 .kubecode-inspector-main {
   display: flex;
@@ -1259,9 +1257,6 @@
   --ws-font-meta: 400 var(--kubecode-ui-font-small, 13px) / 1.4 var(--kubecode-ui-font, system-ui, sans-serif);
 }
 
-/* The one header of a Workspace view or detail: the context's layout container around the official Item (ADR 0255). */
-.kubecode-view-header { padding: 0 0 var(--ws-space-2); }
-
 /* The control matrix page (#/controls, ADR 0227). */
 .kubecode-app.kubecode-control-matrix {
   display: block;
@@ -1452,7 +1447,6 @@
 }
 .kubecode-proto-inspector-body { display: flex; flex-direction: column; gap: var(--ws-space-3); }
 .kubecode-proto-conversation { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }
-.kubecode-proto-conversation > .kubecode-view-header, .kubecode-proto-review > .kubecode-view-header { padding: var(--ws-space-3) var(--ws-space-5); }
 .kubecode-proto-dock { display: flex; flex-direction: column; gap: var(--ws-space-2); padding: var(--ws-space-2) var(--ws-space-4) var(--ws-space-3); }
 .kubecode-proto-note { color: var(--text-secondary); font: var(--ws-font-meta); margin: 0; }
 .kubecode-proto-subheading { font: var(--ws-font-subtitle); margin: var(--ws-space-4) 0 var(--ws-space-2); }
@@ -1488,7 +1482,6 @@
   .kubecode-proto-places a { width: auto; }
   .kubecode-proto-workspace { margin-bottom: var(--ws-space-1); }
   .kubecode-proto-places-heading, .kubecode-proto-places ul:last-of-type { display: none; }
-  .kubecode-proto-conversation > .kubecode-view-header, .kubecode-proto-review > .kubecode-view-header { padding: var(--ws-space-3); }
   
   .kubecode-proto-dock { bottom: 0; background: var(--surface-app); padding: var(--ws-space-2); position: sticky; }
   .kubecode-proto-tabs { padding: var(--ws-space-2) var(--ws-space-3); }
