@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { Ticker } from './ticker'
@@ -42,9 +42,13 @@ describe('Ticker', () => {
   it('rolls to a new value and leaves no animation frame behind on unmount', async () => {
     const cancelSpy = vi.spyOn(window, 'cancelAnimationFrame')
     const { rerender, unmount } = render(<Ticker value={10} />)
-    await new Promise((resolve) => requestAnimationFrame(resolve))
+    await act(async () => {
+      await new Promise((resolve) => requestAnimationFrame(resolve))
+    })
     rerender(<Ticker value={90} />)
-    await new Promise((resolve) => requestAnimationFrame(resolve))
+    await act(async () => {
+      await new Promise((resolve) => requestAnimationFrame(resolve))
+    })
     expect(rafSpy).toHaveBeenCalled()
     unmount()
     expect(cancelSpy).toHaveBeenCalled()

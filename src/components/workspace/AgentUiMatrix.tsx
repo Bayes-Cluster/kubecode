@@ -81,7 +81,9 @@ export function AgentUiMatrix({ t }: { t: Translator }) {
       </Row>
       <Row label={t('kubecode.matrix.state.updating')}>
         <span className="flex items-center gap-3">
-          <Ticker className="text-lg" value={count} />
+          <span className="text-lg">
+            <Ticker value={count} />
+          </span>
           <Button onClick={() => setCount((current) => current + 47)} size="sm" variant="outline">
             {t('kubecode.matrix.sample.countUp')}
           </Button>

@@ -67,10 +67,9 @@ export function Ticker({
   delay = 0,
   className,
 }: TickerProps) {
-  const text = useMemo(
-    () => new Intl.NumberFormat(locale, format).format(value),
-    [value, locale, format],
-  )
+  // Formatting per render keeps an unstable `format` object from re-anchoring
+  // the animation (memoizing on its identity would restart the roll).
+  const text = new Intl.NumberFormat(locale, format).format(value)
   const cells = useMemo(() => splitCells(text), [text])
 
   // Per-column animation state, keyed by place. Positions live in refs; the
@@ -85,10 +84,12 @@ export function Ticker({
   const [started, setStarted] = useState(() => typeof IntersectionObserver === 'undefined')
   const root = useRef<HTMLSpanElement | null>(null)
 
-  // Columns that appear after the first commit get the enter animation. The
-  // flag flips in a layout effect after the first commit, and ref callbacks
-  // (which run at commit time, not during render) read it.
+  // Columns that appear after the first commit get the enter animation, once
+  // per column: the flag flips in a layout effect after the first commit, and
+  // ref callbacks (which run at commit time, not during render) read it;
+  // entered keys keep a re-run from replaying the animation.
   const committed = useRef(false)
+  const entered = useRef(new Set<string>())
   useLayoutEffect(() => {
     committed.current = true
   }, [])
@@ -157,6 +158,7 @@ export function Ticker({
       cancelAnimationFrame(frame.current)
       columns.current.clear()
       positions.current.clear()
+      entered.current.clear()
     },
     [],
   )
@@ -172,8 +174,11 @@ export function Ticker({
               className="agx-ticker__col"
               ref={(element) => {
                 // A column mounted after the first commit is new: the value
-                // grew. The enter animation marks it once.
-                if (element && committed.current) element.setAttribute('data-enter', '')
+                // grew. The enter animation marks it exactly once.
+                if (element && committed.current && !entered.current.has(cell.key)) {
+                  entered.current.add(cell.key)
+                  element.setAttribute('data-enter', '')
+                }
               }}
             >
               <span

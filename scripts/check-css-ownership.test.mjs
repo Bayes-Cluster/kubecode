@@ -186,6 +186,15 @@ test('flags appearance declarations on a class an agent-ui component carries, no
   ])
 })
 
+test('the agx- prefix is the ownership signal: an unmapped agx-* subject is still a repaint', () => {
+  const css = '.agx-ticker { color: red; font-size: 40px; }\n.wrapper .agx-ticker__stack { padding: 4px; }\n.agx-ticker { display: flex; }'
+  assert.deepEqual(findAppearanceOnPresentation(css, new Map()).map((v) => [v.line, v.text, v.component]), [
+    [1, 'color: red;', 'agent-ui (agx-*)'],
+    [1, 'font-size: 40px;', 'agent-ui (agx-*)'],
+    [2, 'padding: 4px;', 'agent-ui (agx-*)'],
+  ])
+})
+
 test('accepts agent-ui co-located styles and rejects the same repaint from a feature stylesheet', () => {
   const root = mkdtempSync(join(tmpdir(), 'css-ownership-agentui-'))
   mkdirSync(join(root, 'src/components/agent-ui'), { recursive: true })

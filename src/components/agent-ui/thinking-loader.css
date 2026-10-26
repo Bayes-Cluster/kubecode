@@ -116,7 +116,7 @@
   white-space: nowrap;
 }
 
-.agx-thinking[data-cut] .agx-thinking__label {
+.agx-thinking__text[data-cut] .agx-thinking__label {
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;

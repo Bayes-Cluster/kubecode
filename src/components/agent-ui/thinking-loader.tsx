@@ -63,8 +63,9 @@ export function ThinkingLoader({
   // Width glide: the box takes the incoming label's measured width; the CSS
   // transition carries it from the previous width. The first commit sets the
   // width without a transition so nothing glides on mount. The available
-  // width comes from the pill's containing block, so a narrow container
-  // truncates instead of overflowing (the reference's data-cut behaviour).
+  // width comes from the pill's containing block, measured with rects so the
+  // answer does not depend on which ancestor happens to be positioned; a
+  // narrow container truncates instead of overflowing (data-cut).
   const fit = (animateFirst: boolean) => {
     const span = measured.current
     const element = box.current
@@ -79,7 +80,7 @@ export function ThinkingLoader({
           outer.clientWidth -
             Number.parseFloat(getComputedStyle(outer).paddingLeft) -
             Number.parseFloat(getComputedStyle(outer).paddingRight) -
-            (element.parentElement ? element.offsetLeft : 0),
+            (element.getBoundingClientRect().left - outer.getBoundingClientRect().left),
         )
       : needed
     const cut = needed > available && available > 0

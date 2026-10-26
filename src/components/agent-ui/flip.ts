@@ -1,10 +1,11 @@
-import { useCallback, useLayoutEffect, useEffect, useRef } from 'react'
+import { useCallback, useLayoutEffect, useRef } from 'react'
 
 import { prefersReducedMotion } from '@/lib/reducedMotion'
 
 /**
- * ADR 0257 §5: the shared FLIP contract. Read first geometry before a known
- * commit, re-measure after it inside `useLayoutEffect`, invert with a
+ * ADR 0257 §5: the shared FLIP contract — this is the motion contract
+ * utility, not a recreation of a catalog entry. Read first geometry before a
+ * known commit, re-measure after it inside `useLayoutEffect`, invert with a
  * transform and animate to identity with WAAPI, so the browser cancels and
  * retargets an interrupted run. Never measure during render; lists opt in per
  * item with stable keys; reduced motion applies the final state immediately
@@ -92,7 +93,7 @@ export function useFlipGroup(
   // The trigger is the list's identity alone, so streamed updates that keep
   // the key list stable measure nothing; the options ride along in a ref.
   const optionsRef = useRef(options)
-  useEffect(() => {
+  useLayoutEffect(() => {
     optionsRef.current = options
   }, [options])
   const measure = useCallback(

@@ -58,8 +58,10 @@ section[data-sonner-toaster] li[data-sonner-toast] [data-button] {
   font-size: 13px;
 }
 
-/* Close affordance: the Clean corner dot, larger and always visible on a
-   coarse pointer (ADR 0256). */
+/* Close affordance: the Clean corner dot. On a coarse pointer the sizes
+   follow the ADR 0256 §2 small-action carve-out (like `xs`/`icon-xs`): the
+   close dot is dense chrome on a card that already carries a 36px action,
+   and the swipe gesture is the primary dismissal. */
 section[data-sonner-toaster] li[data-sonner-toast] [data-close-button] {
   width: 20px;
   height: 20px;

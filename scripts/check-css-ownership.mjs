@@ -233,19 +233,23 @@ export function findAppearanceOnOfficial(source, officialClasses) {
 
 /**
  * Declarations that repaint an agent-ui component: the rule's subject is a
- * class TSX passes as `className` to an agent-ui import, and the declaration
- * sets size, padding, border, radius, font or colour. Only meaningful for
- * stylesheets outside the presentation directory itself.
+ * class TSX passes as `className` to an agent-ui import, or any `agx-*`
+ * class — the prefix is the layer's namespace, so a foreign stylesheet
+ * painting it is a repaint even when no TSX mapping saw it. Only meaningful
+ * for stylesheets outside the presentation directory itself.
  */
 export function findAppearanceOnPresentation(source, presentationClasses) {
   const violations = []
   for (const rule of parseRules(source)) {
     const subjects = splitParts(rule.selector).flatMap((part) => classesOf(splitCompounds(part).at(-1) ?? ''))
-    const hits = subjects.filter((name) => presentationClasses.has(name))
+    const hits = subjects.filter((name) => presentationClasses.has(name) || name.startsWith('agx-'))
     if (hits.length === 0) continue
     for (const declaration of rule.declarations) {
       if (!APPEARANCE.test(declaration.property) || isLayoutSize(declaration)) continue
-      violations.push({ line: declaration.line, text: declaration.text, context: rule.path, kind: 'appearance-on-agent-ui', component: [...new Set(hits.flatMap((name) => [...presentationClasses.get(name)]))].join(', ') })
+      const components = [
+        ...new Set(hits.flatMap((name) => [...(presentationClasses.get(name) ?? ['agent-ui (agx-*)'])])),
+      ]
+      violations.push({ line: declaration.line, text: declaration.text, context: rule.path, kind: 'appearance-on-agent-ui', component: components.join(', ') })
     }
   }
   return violations

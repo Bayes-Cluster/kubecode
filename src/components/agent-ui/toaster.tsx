@@ -23,7 +23,9 @@ import './toaster.css'
  * narrow engine exception of ADR 0257 §6, baselined rule by rule.
  *
  * Copy and semantics stay where they were: callers publish through the
- * SystemMessageProvider and pass the localized labels here as before.
+ * SystemMessageProvider and pass the localized labels here as before. States
+ * are demonstrated on the live toast host, not in `#/controls` — the app has
+ * one global Sonner mount (ADR 0257 §7).
  */
 
 export function ToasterHost(props: ToasterProps) {

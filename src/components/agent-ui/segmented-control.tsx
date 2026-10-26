@@ -25,8 +25,9 @@ export interface SegmentedOption {
   value: string
   label?: string
   icon?: React.ReactNode
-  /** A small neutral counter after the label. */
-  count?: number
+  /** A small neutral counter after the label. Preformatted by the caller
+   * (its formatting follows the locale the caller localized the rest in). */
+  count?: number | string
   /** A highlighted badge after the label. */
   badge?: string
   disabled?: boolean
@@ -231,7 +232,8 @@ export function SegmentedControl({
     if (!enabled.length || disabled) return
     const previousKeys = kind === 'radio' ? ['ArrowLeft', 'ArrowUp'] : ['ArrowLeft']
     const nextKeys = kind === 'radio' ? ['ArrowRight', 'ArrowDown'] : ['ArrowRight']
-    const index = enabled.findIndex((option) => option.value === active)
+    const found = enabled.findIndex((option) => option.value === active)
+    const index = found === -1 ? 0 : found
     let target: SegmentedOption | undefined
     if (previousKeys.includes(event.key)) target = enabled[(index - 1 + enabled.length) % enabled.length]
     else if (nextKeys.includes(event.key)) target = enabled[(index + 1) % enabled.length]
@@ -350,9 +352,9 @@ export function SegmentedControl({
                       {label}
                     </span>
                   )}
-                  {typeof option.count === 'number' && Number.isFinite(option.count) && (
-                    <span className="agx-segc__count" key={option.count}>
-                      {option.count.toLocaleString()}
+                  {option.count != null && option.count !== '' && (
+                    <span className="agx-segc__count" key={String(option.count)}>
+                      {String(option.count)}
                     </span>
                   )}
                   {option.badge != null && <span className="agx-segc__badge">{option.badge}</span>}

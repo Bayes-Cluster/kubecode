@@ -120,15 +120,14 @@
   color: inherit;
   white-space: nowrap;
   cursor: pointer;
-  transition: color var(--agx-dur-fast) ease, background-color var(--agx-dur-fast) ease,
-    width 200ms var(--agx-ease);
+  transition: color var(--agx-dur-fast) ease, background-color var(--agx-dur-fast) ease;
 }
 
+/* Width glides only once the control is ready: the first fit snaps. */
 .agx-segc[data-ready]:not([data-full]) .agx-segc__opt {
   transition: color var(--agx-dur-fast) ease, background-color var(--agx-dur-fast) ease,
     width 200ms var(--agx-ease);
 }
-
 .agx-segc__opt[data-active] {
   color: var(--agx-ink);
 }
