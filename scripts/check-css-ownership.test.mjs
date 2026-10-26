@@ -164,3 +164,54 @@ test('collects class usage from a product tree, skipping tests', () => {
   assert.deepEqual([...usage.classNamed.keys()], ['kubecode-count'])
   assert.deepEqual([...usage.mentioned].sort(), ['kubecode-count', 'kubecode-mentioned'])
 })
+
+// ADR 0257: agent-ui is an owned presentation layer — its own styles are
+// accepted, foreign repaints of its classes are not, and the Sonner host is
+// a third-party engine only the toaster presentation may paint.
+import { findAllViolations } from './check-css-ownership.mjs'
+import { findAppearanceOnPresentation } from './check-css-ownership.mjs'
+
+test('flags appearance declarations on a class an agent-ui component carries, not layout ones', () => {
+  const presentation = new Map([['agx-card', new Set(['SegmentedControl'])]])
+  const css = [
+    '.agx-card { display: flex; min-height: 0; }',
+    '.agx-card { height: 26px; }',
+    '.panel .agx-card { font-size: 14px; color: red; }',
+    '.panel { color: blue; }',
+  ].join('\n')
+  assert.deepEqual(findAppearanceOnPresentation(css, presentation).map((v) => [v.line, v.text, v.kind, v.component]), [
+    [2, 'height: 26px;', 'appearance-on-agent-ui', 'SegmentedControl'],
+    [3, 'font-size: 14px;', 'appearance-on-agent-ui', 'SegmentedControl'],
+    [3, 'color: red;', 'appearance-on-agent-ui', 'SegmentedControl'],
+  ])
+})
+
+test('accepts agent-ui co-located styles and rejects the same repaint from a feature stylesheet', () => {
+  const root = mkdtempSync(join(tmpdir(), 'css-ownership-agentui-'))
+  mkdirSync(join(root, 'src/components/agent-ui'), { recursive: true })
+  mkdirSync(join(root, 'src/kubecode'), { recursive: true })
+  writeFileSync(
+    join(root, 'src/components/agent-ui/pill.tsx'),
+    "import './pill.css'\nexport const Pill = (props) => <span {...props} className={props.className ? `agx-pill ${props.className}` : 'agx-pill'} />\n",
+  )
+  writeFileSync(join(root, 'src/components/agent-ui/pill.css'), '.agx-pill {\n  height: 28px;\n}\n')
+  writeFileSync(
+    join(root, 'src/kubecode/Row.tsx'),
+    "import { Pill } from '@/components/agent-ui'\nexport const Row = () => <Pill className=\"agx-pill-big\" />\n",
+  )
+  // Inside the layer: owned. Outside it: the same declaration on an
+  // agent-ui class is a repaint.
+  writeFileSync(join(root, 'src/kubecode/row.css'), '.kubecode-row .agx-pill-big {\n  height: 40px;\n}\n')
+  const violations = findAllViolations(root)
+  const inLayer = violations.filter((violation) => violation.file === 'src/components/agent-ui/pill.css')
+  assert.deepEqual(inLayer, [])
+  assert.deepEqual(
+    violations.filter((violation) => violation.kind === 'appearance-on-agent-ui').map((violation) => [violation.file, violation.text]),
+    [['src/kubecode/row.css', 'height: 40px;']],
+  )
+})
+
+test('the Sonner host is a third-party engine, flaggable and baselinable', () => {
+  const css = 'section[data-sonner-toaster] li[data-sonner-toast] { border-radius: 10px; }\n.xterm { height: 100%; }'
+  assert.deepEqual(findViolations(css).map((v) => [v.line, v.kind]), [[1, 'third-party-internal'], [2, 'third-party-internal']])
+})

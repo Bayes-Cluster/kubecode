@@ -1,6 +1,111 @@
 {
   "entries": [
     {
+      "file": "src/components/agent-ui/toaster.css",
+      "text": "section[data-sonner-toaster] li[data-sonner-toast] {",
+      "context": "section[data-sonner-toaster] li[data-sonner-toast]",
+      "kind": "third-party-internal",
+      "owner": "agent-ui (ADR 0257 §6)"
+    },
+    {
+      "file": "src/components/agent-ui/toaster.css",
+      "text": "section[data-sonner-toaster] li[data-sonner-toast] [data-title] {",
+      "context": "section[data-sonner-toaster] li[data-sonner-toast] [data-title]",
+      "kind": "third-party-internal",
+      "owner": "agent-ui (ADR 0257 §6)"
+    },
+    {
+      "file": "src/components/agent-ui/toaster.css",
+      "text": "section[data-sonner-toaster] li[data-sonner-toast] [data-description] {",
+      "context": "section[data-sonner-toaster] li[data-sonner-toast] [data-description]",
+      "kind": "third-party-internal",
+      "owner": "agent-ui (ADR 0257 §6)"
+    },
+    {
+      "file": "src/components/agent-ui/toaster.css",
+      "text": "section[data-sonner-toaster] li[data-sonner-toast] [data-icon] {",
+      "context": "section[data-sonner-toaster] li[data-sonner-toast] [data-icon]",
+      "kind": "third-party-internal",
+      "owner": "agent-ui (ADR 0257 §6)"
+    },
+    {
+      "file": "src/components/agent-ui/toaster.css",
+      "text": "section[data-sonner-toaster] li[data-sonner-toast][data-type='success'] [data-icon] {",
+      "context": "section[data-sonner-toaster] li[data-sonner-toast][data-type='success'] [data-icon]",
+      "kind": "third-party-internal",
+      "owner": "agent-ui (ADR 0257 §6)"
+    },
+    {
+      "file": "src/components/agent-ui/toaster.css",
+      "text": "section[data-sonner-toaster] li[data-sonner-toast][data-type='error'] [data-icon] {",
+      "context": "section[data-sonner-toaster] li[data-sonner-toast][data-type='error'] [data-icon]",
+      "kind": "third-party-internal",
+      "owner": "agent-ui (ADR 0257 §6)"
+    },
+    {
+      "file": "src/components/agent-ui/toaster.css",
+      "text": "section[data-sonner-toaster] li[data-sonner-toast][data-type='info'] [data-icon] {",
+      "context": "section[data-sonner-toaster] li[data-sonner-toast][data-type='info'] [data-icon]",
+      "kind": "third-party-internal",
+      "owner": "agent-ui (ADR 0257 §6)"
+    },
+    {
+      "file": "src/components/agent-ui/toaster.css",
+      "text": "section[data-sonner-toaster] li[data-sonner-toast][data-type='warning'] [data-icon] {",
+      "context": "section[data-sonner-toaster] li[data-sonner-toast][data-type='warning'] [data-icon]",
+      "kind": "third-party-internal",
+      "owner": "agent-ui (ADR 0257 §6)"
+    },
+    {
+      "file": "src/components/agent-ui/toaster.css",
+      "text": "section[data-sonner-toaster] li[data-sonner-toast] [data-button] {",
+      "context": "section[data-sonner-toaster] li[data-sonner-toast] [data-button]",
+      "kind": "third-party-internal",
+      "owner": "agent-ui (ADR 0257 §6)"
+    },
+    {
+      "file": "src/components/agent-ui/toaster.css",
+      "text": "section[data-sonner-toaster] li[data-sonner-toast] [data-close-button] {",
+      "context": "section[data-sonner-toaster] li[data-sonner-toast] [data-close-button]",
+      "kind": "third-party-internal",
+      "owner": "agent-ui (ADR 0257 §6)"
+    },
+    {
+      "file": "src/components/agent-ui/toaster.css",
+      "text": "section[data-sonner-toaster] li[data-sonner-toast] [data-sonner-timer] {",
+      "context": "section[data-sonner-toaster] li[data-sonner-toast] [data-sonner-timer]",
+      "kind": "third-party-internal",
+      "owner": "agent-ui (ADR 0257 §6)"
+    },
+    {
+      "file": "src/components/agent-ui/toaster.css",
+      "text": "section[data-sonner-toaster] {",
+      "context": "@media (max-width: 600px) / section[data-sonner-toaster]",
+      "kind": "third-party-internal",
+      "owner": "agent-ui (ADR 0257 §6)"
+    },
+    {
+      "file": "src/components/agent-ui/toaster.css",
+      "text": "section[data-sonner-toaster] li[data-sonner-toast] [data-close-button] {",
+      "context": "@media (hover: none) and (pointer: coarse) / section[data-sonner-toaster] li[data-sonner-toast] [data-close-button]",
+      "kind": "third-party-internal",
+      "owner": "agent-ui (ADR 0257 §6)"
+    },
+    {
+      "file": "src/components/agent-ui/toaster.css",
+      "text": "section[data-sonner-toaster] li[data-sonner-toast] [data-button] {",
+      "context": "@media (hover: none) and (pointer: coarse) / section[data-sonner-toaster] li[data-sonner-toast] [data-button]",
+      "kind": "third-party-internal",
+      "owner": "agent-ui (ADR 0257 §6)"
+    },
+    {
+      "file": "src/components/agent-ui/toaster.css",
+      "text": "section[data-sonner-toaster] li[data-sonner-toast] {",
+      "context": "@media (prefers-reduced-motion: reduce) / section[data-sonner-toaster] li[data-sonner-toast]",
+      "kind": "third-party-internal",
+      "owner": "agent-ui (ADR 0257 §6)"
+    },
+    {
       "file": "src/index.css",
       "text": "[data-radix-popper-content-wrapper] {",
       "context": "[data-radix-popper-content-wrapper]",

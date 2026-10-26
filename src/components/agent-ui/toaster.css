@@ -1,0 +1,102 @@
+/* ADR 0257, the affectUI "Toaster" presentation (Clean, 2026-10-26) painted
+   onto the Sonner host through its documented [data-sonner-*] extension
+   points (ADR 0257 §6, the narrow engine exception attributed to agent-ui).
+   Scoped selectors outrank the engine's own stylesheet without !important;
+   layout mechanics (stacking, swipe, timers) stay the host's. */
+
+/* Card: Clean radius, hairline float shadow, Quiet copy. */
+section[data-sonner-toaster] li[data-sonner-toast] {
+  border: 0;
+  border-radius: 10px;
+  box-shadow: var(--agx-shadow-float);
+  padding: 12px 14px 12px 12px;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--agx-ink);
+}
+
+section[data-sonner-toaster] li[data-sonner-toast] [data-title] {
+  font-weight: 500;
+  color: var(--agx-ink);
+  overflow-wrap: anywhere;
+}
+
+section[data-sonner-toaster] li[data-sonner-toast] [data-description] {
+  color: var(--agx-text);
+  overflow-wrap: anywhere;
+}
+
+/* Status tones on the icon. */
+section[data-sonner-toaster] li[data-sonner-toast] [data-icon] {
+  color: var(--agx-faint);
+}
+
+section[data-sonner-toaster] li[data-sonner-toast][data-type='success'] [data-icon] {
+  color: var(--agx-success);
+}
+
+section[data-sonner-toaster] li[data-sonner-toast][data-type='error'] [data-icon] {
+  color: var(--agx-error);
+}
+
+section[data-sonner-toaster] li[data-sonner-toast][data-type='info'] [data-icon] {
+  color: var(--agx-info);
+}
+
+section[data-sonner-toaster] li[data-sonner-toast][data-type='warning'] [data-icon] {
+  color: var(--feedback-warning-text);
+}
+
+/* Action: a raised chip, at least a comfortable target. */
+section[data-sonner-toaster] li[data-sonner-toast] [data-button] {
+  height: 28px;
+  border-radius: 6px;
+  background: var(--agx-surface);
+  box-shadow: var(--agx-shadow);
+  color: var(--agx-ink);
+  font-weight: 500;
+  font-size: 13px;
+}
+
+/* Close affordance: the Clean corner dot, larger and always visible on a
+   coarse pointer (ADR 0256). */
+section[data-sonner-toaster] li[data-sonner-toast] [data-close-button] {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--agx-surface);
+  box-shadow: var(--agx-shadow);
+  color: var(--agx-text);
+}
+
+/* Timer bar: the Clean hairline. */
+section[data-sonner-toaster] li[data-sonner-toast] [data-sonner-timer] {
+  height: 1px;
+  background: var(--agx-line-strong);
+}
+
+@media (max-width: 600px) {
+  section[data-sonner-toaster] {
+    left: 12px;
+    right: 12px;
+    width: auto;
+  }
+}
+
+@media (hover: none) and (pointer: coarse) {
+  section[data-sonner-toaster] li[data-sonner-toast] [data-close-button] {
+    width: 24px;
+    height: 24px;
+  }
+
+  section[data-sonner-toaster] li[data-sonner-toast] [data-button] {
+    height: 36px;
+    padding: 0 14px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  section[data-sonner-toaster] li[data-sonner-toast] {
+    transition: none;
+  }
+}

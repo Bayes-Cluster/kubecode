@@ -16,6 +16,7 @@ import {
 } from '@/kubecode/icons/workspaceIcons'
 import { translate, type AppLocale, type TranslationKey, type TranslationValues, type Translator } from '@/lib/i18n'
 
+import { AgentUiMatrix } from './AgentUiMatrix'
 import { longestTranslation } from './controlMatrixRoute'
 import { IconButton } from './IconButton'
 import { MemberIdentity } from './MemberIdentity'
@@ -313,6 +314,7 @@ export function ControlMatrix({ t }: { t: Translator }) {
       </Section>
 
       <OfficialComponentMatrix t={t} />
+      <AgentUiMatrix t={t} />
     </main>
   )
 }
