@@ -863,6 +863,8 @@ describe('Workspace navigation and routes', () => {
     }))
     const references = await screen.findByRole('list', { name: 'References' })
     fireEvent.click(within(references).getByRole('button', { name: /Finding/ }))
+    // The card selects; Open hands the typed reference to the inspector.
+    fireEvent.click(await screen.findByRole('button', { name: 'Open' }))
     expect(await inspector('Resource details')).toBeInTheDocument()
     expect(screen.getByRole('region', { name: 'evidence finding:f1' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'General', exact: true, level: 2 })).toBeInTheDocument()
