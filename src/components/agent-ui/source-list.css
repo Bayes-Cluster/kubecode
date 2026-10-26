@@ -1,0 +1,313 @@
+/* ADR 0257, the affectUI "Cited Answer" source presentation (Clean,
+   2026-10-26): source chips over a fold disclosure whose content crossfades.
+   Colour and geometry come from the agent-ui tokens. */
+
+.agx-src {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* The chip row scrolls sideways only when it must; the edge mask marks the cut. */
+.agx-src__chips {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+  overflow-x: auto;
+  padding: 2px;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 6px, #000 calc(100% - 6px), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 6px, #000 calc(100% - 6px), transparent);
+}
+
+.agx-src__chips::-webkit-scrollbar {
+  display: none;
+}
+
+.agx-src__slot {
+  display: flex;
+  flex: none;
+}
+
+.agx-src__chip {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 4px;
+  width: 168px;
+  padding: 8px 10px 9px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--agx-surface);
+  box-shadow: var(--agx-shadow);
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 160ms ease, box-shadow 200ms ease;
+}
+
+.agx-src__chip:hover {
+  background: var(--agx-wash);
+}
+
+.agx-src__chip:focus-visible {
+  outline: 2px solid var(--agx-focus);
+  outline-offset: 1px;
+}
+
+.agx-src__chip[data-selected] {
+  background: var(--agx-wash);
+  box-shadow: 0 0 0 0.5px var(--agx-line-strong), 0 1px 1px -1px rgb(0 0 0 / 0.1),
+    0 1px 2px 0 rgb(0 0 0 / 0.05);
+}
+
+.agx-src__chip-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--agx-text);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.agx-src__kind {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.agx-src__num,
+.agx-src__version {
+  flex: none;
+  color: var(--agx-faint);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.agx-src__dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--agx-faint);
+}
+
+.agx-src__dot[data-tone='ok'] {
+  background: var(--agx-success);
+}
+
+.agx-src__dot[data-tone='warn'] {
+  background: var(--feedback-warning-text);
+}
+
+.agx-src__dot[data-tone='error'] {
+  background: var(--agx-error);
+}
+
+.agx-src__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.agx-src__title {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  color: var(--agx-ink);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+/* The bounded fold: 0fr→1fr so the panel grows without a measured height and
+   nothing above it moves. */
+.agx-src__fold {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 360ms var(--agx-ease);
+}
+
+.agx-src[data-open] .agx-src__fold {
+  grid-template-rows: 1fr;
+}
+
+.agx-src__fold-inner {
+  overflow: hidden;
+  min-height: 0;
+}
+
+.agx-src__preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 2px 0 4px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--agx-surface);
+  box-shadow: var(--agx-shadow);
+}
+
+.agx-src__preview-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.agx-src__preview-kind {
+  flex: none;
+  color: var(--agx-text);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.agx-src__preview-title {
+  flex: 1;
+  min-width: 0;
+  color: var(--agx-ink);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+.agx-src__state {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 5px;
+  font-size: 11px;
+  line-height: 18px;
+  font-weight: 500;
+}
+
+.agx-src__state[data-tone='ok'] {
+  background: var(--feedback-success-bg);
+  color: var(--agx-success);
+}
+
+.agx-src__state[data-tone='warn'] {
+  background: var(--feedback-warning-bg);
+  color: var(--feedback-warning-text);
+}
+
+.agx-src__state[data-tone='error'] {
+  background: var(--feedback-error-bg);
+  color: var(--agx-error);
+}
+
+.agx-src__snippet {
+  margin: 0;
+  color: var(--agx-text);
+  font-size: 13px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+.agx-src__preview-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-height: 28px;
+}
+
+.agx-src__open {
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--agx-surface);
+  box-shadow: var(--agx-shadow);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  color: var(--agx-ink);
+  cursor: pointer;
+  transition: box-shadow 140ms ease, transform 160ms var(--agx-ease);
+}
+
+.agx-src__open:hover {
+  box-shadow: var(--agx-shadow-hover);
+}
+
+.agx-src__open:active {
+  transform: scale(0.97);
+}
+
+.agx-src__open:focus-visible {
+  outline: 2px solid var(--agx-focus);
+  outline-offset: 1px;
+}
+
+.agx-src__close {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--agx-faint);
+  cursor: pointer;
+  transition: background-color 160ms ease, color 160ms ease;
+}
+
+.agx-src__close:hover {
+  background: var(--agx-wash);
+  color: var(--agx-ink);
+}
+
+.agx-src__close:focus-visible {
+  outline: 2px solid var(--agx-focus);
+  outline-offset: 1px;
+}
+
+.agx-src__close svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Touch: chips and the open action become comfortable targets; the close dot
+   keeps the small-action carve-out beside a 44px row. */
+@media (hover: none) and (pointer: coarse) {
+  .agx-src__chip {
+    width: 184px;
+    min-height: 44px;
+  }
+
+  .agx-src__open {
+    height: 44px;
+    padding: 0 16px;
+  }
+
+  .agx-src__close {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agx-src .agx-src__fold,
+  .agx-src .agx-src__chip,
+  .agx-src .agx-src__open,
+  .agx-src .agx-src__close {
+    transition: none;
+  }
+}
