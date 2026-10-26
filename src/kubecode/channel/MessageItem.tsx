@@ -1,4 +1,5 @@
 import { MessageAction, MessageActions, MessageContent } from '@/components/ai-elements/message'
+import { CopyAction } from '@/components/agent-ui'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -55,7 +56,8 @@ export type MessageItemProps = {
     openThread?: () => void
     jump: (messageId: string) => void
     copyLink: () => void
-    copyText: () => void
+    /** How the text copy ended, for the surface that announces it in words. */
+    copiedText?: (ok: boolean) => void
   }
 }
 
@@ -116,7 +118,6 @@ export function MessageItem({
   const actions: MoreActionItem[] = [
     ...(coarse && on.reply ? [{ id: 'reply', label: t('kubecode.vocab.command.reply'), onSelect: on.reply }] : []),
     { id: 'copy-link', label: t('kubecode.vocab.command.copyLink'), onSelect: on.copyLink },
-    { id: 'copy-text', label: t('kubecode.channel.copyText'), onSelect: on.copyText },
     ...(message.task_id && !filtered && on.filterTask
       ? [{ id: 'filter', label: t('kubecode.channel.showTaskOnly'), onSelect: on.filterTask }]
       : []),
@@ -207,6 +208,16 @@ export function MessageItem({
               <Icon role="command" source={WORKSPACE_COMMAND_ICONS.reply.Icon} />
             </MessageAction>
           )}
+          {/* The text copy is the direct quiet action (ADR 0257, slice B); the
+              link stays behind More, where its URL-building lives. */}
+          <CopyAction
+            copiedLabel={t('kubecode.channel.textCopied')}
+            errorLabel={t('kubecode.channel.copyFailed')}
+            getText={() => message.body}
+            icon={<Icon role="command" source={WORKSPACE_COMMAND_ICONS.copyText.Icon} />}
+            label={t('kubecode.channel.copyText')}
+            onFinished={on.copiedText}
+          />
           <MoreActions items={actions} label={t('kubecode.channel.messageActions', { author: author.name })} size={coarse ? 'md' : 'sm'} />
         </MessageActions>
       </div>

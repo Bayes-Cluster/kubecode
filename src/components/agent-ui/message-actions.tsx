@@ -31,6 +31,8 @@ export interface CopyActionProps {
   copiedIcon?: React.ReactNode
   errorIcon?: React.ReactNode
   onCopied?: (text: string) => void
+  /** Called with the outcome, for a surface that announces it in words. */
+  onFinished?: (ok: boolean) => void
   className?: string
 }
 
@@ -45,6 +47,7 @@ export function CopyAction({
   copiedIcon = icon,
   errorIcon = icon,
   onCopied,
+  onFinished,
   className,
 }: CopyActionProps) {
   const [state, setState] = useState<CopyState>('idle')
@@ -78,20 +81,29 @@ export function CopyAction({
         } catch {
           inFlight.current = false
           setState('error')
+          onFinished?.(false)
           return
         }
-        // A clipboard without permission rejects; the error state keeps the
-        // action available so the next click retries.
-        window.navigator.clipboard
-          ?.writeText(text)
+        // A clipboard without permission (or without the API at all) refuses;
+        // the error state keeps the action available so the next click retries.
+        const write = window.navigator.clipboard?.writeText(text)
+        if (!write) {
+          inFlight.current = false
+          setState('error')
+          onFinished?.(false)
+          return
+        }
+        write
           .then(() => {
             inFlight.current = false
             setState('copied')
             onCopied?.(text)
+            onFinished?.(true)
           })
           .catch(() => {
             inFlight.current = false
             setState('error')
+            onFinished?.(false)
           })
       }}
     >
