@@ -1153,6 +1153,7 @@
   "kubecode.reference.state.changedSinceCited": "Berubah sejak dikutip",
   "kubecode.reference.state.removed": "Sudah tidak ada",
   "kubecode.reference.state.unavailable": "Tidak tersedia di sini",
+  "kubecode.reference.open": "Buka",
   "kubecode.reference.sendBlockedRemoved": "{title} sudah tidak ada. Hapus untuk mengirim.",
   "kubecode.channel.messages": "Pesan",
   "kubecode.channel.empty": "Belum ada pesan. Mulai diskusi.",

@@ -1153,6 +1153,7 @@
   "kubecode.reference.state.changedSinceCited": "Змінено після цитування",
   "kubecode.reference.state.removed": "Більше не існує",
   "kubecode.reference.state.unavailable": "Тут недоступно",
+  "kubecode.reference.open": "Відкрити",
   "kubecode.reference.sendBlockedRemoved": "{title} більше не існує. Видаліть це, щоб надіслати.",
   "kubecode.channel.messages": "Повідомлення",
   "kubecode.channel.empty": "Повідомлень ще немає. Почніть обговорення.",

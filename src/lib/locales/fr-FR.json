@@ -1153,6 +1153,7 @@
   "kubecode.reference.state.changedSinceCited": "Modifié depuis sa citation",
   "kubecode.reference.state.removed": "N'existe plus",
   "kubecode.reference.state.unavailable": "Indisponible ici",
+  "kubecode.reference.open": "Ouvrir",
   "kubecode.reference.sendBlockedRemoved": "{title} n'existe plus. Retirez-le pour envoyer.",
   "kubecode.channel.messages": "Messages",
   "kubecode.channel.empty": "Aucun message pour l'instant. Lancez la discussion.",

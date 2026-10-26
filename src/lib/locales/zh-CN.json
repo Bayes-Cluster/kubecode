@@ -1153,6 +1153,7 @@
   "kubecode.reference.state.changedSinceCited": "自引用后已变更",
   "kubecode.reference.state.removed": "已不存在",
   "kubecode.reference.state.unavailable": "此处不可用",
+  "kubecode.reference.open": "打开",
   "kubecode.reference.sendBlockedRemoved": "{title} 已不存在。请将其移除后再发送。",
   "kubecode.channel.messages": "消息",
   "kubecode.channel.empty": "暂无消息。开始讨论吧。",

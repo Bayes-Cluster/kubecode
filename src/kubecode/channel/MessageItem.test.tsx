@@ -77,9 +77,15 @@ describe('MessageItem references', () => {
         />
       </ReferenceResolverProvider>,
     )
-    const chip = await screen.findByRole('button', { name: 'File results/summary.csv #3f2c1a9 Changed since cited' })
+    const card = await screen.findByRole('button', { name: /results\/summary\.csv/ })
+    // Kind and the cited version read on the card; the change is said in
+    // words; the id itself never shows.
+    expect(card).toHaveTextContent('File')
+    expect(card).toHaveTextContent('#3f2c1a9')
+    expect(card).toHaveTextContent('Changed since cited')
     expect(screen.getByRole('article')).not.toHaveTextContent('3f2c1a9e5b7d')
-    fireEvent.click(chip)
+    fireEvent.click(card)
+    fireEvent.click(await screen.findByRole('button', { name: 'Open' }))
     expect(on.openReference).toHaveBeenCalledWith(ref)
   })
 })
