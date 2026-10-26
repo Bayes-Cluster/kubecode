@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // ADR 0247 and ADR 0256: official components own their base appearance.
+// ADR 0257: `src/components/agent-ui` is a second kind of presentation owner.
 // Product CSS (every .css file under src/) may lay out the elements it owns,
 // but it may not:
 //   - reach into an official component's internals (`[data-slot=…]`,
@@ -8,11 +9,17 @@
 //     (a rule whose subject is a class that TSX passes as `className` to an
 //     import from `src/components/ui` or `src/components/ai-elements`, with a
 //     size, padding, border, radius, font or colour declaration);
+//   - repaint an agent-ui component the same way, from any stylesheet outside
+//     `src/components/agent-ui` (inside it, the layer styles its own
+//     `agx-*` classes and its own subtree);
 //   - reach descendant elements or roles (`… button`, `… svg`, `[role=…]`);
 //   - restyle a third-party engine's internals (`.cm-`, `.xterm`,
-//     `[data-streamdown]`, `.hljs-`, `.katex`).
-// It also lists dead classes: `kubecode-*` classes a TSX `className` uses that
-// no rule styles, and rules whose `kubecode-*` class no product file uses.
+//     `[data-streamdown]`, `.hljs-`, `.katex`, and the Sonner host's
+//     `[data-sonner-*]` extension points, which only the agent-ui toaster
+//     presentation may paint — through baselined rules).
+// It also lists dead classes: `kubecode-*` and `agx-*` classes a TSX
+// `className` uses that no rule styles, and rules whose `kubecode-*`/`agx-*`
+// class no product file uses.
 // Rules that predate the decision are listed, with the slice that removes
 // them, in scripts/css-ownership-baseline.json. An entry is matched by file,
 // enclosing selector and line text, so moving a listed declaration under
@@ -34,6 +41,9 @@ const THIRD_PARTY_INTERNALS = [
   /\[data-streamdown/,
   /\.hljs(?:-|\b)/,
   /\.katex/,
+  // The Sonner toast host: styled only by the agent-ui toaster presentation
+  // (ADR 0257 §6), rule by rule through the baseline.
+  /\[data-sonner-[a-z-]+/,
 ]
 
 /** Declarations that change how an official component looks, not where it sits. */
@@ -43,6 +53,9 @@ const APPEARANCE = /^(?:color|background(?:-[a-z]+)?|border(?:-[a-z-]+)?|box-sha
 const REACHED_ELEMENT = /^(?:a|button|input|textarea|select|svg|img|kbd|code|pre|p|h[1-6]|time|small|strong|label|table|thead|tbody|tr|th|td|hr)(?![\w-])/
 
 const OFFICIAL_DIRECTORIES = ['src/components/ui', 'src/components/ai-elements']
+
+/** ADR 0257: owned presentation layers that style their own classes. */
+const PRESENTATION_DIRECTORIES = ['src/components/agent-ui']
 
 const squash = (text) => text.replace(/\s+/g, ' ').trim()
 
@@ -218,11 +231,35 @@ export function findAppearanceOnOfficial(source, officialClasses) {
   return violations
 }
 
-/** Rules whose `kubecode-*` class no product source uses. */
+/**
+ * Declarations that repaint an agent-ui component: the rule's subject is a
+ * class TSX passes as `className` to an agent-ui import, or any `agx-*`
+ * class — the prefix is the layer's namespace, so a foreign stylesheet
+ * painting it is a repaint even when no TSX mapping saw it. Only meaningful
+ * for stylesheets outside the presentation directory itself.
+ */
+export function findAppearanceOnPresentation(source, presentationClasses) {
+  const violations = []
+  for (const rule of parseRules(source)) {
+    const subjects = splitParts(rule.selector).flatMap((part) => classesOf(splitCompounds(part).at(-1) ?? ''))
+    const hits = subjects.filter((name) => presentationClasses.has(name) || name.startsWith('agx-'))
+    if (hits.length === 0) continue
+    for (const declaration of rule.declarations) {
+      if (!APPEARANCE.test(declaration.property) || isLayoutSize(declaration)) continue
+      const components = [
+        ...new Set(hits.flatMap((name) => [...(presentationClasses.get(name) ?? ['agent-ui (agx-*)'])])),
+      ]
+      violations.push({ line: declaration.line, text: declaration.text, context: rule.path, kind: 'appearance-on-agent-ui', component: components.join(', ') })
+    }
+  }
+  return violations
+}
+
+/** Rules whose `kubecode-*` or `agx-*` class no product source uses. */
 export function findDeadRules(source, usedClasses) {
   const violations = []
   for (const rule of parseRules(source)) {
-    const classes = new Set(splitParts(rule.selector).flatMap((part) => classesOf(part)).filter((name) => name.startsWith('kubecode-')))
+    const classes = new Set(splitParts(rule.selector).flatMap((part) => classesOf(part)).filter(isOwnedName))
     for (const name of classes) {
       if (!usedClasses.has(name)) violations.push({ line: rule.line, text: `.${name}`, context: rule.path, kind: 'dead-rule' })
     }
@@ -230,10 +267,12 @@ export function findDeadRules(source, usedClasses) {
   return violations
 }
 
+const isOwnedName = (name) => name.startsWith('kubecode-') || name.startsWith('agx-')
+
 const IMPORT = /import\s+(?:type\s+)?(?:(\w+)\s*,?\s*)?(?:\{([^}]*)\})?\s*from\s*['"]([^'"]+)['"]/g
 
-/** Local names of the official components a source file imports. */
-export function officialImports(source, file, root) {
+/** Local names of the components a source file imports from `directories`. */
+export function officialImports(source, file, root, directories = OFFICIAL_DIRECTORIES) {
   const names = new Set()
   for (const match of source.matchAll(IMPORT)) {
     const [, defaultName, named, from] = match
@@ -242,7 +281,7 @@ export function officialImports(source, file, root) {
       : from.startsWith('.')
         ? relative(root, resolve(dirname(join(root, file)), from))
         : null
-    if (!path || !OFFICIAL_DIRECTORIES.some((directory) => path.startsWith(`${directory}/`))) continue
+    if (!path || !directories.some((directory) => path === directory || path.startsWith(`${directory}/`))) continue
     if (defaultName) names.add(defaultName)
     for (const item of (named ?? '').split(',')) {
       const name = item.trim()
@@ -320,33 +359,40 @@ const isTest = (file) => /\.(test|spec)\.[jt]sx?$/.test(file) || file.startsWith
 
 /**
  * What the product's TSX says about classes: which classes sit on official
- * components (class → component names), which `kubecode-*` classes a
- * className uses (class → first file and line), and every `kubecode-*` token
- * any product source mentions.
+ * components (class → component names), which sit on agent-ui components
+ * (class → component names), which `kubecode-*`/`agx-*` classes a className
+ * uses (class → first file and line), and every owned token any product
+ * source mentions.
  */
 export function collectClassUsage(root, files) {
   const official = new Map()
+  const presentation = new Map()
   const classNamed = new Map()
   const mentioned = new Set()
   for (const file of files) {
     const source = readFileSync(join(root, file), 'utf8')
-    for (const token of source.matchAll(/(?<![\w-])kubecode-[\w-]+/g)) mentioned.add(token[0])
+    for (const token of source.matchAll(/(?<![\w-])(?:kubecode-|agx-)[\w-]+/g)) mentioned.add(token[0])
     if (!file.endsWith('.tsx')) continue
     const imports = officialImports(source, file, root)
+    const presentationImports = officialImports(source, file, root, PRESENTATION_DIRECTORIES)
     for (const use of classNameUses(source)) {
       for (const name of use.classes) {
         if (imports.has(use.tag)) {
           if (!official.has(name)) official.set(name, new Set())
           official.get(name).add(use.tag)
         }
-        if (name.startsWith('kubecode-') && !classNamed.has(name)) classNamed.set(name, { file, line: use.line })
+        if (presentationImports.has(use.tag)) {
+          if (!presentation.has(name)) presentation.set(name, new Set())
+          presentation.get(name).add(use.tag)
+        }
+        if (isOwnedName(name) && !classNamed.has(name)) classNamed.set(name, { file, line: use.line })
       }
     }
   }
-  return { official, classNamed, mentioned }
+  return { official, presentation, classNamed, mentioned }
 }
 
-/** `kubecode-*` classes a TSX className uses that no stylesheet styles. */
+/** `kubecode-*`/`agx-*` classes a TSX className uses that no stylesheet styles. */
 export function findDeadClasses(classNamed, stylesheets) {
   const styled = new Set()
   for (const css of stylesheets) {
@@ -367,10 +413,16 @@ export function findAllViolations(root) {
   for (const file of stylesheets) {
     const css = readFileSync(join(root, file), 'utf8')
     cssSources.push(css)
+    // Inside a presentation directory the layer styles its own classes and
+    // its own subtree — reaching its own elements is what owning the
+    // presentation means (ADR 0257 §6). The rules that protect someone
+    // else's CSS still apply there.
+    const ownedStyles = PRESENTATION_DIRECTORIES.some((directory) => file.startsWith(`${directory}/`))
     const found = [
       ...findViolations(css),
-      ...findReachIns(css),
+      ...(ownedStyles ? [] : findReachIns(css)),
       ...findAppearanceOnOfficial(css, usage.official),
+      ...(ownedStyles ? [] : findAppearanceOnPresentation(css, usage.presentation)),
       ...findDeadRules(css, usage.mentioned),
     ]
     violations.push(...found.map((violation) => ({ file, ...violation })))
@@ -419,7 +471,7 @@ if (isMain) {
   }
   for (const entry of stale) console.error(`scripts/css-ownership-baseline.json: stale entry, remove it: ${entry.file} ${entry.kind} ${entry.text}${entry.context ? ` (in ${entry.context})` : ''}`)
   if (added.length || stale.length) {
-    console.error('CSS ownership check failed (ADR 0247, ADR 0256, docs/design/ui-shared-contract.md).')
+    console.error('CSS ownership check failed (ADR 0247, ADR 0256, ADR 0257, docs/design/ui-shared-contract.md).')
     process.exit(1)
   }
   const counts = {}

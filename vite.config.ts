@@ -56,7 +56,9 @@ export default defineConfig({
         'src/components/ui/tooltip.tsx',
         'src/components/ui/card.tsx',
       ],
-      include: ['src/kubecode/**/*.{ts,tsx}'],
+      // agent-ui is counted with the product (ADR 0257 §7): its primitives
+      // are production presentation, tested like one.
+      include: ['src/kubecode/**/*.{ts,tsx}', 'src/components/agent-ui/**/*.{ts,tsx}'],
       provider: 'v8',
       reporter: ['text', 'json', 'html', 'lcov'],
       reportsDirectory: vitestCoverageDirectory,
@@ -69,7 +71,7 @@ export default defineConfig({
     },
     environment: 'jsdom',
     globals: true,
-    include: ['src/kubecode/**/*.{test,spec}.{ts,tsx}'],
+    include: ['src/kubecode/**/*.{test,spec}.{ts,tsx}', 'src/components/agent-ui/**/*.{test,spec}.{ts,tsx}'],
     maxWorkers: process.env.VITEST_MAX_WORKERS ?? 4,
     setupFiles: ['./src/test/setup.ts'],
     // 30 s: a shared, loaded workstation (other jobs at load 12+ on 7 cores) makes

@@ -100,3 +100,4 @@ ADRs are immutable after acceptance; a later decision supersedes an earlier one.
 | [0254](0254-route-audit-closes-the-official-component-migration.md) | Route audit closes the official-component migration (UI I) |
 | [0255](0255-one-markdown-renderer-on-message-response.md) | One Markdown renderer: MessageResponse on every surface (UI2 B) |
 | [0256](0256-official-components-own-their-variants-and-the-parallel-layer-is-retired.md) | Official components own their variants; the parallel component layer is retired (UI2 A) |
+| [0257](0257-agent-ui-presentation-layer.md) | The agent-ui presentation layer recreates the affectUI references (UI3 A) |

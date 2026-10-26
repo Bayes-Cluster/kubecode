@@ -1,0 +1,224 @@
+/* ADR 0257, the affectUI "Thinking Loader" presentation (Clean, 2026-10-26):
+   a status pill whose rays fade in sequence, whose label box glides and rolls,
+   and whose icon morphs into a drawn check when done. Colours are Kubecode
+   tokens. */
+
+.agx-thinking {
+  --agx-thinking-icon: 16px;
+  --agx-thinking-lh: 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  height: 32px;
+  max-width: 100%;
+  padding: 0 10px 0 8px;
+  border-radius: 8px;
+  background: var(--agx-surface);
+  box-shadow: var(--agx-shadow);
+  color: var(--agx-text);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: var(--agx-thinking-lh);
+  vertical-align: middle;
+}
+
+.agx-thinking[data-size='sm'] {
+  --agx-thinking-icon: 14px;
+  --agx-thinking-lh: 16px;
+  height: 26px;
+  gap: 5px;
+  padding: 0 8px 0 6px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.agx-thinking[data-variant='plain'] {
+  height: auto;
+  padding: 0;
+  background: none;
+  box-shadow: none;
+}
+
+/* Spinner and check share one square and swap on done. */
+.agx-thinking__icon {
+  position: relative;
+  flex: none;
+  width: var(--agx-thinking-icon);
+  height: var(--agx-thinking-icon);
+}
+
+.agx-thinking__icon svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  transition: opacity 240ms ease, transform 420ms var(--agx-ease);
+}
+
+/* Thin rays that fade one after another, so the spinner turns without
+   rotating. */
+.agx-thinking__spinner line {
+  stroke: var(--agx-solid);
+  stroke-width: 1.1;
+  stroke-linecap: round;
+  opacity: 0.2;
+  animation: agx-thinking-ray 800ms linear infinite;
+}
+
+.agx-thinking__check {
+  opacity: 0;
+  transform: scale(0.6);
+  fill: none;
+  stroke: var(--agx-solid);
+  stroke-width: 1.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.agx-thinking__check path {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+}
+
+.agx-thinking[data-done] .agx-thinking__spinner {
+  opacity: 0;
+  transform: scale(0.6) rotate(-45deg);
+}
+
+.agx-thinking[data-done] .agx-thinking__check {
+  opacity: 1;
+  transform: none;
+}
+
+.agx-thinking[data-done] .agx-thinking__check path {
+  animation: agx-thinking-draw 360ms var(--agx-ease) 120ms forwards;
+}
+
+/* The text box glides to the incoming label's width; labels roll through it.
+   min-width 0: in a narrow container the box gives way and the label ends in
+   an ellipsis. */
+.agx-thinking__text {
+  position: relative;
+  display: block;
+  min-width: 0;
+  height: var(--agx-thinking-lh);
+  overflow: hidden;
+  transition: width 460ms var(--agx-ease);
+}
+
+.agx-thinking__label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  line-height: var(--agx-thinking-lh);
+  white-space: nowrap;
+}
+
+.agx-thinking__text[data-cut] .agx-thinking__label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.agx-thinking[data-done] .agx-thinking__label {
+  color: var(--agx-ink);
+}
+
+.agx-thinking__label--in {
+  animation: agx-thinking-in 460ms var(--agx-ease) both;
+}
+
+.agx-thinking__label--out {
+  animation: agx-thinking-out 320ms var(--agx-ease) both;
+}
+
+/* A highlight band sweeping through the grey label while it works. */
+.agx-thinking__shine::after {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  white-space: nowrap;
+  color: transparent;
+  background: linear-gradient(90deg, transparent 38%, var(--surface-panel) 50%, transparent 62%)
+    100% 0 / 300% 100% no-repeat;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: agx-thinking-sweep 1.6s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes agx-thinking-ray {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.2;
+  }
+}
+
+@keyframes agx-thinking-in {
+  from {
+    opacity: 0;
+    transform: translateY(70%);
+    filter: blur(3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
+@keyframes agx-thinking-out {
+  from {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-70%);
+    filter: blur(3px);
+  }
+}
+
+@keyframes agx-thinking-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes agx-thinking-sweep {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0% 0;
+  }
+}
+
+/* Reduced motion: the global clamp in kubecode.css already zeroes every
+   duration; these overrides settle the state that timing alone cannot (the
+   drawn check, the static rays, no sweeping shine). */
+@media (prefers-reduced-motion: reduce) {
+  .agx-thinking .agx-thinking__shine.agx-thinking__shine::after {
+    display: none;
+  }
+
+  .agx-thinking .agx-thinking__check path {
+    stroke-dashoffset: 0;
+    animation: none;
+  }
+
+  .agx-thinking .agx-thinking__spinner line {
+    opacity: 0.6;
+    animation: none;
+  }
+
+  .agx-thinking .agx-thinking__spinner,
+  .agx-thinking .agx-thinking__check {
+    transition: none;
+  }
+}

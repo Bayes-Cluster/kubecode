@@ -1,0 +1,94 @@
+/* ADR 0257, the affectUI "Blur Crossfade" presentation (Clean, 2026-10-26):
+   a keyed two-layer swap; the outgoing layer blurs out over the incoming one
+   while the container's bounded size morph is driven from the component. */
+
+.agx-blur {
+  --agx-blur-duration: 420ms;
+  --agx-blur-amount: 10px;
+  position: relative;
+  display: block;
+}
+
+.agx-blur[data-morph='both'] {
+  display: inline-block;
+  vertical-align: top;
+}
+
+.agx-blur[data-busy] {
+  overflow: hidden;
+}
+
+.agx-blur__layer {
+  display: block;
+}
+
+.agx-blur[data-morph='both'] > .agx-blur__layer {
+  width: max-content;
+}
+
+.agx-blur__layer--out {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+.agx-blur[data-morph='height'] > .agx-blur__layer--out,
+.agx-blur[data-morph='none'] > .agx-blur__layer--out {
+  right: 0;
+}
+
+.agx-blur[data-morph='both'] > .agx-blur__layer--out {
+  left: 50%;
+  translate: -50% 0;
+}
+
+.agx-blur[data-morph='both'] > .agx-blur__layer--in {
+  margin-left: 50%;
+  translate: -50% 0;
+}
+
+.agx-blur__layer--in {
+  animation: agx-blur-in var(--agx-blur-duration) var(--agx-ease) both;
+}
+
+.agx-blur__layer--out {
+  animation: agx-blur-out calc(var(--agx-blur-duration) * 0.8) ease-in both;
+}
+
+@keyframes agx-blur-in {
+  from {
+    opacity: 0;
+    filter: blur(var(--agx-blur-amount));
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: scale(1);
+  }
+}
+
+@keyframes agx-blur-out {
+  from {
+    opacity: 1;
+    filter: blur(0);
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    filter: blur(var(--agx-blur-amount));
+    transform: scale(1.02);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agx-blur .agx-blur__layer--in,
+  .agx-blur .agx-blur__layer--out {
+    animation: none;
+  }
+
+  .agx-blur .agx-blur__layer--out {
+    display: none;
+  }
+}

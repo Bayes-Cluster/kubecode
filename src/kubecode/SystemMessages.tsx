@@ -1,7 +1,7 @@
 import { useCallback, useMemo, type ReactNode } from 'react'
 import { toast } from 'sonner'
 
-import { Toaster } from '@/components/ui/sonner'
+import { ToasterHost } from '@/components/agent-ui'
 import type { ThemeMode } from '@/lib/themeMode'
 
 import { SystemMessageContext, type SystemMessage } from './systemMessages'
@@ -46,7 +46,7 @@ export function SystemMessageProvider({
   return (
     <SystemMessageContext value={api}>
       {children}
-      <Toaster closeButton containerAriaLabel={regionLabel} theme={theme} toastOptions={{ closeButtonAriaLabel: closeLabel }} visibleToasts={3} />
+      <ToasterHost closeButton containerAriaLabel={regionLabel} theme={theme} toastOptions={{ closeButtonAriaLabel: closeLabel }} visibleToasts={3} />
     </SystemMessageContext>
   )
 }

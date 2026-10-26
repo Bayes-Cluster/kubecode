@@ -10,15 +10,22 @@ per-surface status is in [ui-migration-inventory.md](ui-migration-inventory.md).
 1. An AI Elements component (`src/components/ai-elements/`) when the surface is
    conversational or agent work.
 2. A shadcn/ui component (`src/components/ui/`).
-3. A shared Workspace wrapper below, when the surface needs its domain or
+3. An agent-ui component (`src/components/agent-ui/`, ADR 0257) when the
+   surface recreates an adopted affectUI pattern the layer owns; import it
+   through the barrel, pass localized copy and real state, and never restyle
+   it at the call site.
+4. A shared Workspace wrapper below, when the surface needs its domain or
    accessibility contract.
-4. A new adapter only where no registry item fits. Record the search, the
+5. A new adapter only where no registry item fits. Record the search, the
    gap, the smallest adapter and its tests in your slice's ADR and in the
    inventory row (`exception` or `specialist-engine`).
 
 Official components own structure, states, colours, typography, radii,
 shadows and internal layout. Choose a `variant`/`size`; pass `className` only
-for layout (flex, grid, gap, width, margin, alignment, truncation).
+for layout (flex, grid, gap, width, margin, alignment, truncation). An
+agent-ui component owns the presentation of the pattern it recreates the same
+way: one implementation per shared visual component, state and copy in, DOM
+out (ADR 0257 §2).
 
 ## 2. Pass-throughs (`src/components/workspace/`, owned by A)
 
@@ -90,6 +97,7 @@ size="compact"`, `Alert variant="warning"`, `FieldLabel variant="option"`,
 | Owner | May style |
 | --- | --- |
 | A #255 | `src/index.css` tokens and base layer; `src/components/ui/`, `src/components/ai-elements/` (via CLI updates and `cva` variants only); `src/components/workspace/` layout classes |
+| A (UI3) #277 | `src/components/agent-ui/` co-located styles: the layer's own `agx-*` classes and its own subtree, including its own descendant elements; the Sonner host only through `agent-ui/toaster.css`'s baselined `[data-sonner-*]` rules (ADR 0257) |
 | B–H | layout of their own containers (`.kubecode-<surface>-*` classes they render): grid, flex, gap, width, overflow, position, responsive breakpoints |
 
 Nobody may:
@@ -98,22 +106,29 @@ Nobody may:
   (`[data-slot=…]`, `[cmdk-…]`, `[data-radix-…]`, or the component's own
   classes) to change colour, typography, radius, shadow, padding or internal
   layout;
+- repaint an agent-ui component from outside `src/components/agent-ui`
+  (a size, padding, border, radius, font or colour declaration on an `agx-*`
+  class an agent-ui component carries), or reach into its internals;
 - use `!important`;
 - stack descendant selectors to beat a component's specificity.
 
 `pnpm lint` runs `scripts/check-css-ownership.mjs` over every `.css` file
-under `src/` against the product TSX (ADR 0256 §6). It flags official and
-third-party internals and `!important`; a size, padding, border, radius,
-font or colour declaration in a rule whose subject is a class an official
-component carries as `className`; a rule that reaches an element or
-`[role=…]` through a combinator; and dead classes both ways. Entries are
-matched by file, enclosing selector and line text. Official components keep
-their own `rem` type scale on the 14px root (a default Button is `text-sm`,
-12.25px); do not restore `font-size: inherit`. Existing findings are listed
-in `scripts/css-ownership-baseline.json` with an owner (187 after #277);
-each slice removes its entries (the check fails on stale entries, so delete
-the entry with the rule) and may not add new ones. Exceptions kept by ADR
-0247: the xterm viewport and the `prefers-reduced-motion` block.
+under `src/` against the product TSX (ADR 0256 §6, ADR 0257 §6). It flags
+official and third-party internals (`.cm-`, `.xterm`, `[data-streamdown]`,
+`.hljs-`, `.katex`, `[data-sonner-*]`) and `!important`; a size, padding,
+border, radius, font or colour declaration in a rule whose subject is a class
+an official or agent-ui component carries as `className`; a rule that reaches
+an element or `[role=…]` through a combinator (outside the presentation
+layer's own subtree); and dead `kubecode-*`/`agx-*` classes both ways.
+Entries are matched by file, enclosing selector and line text. Official
+components keep their own `rem` type scale on the 14px root (a default Button
+is `text-sm`, 12.25px); do not restore `font-size: inherit`. Existing
+findings are listed in `scripts/css-ownership-baseline.json` with an owner
+(138 after the UI3 foundation); each slice removes its entries (the check
+fails on stale entries, so delete the entry with the rule) and may not add
+new ones. Exceptions kept by ADR 0247: the xterm viewport and the
+`prefers-reduced-motion` block; the agent-ui toaster's `[data-sonner-*]`
+rules are baselined to `agent-ui` by ADR 0257.
 
 ## 5. Portals
 

@@ -1,0 +1,45 @@
+/*
+ * ADR 0257 §4: the agent-ui presentation tokens. The affectUI Clean baseline's
+ * measurements mapped onto Kubecode's semantic tokens; no brand value is
+ * hardcoded here. Components consume these variables and define their own
+ * derived ones beside them.
+ */
+:root {
+  /* Ink and text */
+  --agx-ink: var(--text-primary);
+  --agx-text: var(--text-secondary);
+  --agx-faint: var(--text-tertiary);
+  --agx-on-solid: var(--text-inverse);
+
+  /* Surfaces */
+  --agx-surface: var(--surface-card);
+  --agx-track: var(--state-hover);
+  --agx-wash: var(--state-hover-subtle);
+
+  /* Lines and elevation: the Clean hairline (.5px ring) and float shadow
+     recipe, painted with Kubecode's borders and dialog shadow. */
+  --agx-line: var(--border-subtle);
+  --agx-line-strong: var(--border-default);
+  --agx-shadow: 0 0 0 0.5px var(--border-subtle), 0 1px 1px -1px rgb(0 0 0 / 0.1),
+    0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --agx-shadow-hover: 0 0 0 0.5px var(--border-default), 0 1px 1px -1px rgb(0 0 0 / 0.12),
+    0 1px 3px 0 rgb(0 0 0 / 0.07);
+  --agx-shadow-float: 0 0 0 0.5px var(--border-subtle), 0 1px 1px -1px rgb(0 0 0 / 0.1),
+    0 1px 2px 0 rgb(0 0 0 / 0.05), 0 10px 24px -10px var(--shadow-dialog);
+
+  /* Accents and feedback */
+  --agx-solid: var(--accent-blue);
+  --agx-accent-soft: var(--accent-blue-bg);
+  --agx-focus: var(--state-focus-ring);
+  --agx-success: var(--feedback-success-text);
+  --agx-error: var(--feedback-error-text);
+  --agx-info: var(--feedback-info-text);
+
+  /* Motion (ADR 0257 §4/§5): enter/geometry and measured morphs; fast =
+     hover/micro, base = indicators, slow = surface crossfades. */
+  --agx-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --agx-ease-morph: cubic-bezier(0.25, 1, 0.5, 1);
+  --agx-dur-fast: 140ms;
+  --agx-dur-base: 240ms;
+  --agx-dur-slow: 420ms;
+}

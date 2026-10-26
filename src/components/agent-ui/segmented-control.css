@@ -1,0 +1,355 @@
+/* ADR 0257, the affectUI "Segmented Control" presentation (Clean,
+   2026-10-26): chips (buttons), a raised pill in a track (tray), or text tabs
+   (underline), with one light fill that slides to the active option. Colour
+   and size come from the Kubecode tokens; a coarse pointer gets the ADR 0256
+   touch heights. */
+
+.agx-segc {
+  box-sizing: border-box;
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+  vertical-align: middle;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  color: var(--agx-text);
+  --agx-segc-pad: 2px;
+  --agx-segc-gap: 8px;
+  --agx-segc-h: 28px;
+  --agx-segc-fill: var(--state-selected);
+  --agx-segc-focus: var(--agx-focus);
+  --agx-segc-min: 0px;
+}
+
+.agx-segc[data-size='sm'] {
+  --agx-segc-h: 24px;
+  --agx-segc-pad: 2px;
+  --agx-segc-gap: 6px;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.agx-segc[data-size='lg'] {
+  --agx-segc-h: 32px;
+  --agx-segc-pad: 2px;
+  --agx-segc-gap: 8px;
+}
+
+.agx-segc[data-full] {
+  display: flex;
+  width: 100%;
+}
+
+.agx-segc[data-disabled] {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* The scroller only scrolls sideways when the control does not fit; the
+   padding keeps focus rings from being clipped, the fades mark the cut. */
+.agx-segc__scroller {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: var(--agx-segc-pad);
+  border-radius: inherit;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 var(--agx-segc-fade-l, 0px),
+    #000 calc(100% - var(--agx-segc-fade-r, 0px)),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 var(--agx-segc-fade-l, 0px),
+    #000 calc(100% - var(--agx-segc-fade-r, 0px)),
+    transparent
+  );
+}
+
+.agx-segc__scroller::-webkit-scrollbar {
+  display: none;
+}
+
+.agx-segc__track {
+  position: relative;
+  display: flex;
+  width: max-content;
+  min-width: 100%;
+  /* Horizontal drags move the indicator; vertical ones still scroll the
+     page. */
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.agx-segc[data-overflow] .agx-segc__track {
+  touch-action: pan-x pan-y;
+}
+
+.agx-segc[data-full] .agx-segc__track {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(var(--agx-segc-min), 1fr);
+  width: 100%;
+}
+
+.agx-segc__opt {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  height: var(--agx-segc-h);
+  margin: 0;
+  padding: 0 10px;
+  border: 0;
+  overflow: clip;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  color: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--agx-dur-fast) ease, background-color var(--agx-dur-fast) ease;
+}
+
+/* Width glides only once the control is ready: the first fit snaps. */
+.agx-segc[data-ready]:not([data-full]) .agx-segc__opt {
+  transition: color var(--agx-dur-fast) ease, background-color var(--agx-dur-fast) ease,
+    width 200ms var(--agx-ease);
+}
+.agx-segc__opt[data-active] {
+  color: var(--agx-ink);
+}
+
+.agx-segc__opt:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.agx-segc__opt:focus-visible {
+  outline: 2px solid var(--agx-segc-focus);
+  outline-offset: 1px;
+}
+
+@media (hover: hover) {
+  .agx-segc__opt:not([data-active]):not(:disabled):hover {
+    background-color: var(--agx-wash);
+  }
+}
+
+.agx-segc__content {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+}
+
+.agx-segc__icon {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  overflow: hidden;
+  color: var(--agx-faint);
+  transition: color var(--agx-dur-fast) ease;
+}
+
+.agx-segc[data-size='sm'] .agx-segc__icon {
+  width: 14px;
+  height: 14px;
+}
+
+.agx-segc__opt[data-active] .agx-segc__icon {
+  color: var(--agx-ink);
+}
+
+.agx-segc__icon svg,
+.agx-segc__icon img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.agx-segc__label {
+  display: block;
+}
+
+.agx-segc__count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 5px;
+  background: var(--agx-track);
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--agx-text);
+  animation: agx-segc-in 200ms var(--agx-ease) both;
+}
+
+.agx-segc__opt[data-active] .agx-segc__count {
+  background: var(--agx-surface);
+  box-shadow: 0 0 0 0.5px var(--agx-line-strong);
+  color: var(--agx-ink);
+}
+
+.agx-segc__badge {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 5px;
+  background: var(--agx-accent-soft);
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 500;
+  color: var(--agx-solid);
+}
+
+/* The indicator: its left and right edges slide separately, the one facing
+   the target leading; short and crisp. */
+.agx-segc__pill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  right: 100%;
+  z-index: 0;
+  border-radius: 6px;
+  background: var(--agx-segc-fill);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    left 200ms var(--agx-ease),
+    right 200ms var(--agx-ease),
+    scale 120ms var(--agx-ease),
+    opacity 120ms ease;
+}
+
+.agx-segc__pill[data-dir='right'] {
+  transition-duration: 220ms, 160ms, 120ms, 120ms;
+}
+
+.agx-segc__pill[data-dir='left'] {
+  transition-duration: 160ms, 220ms, 120ms, 120ms;
+}
+
+.agx-segc[data-pressed]:not([data-variant='underline']) .agx-segc__pill {
+  scale: 0.97;
+}
+
+/* buttons: separate chips with a hairline; the fill slides across them. The
+   control reaches a few px past its box so focus rings are never clipped. */
+.agx-segc[data-variant='buttons'] {
+  --agx-segc-pad: 3px;
+  margin: -3px;
+  max-width: calc(100% + 6px);
+}
+
+.agx-segc[data-variant='buttons'][data-full] {
+  width: calc(100% + 6px);
+}
+
+.agx-segc[data-variant='buttons'] .agx-segc__track {
+  gap: var(--agx-segc-gap);
+}
+
+.agx-segc[data-variant='buttons'] .agx-segc__opt {
+  box-shadow: inset 0 0 0 0.5px var(--agx-line);
+}
+
+/* tray: a compact track with a raised pill. */
+.agx-segc[data-variant='tray'] {
+  background: var(--agx-track);
+}
+
+.agx-segc[data-variant='tray'] .agx-segc__opt {
+  height: calc(var(--agx-segc-h) - var(--agx-segc-pad) * 2);
+}
+
+.agx-segc[data-variant='tray'] .agx-segc__pill {
+  background: var(--agx-surface);
+  box-shadow: var(--agx-shadow);
+}
+
+/* underline: text tabs on a hairline. */
+.agx-segc[data-variant='underline'] {
+  --agx-segc-pad: 0px;
+  --agx-segc-gap: 20px;
+  border-radius: 0;
+  box-shadow: inset 0 -0.5px 0 var(--agx-line-strong);
+}
+
+.agx-segc[data-variant='underline'] .agx-segc__opt {
+  height: calc(var(--agx-segc-h) + 6px);
+  padding: 0 2px;
+}
+
+.agx-segc[data-variant='underline'][data-full] .agx-segc__opt {
+  padding: 0 10px;
+}
+
+.agx-segc[data-variant='underline'] .agx-segc__opt:focus-visible {
+  outline-offset: -2px;
+}
+
+.agx-segc[data-variant='underline'] .agx-segc__pill {
+  top: auto;
+  height: 1.5px;
+  border-radius: 1.5px 1.5px 0 0;
+  background: var(--agx-ink);
+}
+
+@media (hover: hover) {
+  .agx-segc[data-variant='underline'] .agx-segc__opt:not([data-active]):not(:disabled):hover {
+    background-color: transparent;
+    color: var(--agx-text);
+  }
+}
+
+@keyframes agx-segc-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+    filter: blur(2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
+/* Touch screens: every option at least a 44px target (ADR 0256). */
+@media (hover: none) and (pointer: coarse) {
+  .agx-segc[data-size] {
+    --agx-segc-h: 44px;
+  }
+
+  .agx-segc[data-variant='underline'] .agx-segc__opt {
+    height: var(--agx-segc-h);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agx-segc .agx-segc__opt,
+  .agx-segc .agx-segc__pill,
+  .agx-segc .agx-segc__count {
+    transition: none;
+    animation: none;
+  }
+}
