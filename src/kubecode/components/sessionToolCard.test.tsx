@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
 import { AiActionCard } from '@/components/AiActionCard'
+import { ReasoningBlock } from '@/components/AiMessage'
 import { translate } from '@/lib/i18n'
 
 /**
@@ -56,5 +57,16 @@ describe('the session tool card (slice E2 presentation)', () => {
     )
     expect(screen.getByRole('button', { name: t('kubecode.channel.copyText') })).toBeInTheDocument()
     expect(screen.getByText('pruned,0.91')).toBeInTheDocument()
+  })
+})
+
+describe('the reasoning trigger (slice E2 presentation)', () => {
+  it('settles the glyph when the reasoning ends, keeping the words', () => {
+    const text = 'considering the pruning order'
+    const view = render(<ReasoningBlock done={false} locale="en-US" open text={text} onOpenChange={() => undefined} />)
+    expect(view.container.querySelector('svg.animate-in')).toBeNull()
+
+    view.rerender(<ReasoningBlock done locale="en-US" open={false} text={text} onOpenChange={() => undefined} />)
+    expect(view.container.querySelector('svg.animate-in')).not.toBeNull()
   })
 })

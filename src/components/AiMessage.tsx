@@ -189,7 +189,8 @@ function UserBubble({ content, locale, messageId, onEdit, references, onOpenNote
   )
 }
 
-function ReasoningBlock({ locale, text, done, open, onOpenChange }: {
+/** Rendered for the slice's state tests as well as the message body. */
+export function ReasoningBlock({ locale, text, done, open, onOpenChange }: {
   locale: AppLocale; text: string; done: boolean; open: boolean; onOpenChange: (open: boolean) => void
 }) {
   const label = translate(locale, 'ai.message.reasoning')
@@ -202,7 +203,14 @@ function ReasoningBlock({ locale, text, done, open, onOpenChange }: {
       onOpenChange={onOpenChange}
     >
       <ReasoningTrigger data-testid="reasoning-toggle">
-        <Brain aria-hidden className="size-4" />
+        {/* Kubecode (ADR 0257, slice E2): the glyph settles as the reasoning
+            ends. No elapsed label — the model carries no started-at to time
+            one from, and none is invented. */}
+        <Brain
+          aria-hidden
+          className={done ? 'size-4 animate-in fade-in zoom-in-90 duration-200' : 'size-4'}
+          data-state={done ? 'done' : 'streaming'}
+        />
         {done ? <span>{label}</span> : <Shimmer as="span" duration={1}>{label}</Shimmer>}
         <ChevronDown aria-hidden className="kubecode-session-reasoning-caret" size={12} />
       </ReasoningTrigger>
