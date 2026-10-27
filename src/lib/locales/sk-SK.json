@@ -711,6 +711,7 @@
   "kubecode.agentReadiness": "Pripravenosť Agentov",
   "kubecode.agentReadinessDescription": "Skontrolovať lokálne CLI a adaptéry ACP bez vytvorenia relácie u poskytovateľa.",
   "kubecode.copyDiagnostics": "Kopírovať diagnostiku",
+  "kubecode.copyFailed": "Kopírovanie zlyhalo – označ text a skopíruj ho sám.",
   "kubecode.copied": "Skopírované",
   "kubecode.agentCli": "CLI Agenta",
   "kubecode.nativeAcp": "Natívne ACP",

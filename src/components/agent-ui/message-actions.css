@@ -17,6 +17,20 @@
   transition: background-color 160ms ease, color 160ms ease;
 }
 
+.agx-copy--labelled {
+  width: auto;
+  gap: 6px;
+  padding: 0 10px;
+}
+
+.agx-copy--labelled .agx-copy__label {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .agx-copy:hover {
   background: var(--agx-wash);
   color: var(--agx-ink);
@@ -75,6 +89,12 @@
   .agx-copy {
     width: 44px;
     height: 44px;
+  }
+
+  .agx-copy--labelled {
+    width: auto;
+    height: 44px;
+    padding: 0 14px;
   }
 }
 

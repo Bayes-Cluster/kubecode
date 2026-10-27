@@ -711,6 +711,7 @@
   "kubecode.agentReadiness": "Agent の準備状況",
   "kubecode.agentReadinessDescription": "プロバイダーのセッションを作成せずに、ローカル CLI と ACP アダプターを確認します。",
   "kubecode.copyDiagnostics": "診断情報をコピー",
+  "kubecode.copyFailed": "コピーに失敗しました。テキストを選んで自分でコピーしてください。",
   "kubecode.copied": "コピーしました",
   "kubecode.agentCli": "Agent CLI",
   "kubecode.nativeAcp": "ネイティブ ACP",

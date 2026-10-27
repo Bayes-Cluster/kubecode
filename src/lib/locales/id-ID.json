@@ -711,6 +711,7 @@
   "kubecode.agentReadiness": "Kesiapan Agent",
   "kubecode.agentReadinessDescription": "Periksa CLI lokal dan adaptor ACP tanpa membuat Sesi penyedia.",
   "kubecode.copyDiagnostics": "Salin diagnostik",
+  "kubecode.copyFailed": "Gagal menyalin — pilih teksnya dan salin sendiri.",
   "kubecode.copied": "Disalin",
   "kubecode.agentCli": "CLI Agent",
   "kubecode.nativeAcp": "ACP bawaan",

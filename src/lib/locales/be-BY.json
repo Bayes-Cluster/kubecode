@@ -711,6 +711,7 @@
   "kubecode.agentReadiness": "Гатоўнасць Agent",
   "kubecode.agentReadinessDescription": "Праверыць лакальныя CLI і адаптары ACP без стварэння сесіі ў правайдара.",
   "kubecode.copyDiagnostics": "Капіяваць дыягностыку",
+  "kubecode.copyFailed": "Не ўдалося скапіяваць — вылучыце тэкст і скапіруйце яго самі.",
   "kubecode.copied": "Скапіявана",
   "kubecode.agentCli": "CLI агента",
   "kubecode.nativeAcp": "Убудаваны ACP",

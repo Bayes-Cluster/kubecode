@@ -123,4 +123,24 @@ describe('CopyAction', () => {
     expect(() => fireEvent.click(screen.getByRole('button', { name: 'Copy answer' }))).not.toThrow()
     expect(screen.getByRole('button', { name: 'Copy failed — try again' })).toHaveAttribute('data-state', 'error')
   })
+
+  it('shows a visible label in the labelled variant, keeping the words through every state', async () => {
+    Object.assign(window.navigator, { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } })
+    render(
+      <CopyAction
+        copiedLabel="Copied"
+        errorLabel="Copy failed — try again"
+        getText={() => 'report'}
+        icon={ICON}
+        label="Copy diagnostics"
+      >
+        Copy diagnostics
+      </CopyAction>,
+    )
+    const button = screen.getByRole('button', { name: 'Copy diagnostics' })
+    expect(button).toHaveClass('agx-copy--labelled')
+    expect(button).toHaveTextContent('Copy diagnostics')
+    fireEvent.click(button)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Copied' })).toHaveTextContent('Copy diagnostics'))
+  })
 })

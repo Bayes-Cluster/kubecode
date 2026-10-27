@@ -711,6 +711,7 @@
   "kubecode.agentReadiness": "Agent 就緒狀態",
   "kubecode.agentReadinessDescription": "檢查本機 CLI 和 ACP 轉接器，且不會建立 provider Session。",
   "kubecode.copyDiagnostics": "複製診斷資訊",
+  "kubecode.copyFailed": "複製失敗——請選取文字後自行複製。",
   "kubecode.copied": "已複製",
   "kubecode.agentCli": "Agent CLI",
   "kubecode.nativeAcp": "原生 ACP",

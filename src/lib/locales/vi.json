@@ -711,6 +711,7 @@
   "kubecode.agentReadiness": "Mức sẵn sàng của Agent",
   "kubecode.agentReadinessDescription": "Kiểm tra CLI cục bộ và bộ điều hợp ACP mà không tạo Phiên ở nhà cung cấp.",
   "kubecode.copyDiagnostics": "Sao chép chẩn đoán",
+  "kubecode.copyFailed": "Sao chép thất bại — hãy chọn văn bản và tự sao chép.",
   "kubecode.copied": "Đã sao chép",
   "kubecode.agentCli": "CLI của Agent",
   "kubecode.nativeAcp": "ACP gốc",

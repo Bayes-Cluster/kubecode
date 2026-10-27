@@ -711,6 +711,7 @@
   "kubecode.agentReadiness": "Disponibilidad de los Agentes",
   "kubecode.agentReadinessDescription": "Comprueba las CLI locales y los adaptadores ACP sin crear una sesión del proveedor.",
   "kubecode.copyDiagnostics": "Copiar diagnóstico",
+  "kubecode.copyFailed": "No se pudo copiar; selecciona el texto y cópialo tu mismo.",
   "kubecode.copied": "Copiado",
   "kubecode.agentCli": "CLI del Agente",
   "kubecode.nativeAcp": "ACP nativo",

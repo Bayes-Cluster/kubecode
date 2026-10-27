@@ -711,6 +711,7 @@
   "kubecode.agentReadiness": "Agent 준비 상태",
   "kubecode.agentReadinessDescription": "제공자 세션을 만들지 않고 로컬 CLI와 ACP 어댑터를 확인합니다.",
   "kubecode.copyDiagnostics": "진단 정보 복사",
+  "kubecode.copyFailed": "복사에 실패했습니다. 텍스트를 선택해 직접 복사하세요.",
   "kubecode.copied": "복사됨",
   "kubecode.agentCli": "Agent CLI",
   "kubecode.nativeAcp": "기본 ACP",

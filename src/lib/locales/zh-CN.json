@@ -711,6 +711,7 @@
   "kubecode.agentReadiness": "Agent 就绪状态",
   "kubecode.agentReadinessDescription": "检查本地 CLI 和 ACP 适配器，且不会创建 provider 会话。",
   "kubecode.copyDiagnostics": "复制诊断信息",
+  "kubecode.copyFailed": "复制失败——请选中文本后自行复制。",
   "kubecode.copied": "已复制",
   "kubecode.agentCli": "Agent CLI",
   "kubecode.nativeAcp": "原生 ACP",

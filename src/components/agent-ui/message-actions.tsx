@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 
 import './message-actions.css'
 
@@ -33,6 +33,10 @@ export interface CopyActionProps {
   onCopied?: (text: string) => void
   /** Called with the outcome, for a surface that announces it in words. */
   onFinished?: (ok: boolean) => void
+  /** A visible label beside the icon: the labelled variant keeps the words
+   * where the surface shows them (settings rows), instead of the icon-only
+   * quiet action (message rows). */
+  children?: ReactNode
   className?: string
 }
 
@@ -48,6 +52,7 @@ export function CopyAction({
   errorIcon = icon,
   onCopied,
   onFinished,
+  children,
   className,
 }: CopyActionProps) {
   const [state, setState] = useState<CopyState>('idle')
@@ -78,7 +83,7 @@ export function CopyAction({
   return (
     <button
       type="button"
-      className={className ? `agx-copy ${className}` : 'agx-copy'}
+      className={(className ? `agx-copy ${className}` : 'agx-copy') + (children ? ' agx-copy--labelled' : '')}
       data-state={state}
       aria-label={name}
       title={name}
@@ -135,6 +140,7 @@ export function CopyAction({
           {icon}
         </span>
       </span>
+      {children && <span className="agx-copy__label">{children}</span>}
     </button>
   )
 }
