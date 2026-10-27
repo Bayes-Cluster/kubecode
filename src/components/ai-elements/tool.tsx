@@ -69,7 +69,14 @@ const statusIcons: Record<ToolPart["state"], ReactNode> = {
 // eslint-disable-next-line react-refresh/only-export-components -- shadcn/ui pattern
 export const getStatusBadge = (status: ToolPart["state"], label?: string) => (
   <Badge className="gap-1.5 rounded-full text-xs" variant="secondary">
-    {statusIcons[status]}
+    {/* Kubecode (ADR 0257): the glyph eases in as the state changes, so a
+        running clock visibly resolves into the outcome instead of swapping. */}
+    <span
+      key={status}
+      className="animate-in fade-in zoom-in-90 duration-200 [&_svg]:size-4"
+    >
+      {statusIcons[status]}
+    </span>
     {label ?? statusLabels[status]}
   </Badge>
 );

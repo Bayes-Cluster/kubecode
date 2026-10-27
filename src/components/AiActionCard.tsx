@@ -1,6 +1,6 @@
 import { useCallback } from 'react'
 
-import { CodeBlock } from '@/components/ai-elements/code-block'
+import { CodeBlock, CodeBlockCopyButton } from '@/components/ai-elements/code-block'
 import {
   Tool,
   ToolContent,
@@ -114,7 +114,16 @@ export function AiActionCard({
             <ToolOutput
               data-testid="detail-output"
               errorText={undefined}
-              output={<CodeBlock code={truncateText(output)} language="log" />}
+              output={(
+                <CodeBlock code={truncateText(output)} language="log">
+                  {/* Kubecode (ADR 0257, slice E2): the output's copy carries
+                      its own acknowledgment, like every copy in the product. */}
+                  <CodeBlockCopyButton
+                    aria-label={translate(locale, 'kubecode.channel.copyText')}
+                    className="absolute right-2 top-2"
+                  />
+                </CodeBlock>
+              )}
               resultLabel={status === 'error'
                 ? translate(locale, 'kubecode.session.toolError')
                 : translate(locale, 'kubecode.session.toolOutput')}
