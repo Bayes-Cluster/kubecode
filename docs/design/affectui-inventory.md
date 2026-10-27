@@ -430,3 +430,18 @@ change.
   `CopyAction`; the WeChat fold-card and the setup stepper presentation
   remain the slice's open remainder, riding with the WeChat panel's own
   slice work rather than a retrofit.
+- The frame captures (#279 acceptance box 1: four widths, both themes,
+  open inspectors and drawers) are deferred to slice L's whole-product
+  walkthrough (#289), whose capture harness owns them; the local
+  `tests/tour` scripts stay uncommitted tooling until then.
+- Slice E2 (#282): the Tool Call Card's deltas landed as the official
+  Tool's state-glyph ease (marked edit) and the session card's output copy;
+  the reasoning trigger's glyph settles on done, with no elapsed label and
+  no steps (the model carries no started-at and emits no step stream); the
+  shared read-only plan rail replaced the Session workbench's Items list.
+  Audited and already conformant, unchanged: `SubagentBubble` (explicit
+  envelope, keyboard disclosure, honest status words — the tree nests only
+  when relationships exist, which the envelope does not provide),
+  `UsageMeter` (official Context engine, threshold colors, unknown-size
+  fallback, localized, no fabricated breakdown), and `chain-of-thought`
+  (no emitted step stream to feed it; it stays a gallery-only part).
