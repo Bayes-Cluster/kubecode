@@ -42,6 +42,8 @@
   "kubecode.btwDescription": "在不中斷目前工作的情況下向 Claude 提問",
   "kubecode.copySideQuestionAnswer": "複製回答",
   "command.noMatches": "沒有匹配的命令",
+  "kubecode.commandPaletteHintSelect": "選擇",
+  "kubecode.commandPaletteHintClose": "關閉",
   "command.palettePlaceholder": "輸入命令...",
   "menu.view.commandPalette": "命令調色盤",
   "common.remove": "移除",

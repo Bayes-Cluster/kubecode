@@ -42,6 +42,8 @@
   "kubecode.btwDescription": "Ställ en sidofråga till Claude utan att avbryta den pågående turen",
   "kubecode.copySideQuestionAnswer": "Kopiera svar",
   "command.noMatches": "Inga matchande kommandon",
+  "kubecode.commandPaletteHintSelect": "välj",
+  "kubecode.commandPaletteHintClose": "stäng",
   "command.palettePlaceholder": "Skriv ett kommando...",
   "menu.view.commandPalette": "Kommandopalett",
   "common.remove": "Ta bort",

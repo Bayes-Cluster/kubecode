@@ -42,6 +42,8 @@
   "kubecode.btwDescription": "현재 턴을 중단하지 않고 Claude에게 곁가지 질문을 합니다",
   "kubecode.copySideQuestionAnswer": "답변 복사",
   "command.noMatches": "일치하는 명령 없음",
+  "kubecode.commandPaletteHintSelect": "선택",
+  "kubecode.commandPaletteHintClose": "닫기",
   "command.palettePlaceholder": "명령어를 입력하세요...",
   "menu.view.commandPalette": "명령 팔레트",
   "common.remove": "제거",

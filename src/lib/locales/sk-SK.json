@@ -42,6 +42,8 @@
   "kubecode.btwDescription": "Položte Claude vedľajšiu otázku bez prerušenia jeho aktuálneho ťahu",
   "kubecode.copySideQuestionAnswer": "Kopírovať odpoveď",
   "command.noMatches": "Žiadne zodpovedajúce príkazy",
+  "kubecode.commandPaletteHintSelect": "vybrať",
+  "kubecode.commandPaletteHintClose": "zavrieť",
   "command.palettePlaceholder": "Zadajte príkaz...",
   "menu.view.commandPalette": "Paleta príkazov",
   "common.remove": "Odstrániť",

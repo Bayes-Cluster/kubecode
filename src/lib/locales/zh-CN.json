@@ -1,5 +1,7 @@
 {
   "command.noMatches": "没有匹配的命令",
+  "kubecode.commandPaletteHintSelect": "选择",
+  "kubecode.commandPaletteHintClose": "关闭",
   "command.palettePlaceholder": "输入命令...",
   "menu.view.commandPalette": "命令面板",
   "common.remove": "移除",

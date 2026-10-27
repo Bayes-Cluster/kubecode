@@ -42,6 +42,8 @@
   "kubecode.btwDescription": "Zadajcie Claude pabočnaje pytannie, nie pierapyniajučy biahučy chod",
   "kubecode.copySideQuestionAnswer": "Kapijavać adkaz",
   "command.noMatches": "Niama adpaviednych kamand",
+  "kubecode.commandPaletteHintSelect": "vybrać",
+  "kubecode.commandPaletteHintClose": "začynić",
   "command.palettePlaceholder": "Uviadzicie kamandu...",
   "menu.view.commandPalette": "Palitra kamand",
   "common.remove": "Vydalić",

@@ -42,6 +42,8 @@
   "kubecode.btwDescription": "Ajukan pertanyaan sampingan kepada Claude tanpa menyela gilirannya saat ini",
   "kubecode.copySideQuestionAnswer": "Salin jawaban",
   "command.noMatches": "Tidak ada perintah yang cocok",
+  "kubecode.commandPaletteHintSelect": "pilih",
+  "kubecode.commandPaletteHintClose": "tutup",
   "command.palettePlaceholder": "Ketik perintah...",
   "menu.view.commandPalette": "Palet Perintah",
   "common.remove": "Hapus",

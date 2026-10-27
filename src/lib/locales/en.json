@@ -1,5 +1,7 @@
 {
   "command.noMatches": "No matching commands",
+  "kubecode.commandPaletteHintSelect": "select",
+  "kubecode.commandPaletteHintClose": "close",
   "command.palettePlaceholder": "Type a command...",
   "menu.view.commandPalette": "Command Palette",
   "common.remove": "Remove",

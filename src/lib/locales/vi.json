@@ -42,6 +42,8 @@
   "kubecode.btwDescription": "Hỏi Claude một câu bên lề mà không ngắt lượt hiện tại",
   "kubecode.copySideQuestionAnswer": "Sao chép câu trả lời",
   "command.noMatches": "Không có lệnh phù hợp",
+  "kubecode.commandPaletteHintSelect": "chọn",
+  "kubecode.commandPaletteHintClose": "đóng",
   "command.palettePlaceholder": "Nhập một lệnh...",
   "menu.view.commandPalette": "Bảng điều khiển lệnh",
   "common.remove": "Xóa",

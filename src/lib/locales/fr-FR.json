@@ -42,6 +42,8 @@
   "kubecode.btwDescription": "Posez une question annexe à Claude sans interrompre son tour actuel",
   "kubecode.copySideQuestionAnswer": "Copier la réponse",
   "command.noMatches": "Aucune commande correspondante",
+  "kubecode.commandPaletteHintSelect": "sélectionner",
+  "kubecode.commandPaletteHintClose": "fermer",
   "command.palettePlaceholder": "Saisir une commande…",
   "menu.view.commandPalette": "Palette de commandes",
   "common.remove": "Supprimer",

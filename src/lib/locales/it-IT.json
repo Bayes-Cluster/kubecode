@@ -42,6 +42,8 @@
   "kubecode.btwDescription": "Fai a Claude una domanda laterale senza interrompere il turno corrente",
   "kubecode.copySideQuestionAnswer": "Copia risposta",
   "command.noMatches": "Nessun comando corrispondente",
+  "kubecode.commandPaletteHintSelect": "seleziona",
+  "kubecode.commandPaletteHintClose": "chiudi",
   "command.palettePlaceholder": "Digita un comando...",
   "menu.view.commandPalette": "Tavolozza dei comandi",
   "common.remove": "Rimuovi",

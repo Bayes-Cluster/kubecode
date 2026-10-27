@@ -42,6 +42,8 @@
   "kubecode.btwDescription": "Задайце Claude пабочнае пытанне, не перапыняючы бягучы ход",
   "kubecode.copySideQuestionAnswer": "Капіяваць адказ",
   "command.noMatches": "Няма адпаведных каманд",
+  "kubecode.commandPaletteHintSelect": "выбраць",
+  "kubecode.commandPaletteHintClose": "зачыніць",
   "command.palettePlaceholder": "Увядзіце каманду...",
   "menu.view.commandPalette": "Палітра каманд",
   "common.remove": "Выдаліць",

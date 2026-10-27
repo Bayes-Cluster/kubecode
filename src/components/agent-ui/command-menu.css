@@ -1,0 +1,101 @@
+/* ADR 0257, the affectUI "Command Menu" presentation (Clean, 2026-10-26)
+   adapted onto the cmdk engine: hairline card, sliding active-row pill,
+   matched-text mark, quiet feedback footer. Colours from the tokens. */
+
+.agx-cmd__list {
+  position: relative;
+}
+
+.agx-cmd__pill {
+  position: absolute;
+  top: 0;
+  left: 4px;
+  right: 4px;
+  z-index: 0;
+  border-radius: 6px;
+  background: var(--agx-track);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 90ms ease-out, height 90ms ease-out, opacity 140ms ease;
+}
+
+.agx-cmd__pill[data-lit] {
+  opacity: 1;
+}
+
+.agx-cmd__mark {
+  border-radius: 3px;
+  background: var(--agx-accent-soft);
+  color: inherit;
+  text-decoration: none;
+}
+
+.agx-cmd__foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 14px;
+  border-top: 0.5px solid var(--agx-line);
+  color: var(--agx-text);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.agx-cmd__hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.agx-cmd__done {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--agx-success);
+  animation: agx-cmd-done 240ms var(--agx-ease) both;
+}
+
+.agx-cmd__done svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+
+.agx-cmd__done-text {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes agx-cmd-done {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Rows sit above the pill; the palette puts this class on its cmdk items,
+   whose internals stay untouched (ADR 0257 §6). */
+.agx-cmd__item {
+  position: relative;
+  z-index: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agx-cmd__pill,
+  .agx-cmd__done {
+    transition: none;
+    animation: none;
+  }
+}

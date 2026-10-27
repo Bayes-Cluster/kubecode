@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { useId, useMemo, useState } from 'react'
 
+import { CommandMenuFeedback, CommandMenuPill, highlightMatch } from '@/components/agent-ui'
 import { Alert, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -96,10 +97,12 @@ function itemScopeLabel(item: RankedCommandPaletteItem, t: Translator): string {
 }
 
 function PaletteOption({
+  query,
   row,
   onSelect,
   t,
 }: {
+  query: string
   row: PaletteRow
   onSelect: () => void
   t: Translator
@@ -108,7 +111,7 @@ function PaletteOption({
   return (
     <CommandItem
       aria-describedby={!row.enabled ? reasonId : undefined}
-      className="items-start"
+      className="agx-cmd__item items-start"
       disabled={!row.enabled}
       onSelect={onSelect}
       value={row.key}
@@ -119,7 +122,7 @@ function PaletteOption({
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <div className="flex min-w-0 flex-wrap items-center gap-1">
           <span className="min-w-0 max-w-full truncate font-medium">
-            {row.group === 'command' ? `/${row.label}` : row.label}
+            {highlightMatch(row.group === 'command' ? `/${row.label}` : row.label, query)}
           </span>
           {row.group !== 'host' && (
             <>
@@ -130,7 +133,7 @@ function PaletteOption({
           )}
         </div>
         {row.group !== 'host' && row.item.description && (
-          <span className="truncate text-xs text-muted-foreground">{row.item.description}</span>
+          <span className="truncate text-xs text-muted-foreground">{highlightMatch(row.item.description, query)}</span>
         )}
         {!row.enabled && row.disabledReason && (
           <span className="text-xs text-destructive" id={reasonId}>{row.disabledReason}</span>
@@ -166,6 +169,7 @@ export function GlobalCommandPalette({
   t: Translator
 }) {
   const [query, setQuery] = useState('')
+  const [ranLabel, setRanLabel] = useState<string | null>(null)
   const catalogGroups = useMemo(
     () => commandPaletteCatalogGroups(catalog, query),
     [catalog, query],
@@ -214,12 +218,14 @@ export function GlobalCommandPalette({
   const select = (row: PaletteRow) => {
     if (!row.enabled) return
     setQuery('')
+    setRanLabel(row.label)
     if (row.group === 'host') onHostAction(row.action)
     else onCatalogItem(row.item)
   }
 
   const changeOpen = (nextOpen: boolean) => {
     if (!nextOpen) setQuery('')
+    else setRanLabel(null)
     onOpenChange(nextOpen)
   }
 
@@ -229,7 +235,7 @@ export function GlobalCommandPalette({
     return (
       <CommandGroup heading={label}>
         {matching.map((row) => (
-          <PaletteOption key={row.key} onSelect={() => select(row)} row={row} t={t} />
+          <PaletteOption key={row.key} onSelect={() => select(row)} query={query} row={row} t={t} />
         ))}
       </CommandGroup>
     )
@@ -257,7 +263,8 @@ export function GlobalCommandPalette({
             placeholder={t('command.palettePlaceholder')}
             value={query}
           />
-          <CommandList className="max-h-[min(32rem,calc(100vh-5rem))]">
+          <CommandList className="agx-cmd__list max-h-[min(32rem,calc(100vh-5rem))]">
+            <CommandMenuPill />
             {renderRows('host', t('kubecode.commandPaletteHostActions'))}
             {renderRows('command', t('kubecode.commandPaletteAgentCommands'))}
             {renderRows('capability', t('kubecode.commandPaletteCapabilities'))}
@@ -282,6 +289,16 @@ export function GlobalCommandPalette({
               <CommandEmpty role="status">{t('command.noMatches')}</CommandEmpty>
             )}
           </CommandList>
+          <CommandMenuFeedback
+            hint={
+              <>
+                <kbd>↵</kbd> {t('kubecode.commandPaletteHintSelect')}
+                {' · '}
+                <kbd>esc</kbd> {t('kubecode.commandPaletteHintClose')}
+              </>
+            }
+            ranLabel={ranLabel}
+          />
         </Command>
       </DialogContent>
     </Dialog>

@@ -42,6 +42,8 @@
   "kubecode.btwDescription": "Задайте Claude побочный вопрос, не прерывая текущий ход",
   "kubecode.copySideQuestionAnswer": "Копировать ответ",
   "command.noMatches": "Нет подходящих команд",
+  "kubecode.commandPaletteHintSelect": "выбрать",
+  "kubecode.commandPaletteHintClose": "закрыть",
   "command.palettePlaceholder": "Введите команду...",
   "menu.view.commandPalette": "Панель команд",
   "common.remove": "Удалить",

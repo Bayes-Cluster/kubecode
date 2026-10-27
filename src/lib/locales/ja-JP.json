@@ -42,6 +42,8 @@
   "kubecode.btwDescription": "現在のターンを中断せずに Claude にサイド質問をします",
   "kubecode.copySideQuestionAnswer": "回答をコピー",
   "command.noMatches": "一致するコマンドはありません",
+  "kubecode.commandPaletteHintSelect": "選択",
+  "kubecode.commandPaletteHintClose": "閉じる",
   "command.palettePlaceholder": "コマンドを入力…",
   "menu.view.commandPalette": "コマンドパレット",
   "common.remove": "削除",

@@ -42,6 +42,8 @@
   "kubecode.btwDescription": "Haz a Claude una pregunta al margen sin interrumpir su turno actual",
   "kubecode.copySideQuestionAnswer": "Copiar respuesta",
   "command.noMatches": "No hay comandos que coincidan",
+  "kubecode.commandPaletteHintSelect": "seleccionar",
+  "kubecode.commandPaletteHintClose": "cerrar",
   "command.palettePlaceholder": "Escribe un comando...",
   "menu.view.commandPalette": "Paleta de comandos",
   "common.remove": "Eliminar",

@@ -42,6 +42,8 @@
   "kubecode.btwDescription": "Stellen Sie Claude eine Nebenfrage, ohne den aktuellen Zug zu unterbrechen",
   "kubecode.copySideQuestionAnswer": "Antwort kopieren",
   "command.noMatches": "Keine passenden Befehle",
+  "kubecode.commandPaletteHintSelect": "auswählen",
+  "kubecode.commandPaletteHintClose": "schließen",
   "command.palettePlaceholder": "Geben Sie einen Befehl ein …",
   "menu.view.commandPalette": "Befehlspalette",
   "common.remove": "Entfernen",

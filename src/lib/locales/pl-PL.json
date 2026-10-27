@@ -42,6 +42,8 @@
   "kubecode.btwDescription": "Zadaj Claude pytanie poboczne bez przerywania bieżącej tury",
   "kubecode.copySideQuestionAnswer": "Kopiuj odpowiedź",
   "command.noMatches": "Brak pasujących poleceń",
+  "kubecode.commandPaletteHintSelect": "wybierz",
+  "kubecode.commandPaletteHintClose": "zamknij",
   "command.palettePlaceholder": "Wpisz polecenie...",
   "menu.view.commandPalette": "Paleta poleceń",
   "common.remove": "Usuń",
