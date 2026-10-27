@@ -11,6 +11,7 @@ export { CommandMenuFeedback, CommandMenuPill, highlightMatch } from './command-
 export { FLIP_DURATION, FLIP_EASING, playFlip, readRect, useFlipGroup, type FlipOptions, type FlipRect } from './flip'
 export { ShimmerBlock, ShimmerText, type ShimmerBlockProps, type ShimmerTextProps } from './shimmer'
 export { CopyAction, type CopyActionProps } from './message-actions'
+export { PlanRail, type PlanRailEntry, type PlanRailProps } from './plan-rail'
 export { SegmentedControl, type SegmentedControlProps, type SegmentedOption } from './segmented-control'
 export { SourceList, type SourceItem, type SourceListProps } from './source-list'
 export { ThinkingLoader, type ThinkingLoaderProps } from './thinking-loader'
