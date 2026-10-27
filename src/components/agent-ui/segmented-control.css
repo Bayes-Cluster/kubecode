@@ -334,10 +334,16 @@
   }
 }
 
-/* Touch screens: every option at least a 44px target (ADR 0256). */
+/* Touch screens: every option at least a 44px target (ADR 0256). The tray's
+   inset track must not shave the target, so its options take the full
+   height there. */
 @media (hover: none) and (pointer: coarse) {
   .agx-segc[data-size] {
     --agx-segc-h: 44px;
+  }
+
+  .agx-segc[data-variant='tray'] .agx-segc__opt {
+    height: var(--agx-segc-h);
   }
 
   .agx-segc[data-variant='underline'] .agx-segc__opt {

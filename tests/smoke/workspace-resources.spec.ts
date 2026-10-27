@@ -96,15 +96,16 @@ test.describe('on a desktop', () => {
       expect(await caretOf(page)).toBe(8)
       expect(page.url()).toContain(`filter=${task.id}`)
 
-      // 3. Sent, the message cites the same name and version, never an id.
+      // 3. Sent, the message cites the same name and version, never an id, as a source card.
       await page.getByRole('button', { name: 'Send', exact: true }).click()
       const message = page.locator('article[data-message-id]').filter({ hasText: 'compare with the baseline' })
-      await expect(message.getByRole('button', { name: chipName })).toBeVisible()
+      const card = message.getByRole('button', { name: new RegExp(`File 1 ${chipName.split(' ')[2]} results/summary\\.csv`) })
+      await expect(card).toBeVisible()
       await expect(message).not.toContainText(createHash('sha256').update(first).digest('hex').slice(0, 12))
 
-      // The file changes: the citation says so, still naming the version cited.
+      // The file changes: the card says so, still naming the version cited.
       await writeFile(`${projectPath}/results/summary.csv`, `${first}pruned-more,0.88\n`)
-      await expect(message.getByRole('button', { name: `${chipName} Changed since cited` })).toBeVisible({ timeout: 30_000 })
+      await expect(message.getByRole('button', { name: new RegExp(`File 1 ${chipName.split(' ')[2]} Changed since cited results/summary\\.csv`) })).toBeVisible({ timeout: 30_000 })
       // Cited materials are the message's Sources (ADR 0236): the collapsed trigger still warns, and the list fits the message.
       await expect(message.getByRole('button', { name: 'Sources (1) · 1 changed or gone' })).toBeVisible()
       const [messageBox, sourcesBox] = await Promise.all([

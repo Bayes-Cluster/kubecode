@@ -17,6 +17,13 @@ const CONTROLS = [
   '[data-reference-chip-action="open"]:is(button)',
   '[data-reference-chip-action="remove"]',
   'button[data-size="inline"]',
+  // The agent-ui layer's own controls (ADR 0257): same gallery, their own
+  // Clean outline in the focus token instead of the official box-shadow ring.
+  '.agx-copy',
+  '.agx-segc__opt:not(:disabled)',
+  '.agx-src__chip',
+  '.agx-src__open',
+  '.agx-src__close',
 ].join(', ')
 
 function catalog(locale: string): Record<string, string> {
@@ -47,11 +54,20 @@ async function unnamedControls(page: Page): Promise<string[]> {
     .map((element) => element.outerHTML.slice(0, 120)))
 }
 
-/** Long labels wrap: nothing in the narrow samples is wider than its box, clipped or not. */
+/** Long labels wrap: nothing in the narrow samples is wider than its box, clipped or not.
+ *  A scroll container clips on purpose — its content stays reachable by scrolling — so its
+ *  subtree is exempt (the agent-ui source cards, ADR 0257). */
 async function overflowing(page: Page): Promise<string[]> {
   return page.locator('.kubecode-control-matrix-narrow *, .kubecode-control-matrix-tight *').evaluateAll((elements) => elements
     // Text kept only for assistive technology is clipped on purpose.
     .filter((element) => !(element instanceof SVGElement) && !element.classList.contains('sr-only'))
+    .filter((element) => {
+      for (let node: Element | null = element; node; node = node.parentElement) {
+        const overflowX = getComputedStyle(node).overflowX
+        if (overflowX === 'auto' || overflowX === 'scroll') return false
+      }
+      return true
+    })
     .filter((element) => element.scrollWidth > element.clientWidth + 1)
     .map((element) => element.outerHTML.slice(0, 120)))
 }
@@ -93,9 +109,12 @@ async function controlsWithoutFocusRing(page: Page): Promise<string[]> {
       // An official Attachment draws its ring around the whole chip, not on its covering trigger.
       const ringed = element.matches('[data-slot="attachment-trigger"]') ? element.closest('[data-slot="attachment"]') ?? element : element
       const style = getComputedStyle(ringed)
+      // An agent-ui control draws the Clean outline (ADR 0257 §4) in the same focus token.
+      const agentUi = element.closest('[class*="agx-"]') !== null
+      const outlineRing = style.outlineStyle === 'solid' && Number.parseFloat(style.outlineWidth) >= 2
       return {
         focused: document.activeElement === element,
-        ring: rings.some((ring) => style.boxShadow.includes(ring)),
+        ring: agentUi ? outlineRing : rings.some((ring) => style.boxShadow.includes(ring)),
         name: element.getAttribute('aria-label') ?? element.textContent?.trim() ?? element.className,
       }
     })
