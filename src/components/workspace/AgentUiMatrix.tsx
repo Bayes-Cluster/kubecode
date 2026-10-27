@@ -5,6 +5,7 @@ import {
   CommandMenuFeedback,
   CommandMenuPill,
   CopyAction,
+  PlanRail,
   highlightMatch,
   SegmentedControl,
   ShimmerBlock,
@@ -13,6 +14,7 @@ import {
   Ticker,
   ThinkingLoader,
 } from '@/components/agent-ui'
+import { AiActionCard } from '@/components/AiActionCard'
 import { Button } from '@/components/ui/button'
 import { Command, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import type { Translator } from '@/lib/i18n'
@@ -170,6 +172,45 @@ export function AgentUiMatrix({ t }: { t: Translator }) {
                 state: { tone: 'loading', label: t('kubecode.reference.checking') },
               },
             ]}
+          />
+        </div>
+      </Row>
+      <Row label={t('kubecode.matrix.state.busy')}>
+        {/* The session's production tool card: running and done, the glyph
+            resolving between them (ADR 0257, slice E2). */}
+        <AiActionCard
+          expanded={false}
+          label="read_file src/kubecode/session/sessionModel.ts"
+          locale="en"
+          status="pending"
+          tool="read_file"
+          onToggle={() => undefined}
+        />
+        <AiActionCard
+          expanded
+          input='{"path": "src/kubecode/session/sessionModel.ts"}'
+          label="read_file src/kubecode/session/sessionModel.ts"
+          locale="en"
+          output="export type SessionPlanEntry = {...}"
+          status="done"
+          tool="read_file"
+          onToggle={() => undefined}
+        />
+      </Row>
+      <Row label={t('kubecode.matrix.state.default')}>
+        <div className="kubecode-control-matrix-narrow">
+          <PlanRail
+            aria-label={t('kubecode.agentPlan')}
+            entries={[
+              { content: t('kubecode.matrix.sample.viewList'), status: 'completed' },
+              { content: t('kubecode.matrix.sample.viewBoard'), status: 'in_progress', priority: 'high' },
+              { content: t('kubecode.matrix.sample.viewChart'), status: 'pending' },
+            ]}
+            statusLabels={{
+              completed: t('kubecode.matrix.sample.thinkingDone'),
+              in_progress: t('kubecode.matrix.sample.thinkingNext'),
+              pending: t('kubecode.matrix.sample.thinkingPhase'),
+            }}
           />
         </div>
       </Row>
