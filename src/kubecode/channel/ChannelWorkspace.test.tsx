@@ -454,10 +454,16 @@ describe('ChannelWorkspace Tasks and references', () => {
     const onOpenReference = vi.fn()
     view(s, { props: { conversations: [{ id: 's9', project_id: 'p1', title: 'Sweep run' } as Conversation], onOpenReference } })
     await screen.findByText('See these')
-    const chips = row(1).querySelectorAll('[data-reference-state]')
-    expect([...chips].map((chip) => chip.textContent?.trim())).toEqual(['Task Pruning', 'Session Sweep run', 'Artifact Artifact (no title)'])
-    expect(row(1)).not.toHaveTextContent('064a23dd')
-    fireEvent.click(within(row(1)).getByRole('button', { name: 'Session Sweep run' }))
+    const rowHtml = row(1)
+    // The Task stays the leading chip; each cited record is a card named by
+    // its kind and resolved title.
+    const leading = within(rowHtml).getAllByText('Pruning')[0]
+    expect(leading).toBeInTheDocument()
+    const sessionCard = within(rowHtml).getByRole('button', { name: /Session.*Sweep run/s })
+    expect(rowHtml).toHaveTextContent('Artifact (no title)')
+    expect(rowHtml).not.toHaveTextContent('064a23dd')
+    fireEvent.click(sessionCard)
+    fireEvent.click(await screen.findByRole('button', { name: 'Open' }))
     expect(onOpenReference).toHaveBeenCalledWith({ kind: 'session', id: 's9' })
   })
 
@@ -466,6 +472,7 @@ describe('ChannelWorkspace Tasks and references', () => {
     const s = server([server().message(1, 'See this', { references: [{ kind: 'artifact', id: 'a1' }] })])
     view(s, { navigation })
     fireEvent.click(await screen.findByRole('button', { name: /Artifact/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Open' }))
     expect(navigation.openReference).toHaveBeenCalledWith({ kind: 'artifact', id: 'a1' })
   })
 

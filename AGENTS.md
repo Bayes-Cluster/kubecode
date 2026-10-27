@@ -1,5 +1,10 @@
 # AGENTS.md — Kubecode
 
+1. 使用第一性原理思考， 先确认真实目标、约束和成功标准， 不要讨要管理
+2. 把才过的坑写进项目的 HANDOFF.md 里， 执行新任务时先查看 HANDOFF.md
+3. 涉及上线、部署、生产环境的任务，将性能开销纳入设计和验收标准
+4. 涉及 UI， Avoid unnecessary secondary labels and descriptions. Let the layout do the explaining.
+
 ## Product boundary
 
 Kubecode is a browser-based, project-oriented AI coding workspace distributed

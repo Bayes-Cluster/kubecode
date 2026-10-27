@@ -291,9 +291,6 @@ export function MessageList({
     })}`
     void copy(link).then((ok) => setAnnouncement(ok ? t('kubecode.channel.linkCopied') : t('kubecode.channel.copyFailed')))
   }
-  const copyText = (message: ChannelMessage) => {
-    void copy(message.body).then((ok) => setAnnouncement(ok ? t('kubecode.channel.textCopied') : t('kubecode.channel.copyFailed')))
-  }
 
   return (
     <div className="kubecode-message-list">
@@ -390,7 +387,7 @@ export function MessageList({
                   openThread: thread && onOpenThread ? () => onOpenThread(thread) : undefined,
                   jump: (id) => jump(id),
                   copyLink: () => copyLink(message),
-                  copyText: () => copyText(message),
+                  copiedText: (ok) => setAnnouncement(ok ? t('kubecode.channel.textCopied') : t('kubecode.channel.copyFailed')),
                 }}
               />
             )

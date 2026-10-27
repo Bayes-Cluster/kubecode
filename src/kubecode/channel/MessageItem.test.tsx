@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { createTranslator } from '@/lib/i18n'
@@ -20,7 +20,7 @@ function item(overrides: Partial<MessageItemProps> = {}) {
   })
   const on = {
     reply: vi.fn(), openTask: vi.fn(), filterTask: vi.fn(), openReference: vi.fn(), openThread: vi.fn(),
-    jump: vi.fn(), copyLink: vi.fn(), copyText: vi.fn(),
+    jump: vi.fn(), copyLink: vi.fn(), copiedText: vi.fn(),
   }
   const props: MessageItemProps = {
     message,
@@ -55,7 +55,7 @@ describe('MessageItem references', () => {
     const message = channelMessage(4, { body: 'compare', task_id: null })
     const on = {
       reply: vi.fn(), openTask: vi.fn(), filterTask: vi.fn(), openReference: vi.fn(), openThread: vi.fn(),
-      jump: vi.fn(), copyLink: vi.fn(), copyText: vi.fn(),
+      jump: vi.fn(), copyLink: vi.fn(), copiedText: vi.fn(),
     }
     const ref = { kind: 'file' as const, id: 'results/summary.csv', revision: '3f2c1a9e5b7d4c6a8e0f' }
     render(
@@ -77,9 +77,15 @@ describe('MessageItem references', () => {
         />
       </ReferenceResolverProvider>,
     )
-    const chip = await screen.findByRole('button', { name: 'File results/summary.csv #3f2c1a9 Changed since cited' })
+    const card = await screen.findByRole('button', { name: /results\/summary\.csv/ })
+    // Kind and the cited version read on the card; the change is said in
+    // words; the id itself never shows.
+    expect(card).toHaveTextContent('File')
+    expect(card).toHaveTextContent('#3f2c1a9')
+    expect(card).toHaveTextContent('Changed since cited')
     expect(screen.getByRole('article')).not.toHaveTextContent('3f2c1a9e5b7d')
-    fireEvent.click(chip)
+    fireEvent.click(card)
+    fireEvent.click(await screen.findByRole('button', { name: 'Open' }))
     expect(on.openReference).toHaveBeenCalledWith(ref)
   })
 })
@@ -128,12 +134,17 @@ describe('MessageItem', () => {
   })
 
   it('offers Reply and only the More actions that apply, and never a Thread of its own', async () => {
-    const { on } = item()
+    const { article, on } = item()
     expect(screen.queryByText('Reply in thread')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Reply to General' }))
     expect(on.reply).toHaveBeenCalled()
+    // The text copy is the direct quiet action (ADR 0257, slice B), with its
+    // outcome reported to the surface in words.
+    Object.assign(window.navigator, { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } })
+    fireEvent.click(within(article).getByRole('button', { name: 'Copy text' }))
+    await waitFor(() => expect(on.copiedText).toHaveBeenCalledWith(true))
     const items = await openMore("More actions for General's message")
-    expect(items.map((entry) => entry.textContent)).toEqual(['Copy link', 'Copy text', 'Show only messages about this Task'])
+    expect(items.map((entry) => entry.textContent)).toEqual(['Copy link', 'Show only messages about this Task'])
     fireEvent.click(items[0])
     expect(on.copyLink).toHaveBeenCalled()
   })
@@ -143,7 +154,7 @@ describe('MessageItem', () => {
     const { on } = item({ message, author: researcherView(t), coarse: true, task: null, filtered: true })
     expect(screen.queryByRole('button', { name: 'Reply to You' })).not.toBeInTheDocument()
     const items = await openMore("More actions for You's message")
-    expect(items.map((entry) => entry.textContent)).toEqual(['Reply', 'Copy link', 'Copy text'])
+    expect(items.map((entry) => entry.textContent)).toEqual(['Reply', 'Copy link'])
     fireEvent.click(items[0])
     expect(on.reply).toHaveBeenCalled()
   })

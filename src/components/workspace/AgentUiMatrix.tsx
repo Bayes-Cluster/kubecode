@@ -2,9 +2,11 @@ import { useId, useState, type ReactNode } from 'react'
 
 import {
   BlurSwap,
+  CopyAction,
   SegmentedControl,
   ShimmerBlock,
   ShimmerText,
+  SourceList,
   Ticker,
   ThinkingLoader,
 } from '@/components/agent-ui'
@@ -132,6 +134,55 @@ export function AgentUiMatrix({ t }: { t: Translator }) {
             { value: 'list', label: t('kubecode.matrix.sample.viewList') },
             { value: 'board', label: t('kubecode.matrix.sample.viewBoard') },
           ]}
+        />
+      </Row>
+      <Row label={t('kubecode.matrix.state.default')}>
+        <div className="kubecode-control-matrix-narrow">
+          <SourceList
+            aria-label={t('kubecode.channel.references')}
+            closeLabel={t('kubecode.vocab.command.close')}
+            openLabel={t('kubecode.matrix.sample.openRecord')}
+            previewLabel={t('kubecode.channel.references')}
+            sources={[
+              { id: 'file', kindLabel: t('kubecode.vocab.object.file'), title: 'results.csv', versionLabel: 'v3' },
+              {
+                id: 'evidence',
+                kindLabel: t('kubecode.vocab.object.evidence'),
+                title: 'baseline-run',
+                state: { tone: 'warn', label: t('kubecode.matrix.sample.changed') },
+              },
+              {
+                id: 'gone',
+                kindLabel: t('kubecode.vocab.object.file'),
+                title: 'draft-notes.md',
+                state: { tone: 'error', label: t('kubecode.matrix.sample.unavailable') },
+              },
+              {
+                id: 'pending',
+                kindLabel: t('kubecode.vocab.object.evidence'),
+                title: 'follow-up',
+                state: { tone: 'loading', label: t('kubecode.reference.checking') },
+              },
+            ]}
+          />
+        </div>
+        <CopyAction
+          copiedIcon={
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" strokeWidth="1.4" />
+              <path d="M5.4 8.3l1.9 1.9 3.4-4" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          }
+          copiedLabel={t('kubecode.matrix.sample.copied')}
+          errorLabel={t('kubecode.matrix.sample.copyRetry')}
+          getText={() => t('kubecode.matrix.sample.swapSource')}
+          icon={
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <rect x="5.5" y="5.5" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.4" />
+              <path d="M10.5 3.5h-7a1 1 0 0 0-1 1v7" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+            </svg>
+          }
+          label={t('kubecode.matrix.sample.copyAnswer')}
         />
       </Row>
     </Section>

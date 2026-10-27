@@ -1,0 +1,86 @@
+/* ADR 0257, the affectUI "Message Actions" presentation (Clean, 2026-10-26):
+   one quiet 28px ghost action whose icon morphs between states. Colour comes
+   from the agent-ui tokens. */
+
+.agx-copy {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--agx-faint);
+  cursor: pointer;
+  transition: background-color 160ms ease, color 160ms ease;
+}
+
+.agx-copy:hover {
+  background: var(--agx-wash);
+  color: var(--agx-ink);
+}
+
+.agx-copy:focus-visible {
+  outline: 2px solid var(--agx-focus);
+  outline-offset: 1px;
+}
+
+.agx-copy:active .agx-copy__morph {
+  transform: scale(0.9);
+}
+
+.agx-copy[data-state='copied'] {
+  color: var(--agx-success);
+}
+
+.agx-copy[data-state='error'] {
+  color: var(--agx-error);
+}
+
+/* Two icons on top of each other: one blurs away while the other comes in. */
+.agx-copy__morph {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  transition: transform 160ms var(--agx-ease);
+}
+
+.agx-copy__layer {
+  grid-area: 1 / 1;
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  transform: scale(0.6);
+  filter: blur(2px);
+  transition: opacity 200ms ease, transform 300ms var(--agx-ease), filter 200ms ease;
+}
+
+.agx-copy__layer[data-on] {
+  opacity: 1;
+  transform: none;
+  filter: none;
+}
+
+.agx-copy__layer > svg,
+.agx-copy__layer > span {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .agx-copy {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agx-copy .agx-copy__morph,
+  .agx-copy .agx-copy__layer {
+    transition: none;
+  }
+}

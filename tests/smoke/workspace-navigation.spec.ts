@@ -214,6 +214,8 @@ test('@smoke workspace navigation returns to each place, through the inspector s
     await inspector(page, managerName).getByRole('button', { name: 'Close details' }).click()
     await expect(notesMessage).toBeVisible({ timeout: 30_000 })
     await notesMessage.getByRole('list', { name: 'References' }).getByRole('button', { name: /Imported discussion/ }).click()
+    // The card selects and previews; Open hands the reference to the inspector.
+    await notesMessage.getByRole('button', { name: 'Open' }).click()
     const resource = inspector(page, 'Resource details')
     await expect(resource).toBeVisible()
     await expect(page.getByRole('heading', { name: 'General', exact: true, level: 2 })).toBeVisible()
@@ -221,6 +223,9 @@ test('@smoke workspace navigation returns to each place, through the inspector s
     await expectUrl(page, `inspect=resource~import~${importId}`)
     await resource.getByRole('button', { name: 'Close details' }).click()
     await expect(page.getByRole('complementary', { name: 'Resource details' })).toHaveCount(0)
+    // The reader folds their preview away, so the reading position is the row
+    // again and the place is remembered against it.
+    await notesMessage.getByRole('list', { name: 'References' }).getByRole('button', { name: /Imported discussion/ }).click()
 
     // 7c. Resources opens a row in its own inspector, beside the list (ADR 0231 §4: choosing previews).
     await nav.getByRole('button', { name: 'Resources' }).click()
