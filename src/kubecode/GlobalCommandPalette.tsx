@@ -170,6 +170,15 @@ export function GlobalCommandPalette({
 }) {
   const [query, setQuery] = useState('')
   const [ranLabel, setRanLabel] = useState<string | null>(null)
+  const [ranSeq, setRanSeq] = useState(0)
+  // The dialog is controlled without a trigger, so opens never come through
+  // onOpenChange: the reset adjusts state to the `open` prop during render
+  // (ADR 0257 §5 — a stale acknowledgment must not replay on reopen).
+  const [wasOpen, setWasOpen] = useState(open)
+  if (wasOpen !== open) {
+    setWasOpen(open)
+    if (!open) setRanLabel(null)
+  }
   const catalogGroups = useMemo(
     () => commandPaletteCatalogGroups(catalog, query),
     [catalog, query],
@@ -219,13 +228,13 @@ export function GlobalCommandPalette({
     if (!row.enabled) return
     setQuery('')
     setRanLabel(row.label)
+    setRanSeq((sequence) => sequence + 1)
     if (row.group === 'host') onHostAction(row.action)
     else onCatalogItem(row.item)
   }
 
   const changeOpen = (nextOpen: boolean) => {
     if (!nextOpen) setQuery('')
-    else setRanLabel(null)
     onOpenChange(nextOpen)
   }
 
@@ -297,6 +306,7 @@ export function GlobalCommandPalette({
                 <kbd>esc</kbd> {t('kubecode.commandPaletteHintClose')}
               </>
             }
+            ranKey={ranSeq}
             ranLabel={ranLabel}
           />
         </Command>

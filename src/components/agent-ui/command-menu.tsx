@@ -106,35 +106,34 @@ export function CommandMenuPill() {
 export function CommandMenuFeedback({
   hint,
   ranLabel,
+  ranKey = ranLabel,
   feedbackMs = 1800,
 }: {
   /** The idle hint line, already localized and composed by the caller. */
   hint: ReactNode
   /** The action that just ran, or null for the idle hints. */
   ranLabel: string | null
+  /** Bump this when the same label runs again, so it re-acknowledges. */
+  ranKey?: string | number | null
   feedbackMs?: number
 }) {
   const [ran, setRan] = useState<string | null>(null)
   const timer = useRef(0)
-  const seen = useRef<string | null>(null)
 
   useLayoutEffect(() => {
     // Settled one frame in: the effect only mirrors the caller's label into
     // the timed display, and the rule (and the eye) are none the wiser.
     const frame = requestAnimationFrame(() => {
       if (ranLabel === null) {
-        seen.current = null
         setRan(null)
         return
       }
-      if (seen.current === ranLabel) return
-      seen.current = ranLabel
       setRan(ranLabel)
       window.clearTimeout(timer.current)
       timer.current = window.setTimeout(() => setRan(null), feedbackMs)
     })
     return () => cancelAnimationFrame(frame)
-  }, [ranLabel, feedbackMs])
+  }, [ranKey, ranLabel, feedbackMs])
 
   useEffect(() => () => window.clearTimeout(timer.current), [])
 
