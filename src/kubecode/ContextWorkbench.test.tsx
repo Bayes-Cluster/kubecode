@@ -645,11 +645,13 @@ describe('ContextWorkbench', () => {
       'aria-expanded',
       'true',
     )
-    expect(screen.getByText('Inspect the project').closest('[data-slot="item"]')).toBeInTheDocument()
-    expect(screen.getByText('Implement the change')).toBeInTheDocument()
-    // Each entry's status is said, not only drawn.
-    expect(screen.getByText('Inspect the project').closest('[data-slot="item"]')).toHaveTextContent('Completed: Inspect the project')
-    expect(screen.getByText('Implement the change').closest('[data-slot="item"]')).toHaveTextContent('In progress: Implement the change')
+    // The shared plan rail (ADR 0257, slice E2): one row per entry, the
+    // status said in words beside the content.
+    const row = screen.getByText('Inspect the project').closest('.agx-plan__row')
+    expect(row).toBeInTheDocument()
+    expect(row).toHaveAttribute('data-status', 'completed')
+    expect(row).toHaveTextContent('Completed:')
+    expect(screen.getByText('Implement the change').closest('.agx-plan__row')).toHaveAttribute('data-status', 'in_progress')
   })
 
   it('names worktree changes once when they are the only group', async () => {
