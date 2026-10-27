@@ -16,7 +16,9 @@ import './command-menu.css'
  * catalog, host actions and ranking own those; groups come from cmdk.
  *
  * States: `#/controls` (AgentUiMatrix) demonstrates the pill, highlight and
- * feedback through the production palette parts.
+ * feedback through the production palette parts. In the production palette
+ * every action also closes the dialog, so the feedback line shows only for
+ * its fade-out there; the state's home is the gallery (ADR 0257 §7).
  */
 
 /** Diacritic-insensitive lowercase key of a searchable text. */
@@ -63,10 +65,9 @@ export function CommandMenuPill() {
         return
       }
       setBox({ y: row.offsetTop, height: row.offsetHeight })
-      // Keep the active row visible while the keyboard moves it.
-      const previous = row.previousElementSibling
-      const groupHead = previous instanceof HTMLElement && previous.dataset.groupLabel !== undefined ? previous.offsetHeight : 0
-      const top = row.offsetTop - 8 - groupHead
+      // Keep the active row visible while the keyboard moves it (cmdk also
+      // scrolls its own selection into view; this is the pill's own guard).
+      const top = row.offsetTop - 8
       const bottom = row.offsetTop + row.offsetHeight + 8
       if (top < list.scrollTop) list.scrollTop = top
       else if (bottom > list.scrollTop + list.clientHeight) list.scrollTop = bottom - list.clientHeight

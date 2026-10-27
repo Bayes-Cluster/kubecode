@@ -418,8 +418,9 @@ change.
 - Slice C (#279): the frame audit found the shell already on the Clean
   grammar where it matters — the official `ResizableHandle` is the 1px
   hairline, regions are official Resizable panels over tinted surfaces, and
-  keyboard resize/focus-return/place-memory are covered by the existing
-  suites — so the frame needed no restyle, and animating panel widths was
+  keyboard-operable separators and focus-return/place-memory are asserted by
+  the existing suites (the resize behaviour itself is the panels engine's) —
+  so the frame needed no restyle, and animating panel widths was
   deliberately rejected to keep the terminal and editor identity (ADR 0257
   §5: no remount). The Command Menu's presentation landed on the palette's
   own cmdk engine (active-row pill read from cmdk's state, query mark,
