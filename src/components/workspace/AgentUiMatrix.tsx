@@ -2,7 +2,10 @@ import { useId, useState, type ReactNode } from 'react'
 
 import {
   BlurSwap,
+  CommandMenuFeedback,
+  CommandMenuPill,
   CopyAction,
+  highlightMatch,
   SegmentedControl,
   ShimmerBlock,
   ShimmerText,
@@ -11,6 +14,7 @@ import {
   ThinkingLoader,
 } from '@/components/agent-ui'
 import { Button } from '@/components/ui/button'
+import { Command, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import type { Translator } from '@/lib/i18n'
 
 function Section({ children, title }: { children: ReactNode; title: string }) {
@@ -48,6 +52,8 @@ export function AgentUiMatrix({ t }: { t: Translator }) {
   const [swapped, setSwapped] = useState(false)
   const [layout, setLayout] = useState('list')
   const [tray, setTray] = useState('board')
+  const [commandQuery, setCommandQuery] = useState('')
+  const [commandRan, setCommandRan] = useState<string | null>(null)
 
   return (
     <Section title={t('kubecode.matrix.section.agentui')}>
@@ -165,6 +171,49 @@ export function AgentUiMatrix({ t }: { t: Translator }) {
               },
             ]}
           />
+        </div>
+      </Row>
+      <Row label={t('kubecode.matrix.state.default')}>
+        <div className="kubecode-control-matrix-narrow">
+          {/* The palette's own engine (cmdk) under the shared presentation
+              (ADR 0257, slice C): the pill reads cmdk's selection, the query
+              marks the items, and running one settles into the feedback. */}
+          <Command shouldFilter={false} className="rounded-lg border bg-card">
+            <CommandInput
+              className="h-10"
+              onValueChange={(next) => {
+                setCommandQuery(next)
+                setCommandRan(null)
+              }}
+              placeholder={t('command.palettePlaceholder')}
+              value={commandQuery}
+            />
+            <CommandList className="agx-cmd__list">
+              <CommandMenuPill />
+              <CommandGroup heading={t('kubecode.matrix.section.commands')}>
+                {([
+                  'kubecode.vocab.command.reply',
+                  'kubecode.vocab.command.settings',
+                  'kubecode.channel.copyText',
+                ] as const).map((key) => {
+                  const label = t(key)
+                  return (
+                    <CommandItem
+                      className="agx-cmd__item"
+                      key={key}
+                      onSelect={() => setCommandRan(label)}
+                    >
+                      <span className="min-w-0 truncate">{highlightMatch(label, commandQuery)}</span>
+                    </CommandItem>
+                  )
+                })}
+              </CommandGroup>
+            </CommandList>
+            <CommandMenuFeedback
+              hint={t('kubecode.commandPaletteHintSelect')}
+              ranLabel={commandRan}
+            />
+          </Command>
         </div>
         <CopyAction
           copiedIcon={

@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { trackEvent } from '@/lib/telemetry'
 
+import { CopyAction } from '@/components/agent-ui'
 import { AiAgentIcon } from '@/components/AiAgentIcon'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -153,29 +154,30 @@ export function SettingsDialog({
   workspaceEvents = NO_EVENTS,
 }: SettingsDialogProps) {
   const [section, setSection] = useState<SettingsSection>(requestedSection)
-  const [diagnosticsCopied, setDiagnosticsCopied] = useState(false)
   const ids = useId()
   const wide = useWideLayout()
 
-  const copyDiagnostics = async () => {
-    const report = {
-      schema_version: 1,
-      agents: agents.map((agent) => ({
-        id: agent.id,
-        readiness: agent.readiness ?? (agent.available ? 'ready' : 'unavailable'),
-        cli_version: agent.cli?.version ?? agent.version,
-        cli_source: agent.cli?.source ?? null,
-        cli_error_code: agent.cli?.error_code ?? null,
-        adapter_kind: agent.adapter?.kind ?? (agent.id === 'opencode' ? 'native' : 'bundled'),
-        adapter_version: agent.adapter?.version ?? null,
-        adapter_error_code: agent.adapter?.error_code ?? null,
-        checked_at: agent.checked_at ?? null,
-      })),
-    }
-    await navigator.clipboard?.writeText(JSON.stringify(report, null, 2))
-    setDiagnosticsCopied(true)
-    window.setTimeout(() => setDiagnosticsCopied(false), 1800)
-  }
+  // The diagnostics report the shared copy action writes (ADR 0257, slice C:
+  // one copy implementation, one acknowledgment grammar).
+  const diagnosticsReport = () =>
+    JSON.stringify(
+      {
+        schema_version: 1,
+        agents: agents.map((agent) => ({
+          id: agent.id,
+          readiness: agent.readiness ?? (agent.available ? 'ready' : 'unavailable'),
+          cli_version: agent.cli?.version ?? agent.version,
+          cli_source: agent.cli?.source ?? null,
+          cli_error_code: agent.cli?.error_code ?? null,
+          adapter_kind: agent.adapter?.kind ?? (agent.id === 'opencode' ? 'native' : 'bundled'),
+          adapter_version: agent.adapter?.version ?? null,
+          adapter_error_code: agent.adapter?.error_code ?? null,
+          checked_at: agent.checked_at ?? null,
+        })),
+      },
+      null,
+      2,
+    )
 
   const updateAppearance = <Key extends keyof KubecodeAppearance>(
     key: Key,
@@ -484,10 +486,16 @@ export function SettingsDialog({
                   {agentsRefreshing ? <Spinner aria-hidden="true" data-icon="inline-start" /> : <RotateCw data-icon="inline-start" />}
                   {t('kubecode.checkAgain')}
                 </Button>
-                <Button size="sm" variant="ghost" onClick={() => void copyDiagnostics()}>
-                  {diagnosticsCopied ? <Check data-icon="inline-start" /> : <Copy data-icon="inline-start" />}
-                  {diagnosticsCopied ? t('kubecode.copied') : t('kubecode.copyDiagnostics')}
-                </Button>
+                <CopyAction
+                  copiedIcon={<Check data-icon="inline-start" />}
+                  copiedLabel={t('kubecode.copied')}
+                  errorLabel={t('kubecode.copyFailed')}
+                  getText={diagnosticsReport}
+                  icon={<Copy data-icon="inline-start" />}
+                  label={t('kubecode.copyDiagnostics')}
+                >
+                  {t('kubecode.copyDiagnostics')}
+                </CopyAction>
               </div>
             </Field>
             <Accordion type="multiple">

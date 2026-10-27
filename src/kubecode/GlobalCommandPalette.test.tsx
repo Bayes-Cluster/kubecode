@@ -154,3 +154,58 @@ describe('GlobalCommandPalette', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Could not load capabilities')
   })
 })
+
+describe('GlobalCommandPalette feedback', () => {
+  it('does not replay a past acknowledgment when the palette reopens', async () => {
+    const view = render(
+      <GlobalCommandPalette
+        catalog={catalog}
+        catalogStatus="ready"
+        hostActions={hostActions()}
+        onCatalogItem={vi.fn()}
+        onHostAction={vi.fn()}
+        onOpenChange={vi.fn()}
+        open
+        sessionDisabledReason={null}
+        sessionWritable
+        t={createTranslator('en')}
+      />,
+    )
+    // Run an action: the footer acknowledges it.
+    fireEvent.click(screen.getByRole('option', { name: /Add project/ }))
+    // The dialog closes; the palette itself stays mounted (the app keeps it).
+    view.rerender(
+      <GlobalCommandPalette
+        catalog={catalog}
+        catalogStatus="ready"
+        hostActions={hostActions()}
+        onCatalogItem={vi.fn()}
+        onHostAction={vi.fn()}
+        onOpenChange={vi.fn()}
+        open={false}
+        sessionDisabledReason={null}
+        sessionWritable
+        t={createTranslator('en')}
+      />,
+    )
+    // Reopening shows the hints, never the stale acknowledgment.
+    view.rerender(
+      <GlobalCommandPalette
+        catalog={catalog}
+        catalogStatus="ready"
+        hostActions={hostActions()}
+        onCatalogItem={vi.fn()}
+        onHostAction={vi.fn()}
+        onOpenChange={vi.fn()}
+        open
+        sessionDisabledReason={null}
+        sessionWritable
+        t={createTranslator('en')}
+      />,
+    )
+    // Radix unmounts the closed dialog's content, so the region only exists
+    // while open; the assertion is that no stale check line is announced on
+    // the fresh mount.
+    expect(view.container.textContent).not.toContain('Add project ✓')
+  })
+})

@@ -1,5 +1,7 @@
 {
   "command.noMatches": "No matching commands",
+  "kubecode.commandPaletteHintSelect": "select",
+  "kubecode.commandPaletteHintClose": "close",
   "command.palettePlaceholder": "Type a command...",
   "menu.view.commandPalette": "Command Palette",
   "common.remove": "Remove",
@@ -761,6 +763,7 @@
   "kubecode.agentReadiness": "Agent readiness",
   "kubecode.agentReadinessDescription": "Check local CLIs and ACP adapters without creating a provider Session.",
   "kubecode.copyDiagnostics": "Copy diagnostics",
+  "kubecode.copyFailed": "Copy failed — select the text and copy it yourself.",
   "kubecode.copied": "Copied",
   "kubecode.agentCli": "Agent CLI",
   "kubecode.nativeAcp": "Native ACP",

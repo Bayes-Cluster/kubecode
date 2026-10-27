@@ -415,3 +415,18 @@ change.
   production-unused (ADR 0255's reserved decision). `ai-elements/code-block.tsx`
   — audit only in this slice; the Tool Call Card presentation belongs to
   slice E2 (#282).
+- Slice C (#279): the frame audit found the shell already on the Clean
+  grammar where it matters — the official `ResizableHandle` is the 1px
+  hairline, regions are official Resizable panels over tinted surfaces, and
+  keyboard-operable separators and focus-return/place-memory are asserted by
+  the existing suites (the resize behaviour itself is the panels engine's) —
+  so the frame needed no restyle, and animating panel widths was
+  deliberately rejected to keep the terminal and editor identity (ADR 0257
+  §5: no remount). The Command Menu's presentation landed on the palette's
+  own cmdk engine (active-row pill read from cmdk's state, query mark,
+  run-feedback footer); the settings flow already matched the Integration
+  Settings adapt-decision (official Tabs/Fields, instant-apply model, real
+  validation, no fake steps) and its diagnostics copy moved to the shared
+  `CopyAction`; the WeChat fold-card and the setup stepper presentation
+  remain the slice's open remainder, riding with the WeChat panel's own
+  slice work rather than a retrofit.
