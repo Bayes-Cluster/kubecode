@@ -1154,6 +1154,7 @@
   "kubecode.reference.state.removed": "Existiert nicht mehr",
   "kubecode.reference.state.unavailable": "Hier nicht verfügbar",
   "kubecode.reference.open": "Öffnen",
+  "kubecode.reference.checking": "Wird geprüft…",
   "kubecode.reference.sendBlockedRemoved": "{title} existiert nicht mehr. Entfernen Sie es, um zu senden.",
   "kubecode.channel.messages": "Nachrichten",
   "kubecode.channel.empty": "Noch keine Nachrichten. Starte die Diskussion.",

@@ -1154,6 +1154,7 @@
   "kubecode.reference.state.removed": "已不存在",
   "kubecode.reference.state.unavailable": "此處無法使用",
   "kubecode.reference.open": "開啟",
+  "kubecode.reference.checking": "正在檢查…",
   "kubecode.reference.sendBlockedRemoved": "{title} 已不存在。請將其移除後再傳送。",
   "kubecode.channel.messages": "訊息",
   "kubecode.channel.empty": "尚無訊息。開始討論吧。",

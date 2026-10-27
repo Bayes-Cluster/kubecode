@@ -1663,6 +1663,7 @@
   "kubecode.reference.state.removed": "No longer exists",
   "kubecode.reference.state.unavailable": "Not available here",
   "kubecode.reference.open": "Open",
+  "kubecode.reference.checking": "Checking…",
   "kubecode.reference.sendBlockedRemoved": "{title} no longer exists. Remove it to send.",
   "kubecode.nav.needsQuestion": "Question",
   "kubecode.nav.needsInputRequest": "Input requested",

@@ -38,9 +38,11 @@ export function ReferenceSources<R extends CitedRef>({ leading, onOpen, referenc
   const items: SourceItem[] = references.map((reference, index) => {
     const status = statuses[index]
     const state =
-      status.status === 'error'
-        ? { tone: 'error' as const, label: t('kubecode.reference.state.unavailable') }
-        : status.status === 'ready' && status.availability === 'changed'
+      status.status === 'loading'
+        ? { tone: 'loading' as const, label: t('kubecode.reference.checking') }
+        : status.status === 'error'
+          ? { tone: 'error' as const, label: t('kubecode.reference.state.unavailable') }
+          : status.status === 'ready' && status.availability === 'changed'
           ? { tone: 'warn' as const, label: t('kubecode.reference.state.changedSinceCited') }
           : status.status === 'ready' && status.availability === 'removed'
             ? { tone: 'error' as const, label: t('kubecode.reference.state.removed') }

@@ -1154,6 +1154,7 @@
   "kubecode.reference.state.removed": "더 이상 존재하지 않음",
   "kubecode.reference.state.unavailable": "여기서 사용할 수 없음",
   "kubecode.reference.open": "열기",
+  "kubecode.reference.checking": "확인 중…",
   "kubecode.reference.sendBlockedRemoved": "{title}이(가) 더 이상 존재하지 않습니다. 보내려면 제거하세요.",
   "kubecode.channel.messages": "메시지",
   "kubecode.channel.empty": "아직 메시지가 없습니다. 토론을 시작하세요.",

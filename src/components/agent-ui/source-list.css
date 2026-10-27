@@ -111,6 +111,10 @@
   background: var(--agx-error);
 }
 
+.agx-src__dot[data-tone='loading'] {
+  background: var(--agx-faint);
+}
+
 .agx-src__sr {
   position: absolute;
   width: 1px;
@@ -208,6 +212,11 @@
 .agx-src__state[data-tone='error'] {
   background: var(--feedback-error-bg);
   color: var(--agx-error);
+}
+
+.agx-src__state[data-tone='loading'] {
+  background: var(--agx-track);
+  color: var(--agx-text);
 }
 
 .agx-src__snippet {

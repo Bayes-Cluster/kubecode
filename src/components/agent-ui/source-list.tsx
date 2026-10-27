@@ -31,8 +31,9 @@ export interface SourceItem {
   title: string
   /** The cited revision, e.g. "v3". Optional. */
   versionLabel?: string
-  /** An availability state the caller resolved; stays visible. */
-  state?: { tone: 'ok' | 'warn' | 'error'; label: string }
+  /** An availability state the caller resolved; stays visible. `loading`
+   * marks a resolution still in flight. */
+  state?: { tone: 'ok' | 'warn' | 'error' | 'loading'; label: string }
   /** A short real excerpt for the preview; the preview shows meta only without one. */
   snippet?: string
 }

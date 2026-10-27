@@ -1154,6 +1154,7 @@
   "kubecode.reference.state.removed": "Больше не существует",
   "kubecode.reference.state.unavailable": "Здесь недоступно",
   "kubecode.reference.open": "Открыть",
+  "kubecode.reference.checking": "Проверка…",
   "kubecode.reference.sendBlockedRemoved": "{title} больше не существует. Удалите это, чтобы отправить.",
   "kubecode.channel.messages": "Сообщения",
   "kubecode.channel.empty": "Сообщений пока нет. Начните обсуждение.",

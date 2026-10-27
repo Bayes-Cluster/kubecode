@@ -1154,6 +1154,7 @@
   "kubecode.reference.state.removed": "Bolš nie isnuje",
   "kubecode.reference.state.unavailable": "Tut niedastupna",
   "kubecode.reference.open": "Adkryć",
+  "kubecode.reference.checking": "Pravierka…",
   "kubecode.reference.sendBlockedRemoved": "{title} bolš nie isnuje. Vydalicie heta, kab adpravić.",
   "kubecode.channel.messages": "Paviedamleńni",
   "kubecode.channel.empty": "Paviedamleńniaŭ pakul niama. Pačnicie abmierkavannie.",

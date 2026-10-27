@@ -1154,6 +1154,7 @@
   "kubecode.reference.state.removed": "Finns inte längre",
   "kubecode.reference.state.unavailable": "Inte tillgänglig här",
   "kubecode.reference.open": "Öppna",
+  "kubecode.reference.checking": "Kontrollerar…",
   "kubecode.reference.sendBlockedRemoved": "{title} finns inte längre. Ta bort den för att skicka.",
   "kubecode.channel.messages": "Meddelanden",
   "kubecode.channel.empty": "Inga meddelanden ännu. Starta diskussionen.",

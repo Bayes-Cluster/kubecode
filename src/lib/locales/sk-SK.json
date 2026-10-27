@@ -1154,6 +1154,7 @@
   "kubecode.reference.state.removed": "Už neexistuje",
   "kubecode.reference.state.unavailable": "Tu nie je dostupné",
   "kubecode.reference.open": "Otvoriť",
+  "kubecode.reference.checking": "Overuje sa…",
   "kubecode.reference.sendBlockedRemoved": "{title} už neexistuje. Odstráňte to, aby ste mohli odoslať.",
   "kubecode.channel.messages": "Správy",
   "kubecode.channel.empty": "Zatiaľ žiadne správy. Začnite diskusiu.",

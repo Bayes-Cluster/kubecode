@@ -1154,6 +1154,7 @@
   "kubecode.reference.state.removed": "Больш не існуе",
   "kubecode.reference.state.unavailable": "Тут недаступна",
   "kubecode.reference.open": "Адкрыць",
+  "kubecode.reference.checking": "Праверка…",
   "kubecode.reference.sendBlockedRemoved": "{title} больш не існуе. Выдаліце гэта, каб адправіць.",
   "kubecode.channel.messages": "Паведамленні",
   "kubecode.channel.empty": "Паведамленняў пакуль няма. Пачніце абмеркаванне.",

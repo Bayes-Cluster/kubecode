@@ -1154,6 +1154,7 @@
   "kubecode.reference.state.removed": "存在しません",
   "kubecode.reference.state.unavailable": "ここでは利用できません",
   "kubecode.reference.open": "開く",
+  "kubecode.reference.checking": "確認中…",
   "kubecode.reference.sendBlockedRemoved": "{title} は存在しなくなりました。送信するには削除してください。",
   "kubecode.channel.messages": "メッセージ",
   "kubecode.channel.empty": "メッセージはまだありません。ディスカッションを始めましょう。",

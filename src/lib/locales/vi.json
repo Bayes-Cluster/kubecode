@@ -1154,6 +1154,7 @@
   "kubecode.reference.state.removed": "Không còn tồn tại",
   "kubecode.reference.state.unavailable": "Không khả dụng ở đây",
   "kubecode.reference.open": "Mở",
+  "kubecode.reference.checking": "Đang kiểm tra…",
   "kubecode.reference.sendBlockedRemoved": "{title} không còn tồn tại. Hãy xóa nó để gửi.",
   "kubecode.channel.messages": "Tin nhắn",
   "kubecode.channel.empty": "Chưa có tin nhắn. Hãy bắt đầu thảo luận.",
