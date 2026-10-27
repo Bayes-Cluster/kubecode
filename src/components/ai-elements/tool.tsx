@@ -73,7 +73,7 @@ export const getStatusBadge = (status: ToolPart["state"], label?: string) => (
         running clock visibly resolves into the outcome instead of swapping. */}
     <span
       key={status}
-      className="animate-in fade-in zoom-in-90 duration-200 [&_svg]:size-4"
+      className="animate-in fade-in zoom-in-90 duration-200 motion-reduce:animate-none [&_svg]:size-3"
     >
       {statusIcons[status]}
     </span>

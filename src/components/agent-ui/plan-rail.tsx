@@ -22,8 +22,6 @@ import './plan-rail.css'
 export interface PlanRailEntry {
   content: string
   status: 'completed' | 'in_progress' | 'pending'
-  /** The caller's priority word, shown after the content. */
-  priority?: string
 }
 
 export interface PlanRailProps {
@@ -45,9 +43,9 @@ const MARKER_LABEL: Record<PlanRailEntry['status'], string> = {
 export function PlanRail({ entries, 'aria-label': ariaLabel, statusLabels, className }: PlanRailProps) {
   const listId = useId()
   return (
-    <ol aria-label={ariaLabel} className={className ? `agx-plan ${className}` : 'agx-plan'} id={listId}>
+    <ol aria-label={ariaLabel} className={className ? `agx-plan ${className}` : 'agx-plan'} id={listId} role="list">
       {entries.map((entry, index) => (
-        <li className="agx-plan__row" data-status={entry.status} key={`${index}-${entry.content}`}>
+        <li className="agx-plan__row" data-status={entry.status} key={`${index}-${entry.content}`} role="listitem">
           <span aria-hidden="true" className="agx-plan__marker">
             <svg viewBox="0 0 24 24">
               <path
@@ -63,7 +61,6 @@ export function PlanRail({ entries, 'aria-label': ariaLabel, statusLabels, class
             <span className="agx-plan__sr">{statusLabels[entry.status] ?? statusLabels.pending}: </span>
             {entry.content}
           </span>
-          {entry.priority && <span className="agx-plan__priority">{entry.priority}</span>}
         </li>
       ))}
     </ol>

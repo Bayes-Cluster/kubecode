@@ -208,7 +208,7 @@ export function ReasoningBlock({ locale, text, done, open, onOpenChange }: {
             one from, and none is invented. */}
         <Brain
           aria-hidden
-          className={done ? 'size-4 animate-in fade-in zoom-in-90 duration-200' : 'size-4'}
+          className={done ? 'size-4 animate-in fade-in zoom-in-90 duration-200 motion-reduce:animate-none' : 'size-4'}
           data-state={done ? 'done' : 'streaming'}
         />
         {done ? <span>{label}</span> : <Shimmer as="span" duration={1}>{label}</Shimmer>}

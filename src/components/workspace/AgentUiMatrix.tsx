@@ -17,7 +17,7 @@ import {
 import { AiActionCard } from '@/components/AiActionCard'
 import { Button } from '@/components/ui/button'
 import { Command, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
-import type { Translator } from '@/lib/i18n'
+import type { AppLocale, Translator } from '@/lib/i18n'
 
 function Section({ children, title }: { children: ReactNode; title: string }) {
   const id = useId()
@@ -47,7 +47,7 @@ const PHASES = ['kubecode.matrix.sample.thinkingPhase', 'kubecode.matrix.sample.
  * stand-in for a real event, never a timer. The toast presentation is not
  * shown here: its host is global and stays the app's one Sonner mount.
  */
-export function AgentUiMatrix({ t }: { t: Translator }) {
+export function AgentUiMatrix({ locale = 'en', t }: { locale?: AppLocale; t: Translator }) {
   const [phase, setPhase] = useState(0)
   const [done, setDone] = useState(false)
   const [count, setCount] = useState(128)
@@ -181,7 +181,7 @@ export function AgentUiMatrix({ t }: { t: Translator }) {
         <AiActionCard
           expanded={false}
           label="read_file src/kubecode/session/sessionModel.ts"
-          locale="en"
+          locale={locale}
           status="pending"
           tool="read_file"
           onToggle={() => undefined}
@@ -203,13 +203,13 @@ export function AgentUiMatrix({ t }: { t: Translator }) {
             aria-label={t('kubecode.agentPlan')}
             entries={[
               { content: t('kubecode.matrix.sample.viewList'), status: 'completed' },
-              { content: t('kubecode.matrix.sample.viewBoard'), status: 'in_progress', priority: 'high' },
+              { content: t('kubecode.matrix.sample.viewBoard'), status: 'in_progress' },
               { content: t('kubecode.matrix.sample.viewChart'), status: 'pending' },
             ]}
             statusLabels={{
-              completed: t('kubecode.matrix.sample.thinkingDone'),
-              in_progress: t('kubecode.matrix.sample.thinkingNext'),
-              pending: t('kubecode.matrix.sample.thinkingPhase'),
+              completed: t('kubecode.status.plan.completed'),
+              in_progress: t('kubecode.status.plan.inProgress'),
+              pending: t('kubecode.status.plan.pending'),
             }}
           />
         </div>

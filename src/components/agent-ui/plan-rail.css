@@ -6,7 +6,7 @@
   display: flex;
   flex-direction: column;
   margin: 0;
-  padding: 0;
+  padding: 4px 0;
   list-style: none;
 }
 
@@ -72,14 +72,6 @@
 .agx-plan__content {
   min-width: 0;
   overflow-wrap: anywhere;
-}
-
-.agx-plan__priority {
-  flex: none;
-  margin-left: auto;
-  color: var(--agx-faint);
-  font-size: 11px;
-  line-height: 20px;
 }
 
 @media (prefers-reduced-motion: reduce) {

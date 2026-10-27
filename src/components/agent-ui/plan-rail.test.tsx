@@ -13,7 +13,7 @@ const LABELS = { completed: 'Completed', in_progress: 'In progress', pending: 'P
 
 const ENTRIES: PlanRailEntry[] = [
   { content: 'Survey the tree', status: 'completed' },
-  { content: 'Prune the heads', status: 'in_progress', priority: 'high' },
+  { content: 'Prune the heads', status: 'in_progress' },
   { content: 'Write the summary', status: 'pending' },
 ]
 
@@ -30,12 +30,5 @@ describe('PlanRail', () => {
     expect(rows[1]).toHaveTextContent('Prune the heads')
     // The drawn markers are decorative; the words carry the meaning.
     expect(container.querySelector('.agx-plan__marker')).toHaveAttribute('aria-hidden', 'true')
-  })
-
-  it('shows the priority word when the caller passes one', () => {
-    const { container } = render(<PlanRail aria-label="Plan" entries={ENTRIES} statusLabels={LABELS} />)
-    const priority = container.querySelector('.agx-plan__priority')
-    expect(priority).toHaveTextContent('high')
-    expect(container.querySelectorAll('.agx-plan__priority')).toHaveLength(1)
   })
 })

@@ -445,3 +445,12 @@ change.
   `UsageMeter` (official Context engine, threshold colors, unknown-size
   fallback, localized, no fabricated breakdown), and `chain-of-thought`
   (no emitted step stream to feed it; it stays a gallery-only part).
+- Slice E2's bundle delta, measured against the C branch
+  (`vite build`): +0.18 kB gzipped entry, +0.31 kB gzipped CSS; cumulative
+  over the ADR 0257 baseline: +13.0 kB entry / +6.2 kB CSS — within the
+  §8 budgets. The gallery additionally carries the failed tool state
+  (the model has no separate cancelled tool state; a cancelled run
+  surfaces as the run-ended banner, `sessionModel.ts`), and the plan
+  rail's visible priority word was dropped: the provider token is raw
+  copy, so the rail keeps priority out of sight until localized words
+  exist.

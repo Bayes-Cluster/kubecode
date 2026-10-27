@@ -122,6 +122,9 @@ interface TokenizedCode {
 
 interface CodeBlockContextType {
   code: string;
+  // Kubecode (ADR 0257): what copy writes, when the displayed code is a
+  // capped view of a longer text.
+  copyValue?: string;
 }
 
 // Context
@@ -427,13 +430,17 @@ export const CodeBlockContent = ({
 
 export const CodeBlock = ({
   code,
+  copyValue,
   language,
   showLineNumbers = false,
   className,
   children,
   ...props
-}: CodeBlockProps) => {
-  const contextValue = useMemo(() => ({ code }), [code]);
+}: CodeBlockProps & {
+  // Kubecode (ADR 0257): pair a capped display with the full text for copy.
+  copyValue?: string;
+}) => {
+  const contextValue = useMemo(() => ({ code, copyValue }), [code, copyValue]);
 
   return (
     <CodeBlockContext.Provider value={contextValue}>
@@ -465,7 +472,7 @@ export const CodeBlockCopyButton = ({
 }: CodeBlockCopyButtonProps) => {
   const [isCopied, setIsCopied] = useState(false);
   const timeoutRef = useRef<number>(0);
-  const { code } = useContext(CodeBlockContext);
+  const { code, copyValue } = useContext(CodeBlockContext);
 
   const copyToClipboard = useCallback(async () => {
     if (typeof window === "undefined" || !navigator?.clipboard?.writeText) {
@@ -475,7 +482,7 @@ export const CodeBlockCopyButton = ({
 
     try {
       if (!isCopied) {
-        await navigator.clipboard.writeText(code);
+        await navigator.clipboard.writeText(copyValue ?? code);
         setIsCopied(true);
         onCopy?.();
         timeoutRef.current = window.setTimeout(
@@ -486,7 +493,7 @@ export const CodeBlockCopyButton = ({
     } catch (error) {
       onError?.(error as Error);
     }
-  }, [code, onCopy, onError, timeout, isCopied]);
+  }, [code, copyValue, onCopy, onError, timeout, isCopied]);
 
   useEffect(
     () => () => {

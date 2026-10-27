@@ -535,7 +535,6 @@ export function ContextWorkbench({
                   hairline through the markers, the status said in words. */}
               <PlanRail
                 aria-label={t('kubecode.agentPlan')}
-                className="p-1"
                 entries={planEntries.map((entry) => ({
                   content: entry.content,
                   priority: entry.priority || undefined,

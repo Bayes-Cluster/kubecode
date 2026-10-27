@@ -11,6 +11,7 @@ import {
   newClientMessageId,
   optimisticUserMessage,
   rollbackOptimisticMessage,
+  sessionPlanEntries,
 } from './sessionModel'
 import type { AgentRun } from '../api'
 
@@ -115,5 +116,33 @@ describe('nativeModeLockReason', () => {
     })
     expect(reason).toBe('general_manager')
     expect(nativeModeLockMessage(reason, (key) => key)).toBe('kubecode.generalManagerMode')
+  })
+})
+
+describe('sessionPlanEntries rewrites', () => {
+  it('replaces the whole list on a rewrite: order, statuses and dropped entries follow the new payload', () => {
+    const first = sessionPlanEntries({
+      entries: [
+        { content: 'one', status: 'completed' },
+        { content: 'two', status: 'in_progress' },
+      ],
+    })
+    expect(first).toEqual([
+      { content: 'one', priority: 'medium', status: 'completed' },
+      { content: 'two', priority: 'medium', status: 'in_progress' },
+    ])
+    // The provider rewrites the plan: a reordered, changed, shorter list
+    // replaces it wholesale — the rail renders the new list as it arrives.
+    const second = sessionPlanEntries({
+      entries: [
+        { content: 'two', status: 'completed' },
+        { content: 'three', status: 'inProgress' },
+      ],
+    })
+    expect(second).toEqual([
+      { content: 'two', priority: 'medium', status: 'completed' },
+      { content: 'three', priority: 'medium', status: 'in_progress' },
+    ])
+    expect(sessionPlanEntries(null)).toEqual([])
   })
 })
