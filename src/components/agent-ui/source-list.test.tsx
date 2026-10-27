@@ -12,6 +12,7 @@ import { SourceList, type SourceItem } from './source-list'
 const SOURCES: SourceItem[] = [
   { id: 'a', kindLabel: 'File', title: 'results.csv', versionLabel: 'v3' },
   { id: 'b', kindLabel: 'Evidence', title: 'baseline-run', state: { tone: 'warn', label: 'Changed since cited' }, snippet: 'loss=0.42 on the held-out split' },
+  { id: 'c', kindLabel: 'Evidence', title: 'follow-up', state: { tone: 'loading', label: 'Checking…' } },
 ]
 
 function renderList(overrides: Partial<Parameters<typeof SourceList>[0]> = {}) {
@@ -41,6 +42,17 @@ describe('SourceList', () => {
     expect(screen.getByText('v3')).toBeInTheDocument()
     expect(container.querySelector('[data-tone="warn"]')).not.toBeNull()
     expect(screen.getByText('Changed since cited')).toBeInTheDocument()
+    // A resolution still in flight says so, never a timer.
+    expect(container.querySelector('.agx-src__dot[data-tone="loading"]')).toHaveTextContent('Checking…')
+  })
+
+  it('keeps keyboard focus on the chip that opened the preview when it closes', async () => {
+    const { container } = renderList()
+    const card = screen.getByRole('button', { name: /File/ })
+    fireEvent.click(card)
+    await waitFor(() => expect(container.querySelector('.agx-src__preview')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    expect(document.activeElement).toBe(card)
   })
 
   it('selects on click, opens the fold with the preview, and clears on a second click', async () => {
@@ -58,7 +70,7 @@ describe('SourceList', () => {
     const { container } = renderList()
     fireEvent.click(screen.getByRole('button', { name: /File/ }))
     await waitFor(() => expect(screen.getByText('results.csv', { selector: '.agx-src__preview-title' })).toBeInTheDocument())
-    fireEvent.click(screen.getByRole('button', { name: /Evidence/ }))
+    fireEvent.click(screen.getByRole('button', { name: /baseline-run/ }))
     expect(container.querySelector('.agx-blur__layer--out')).not.toBeNull()
     await waitFor(() => expect(screen.getByText('baseline-run', { selector: '.agx-src__preview-title' })).toBeInTheDocument())
   })
@@ -76,13 +88,13 @@ describe('SourceList', () => {
         sources={SOURCES}
       />,
     )
-    expect(screen.getByRole('button', { name: /Evidence/ })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('button', { name: /baseline-run/ })).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByText('Changed since cited', { selector: '.agx-src__state' })).toBeInTheDocument()
   })
 
   it('opens the selected source and closes the preview from its affordances', async () => {
     const { onOpen } = renderList()
-    fireEvent.click(screen.getByRole('button', { name: /Evidence/ }))
+    fireEvent.click(screen.getByRole('button', { name: /baseline-run/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Open' }))
     expect(onOpen).toHaveBeenCalledWith('b')
     fireEvent.click(screen.getByRole('button', { name: 'Close' }))

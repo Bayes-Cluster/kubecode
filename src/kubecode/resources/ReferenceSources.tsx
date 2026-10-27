@@ -35,7 +35,13 @@ export function ReferenceSources<R extends CitedRef>({ leading, onOpen, referenc
   const attention = statuses.filter((status) => status.status === 'ready' && status.availability !== 'available').length
   const count = t('kubecode.reference.sources', { count: references.length })
   const label = attention > 0 ? `${count} · ${t('kubecode.reference.sourcesAttention', { count: attention })}` : count
-  const items: SourceItem[] = references.map((reference, index) => {
+  const items: SourceItem[] = []
+  const seen = new Set<string>()
+  references.forEach((reference, index) => {
+    // The same record cited twice is one card: the id is interactive.
+    const id = `${reference.ref.kind}:${reference.ref.id}`
+    if (seen.has(id)) return
+    seen.add(id)
     const status = statuses[index]
     const state =
       status.status === 'loading'
@@ -43,21 +49,25 @@ export function ReferenceSources<R extends CitedRef>({ leading, onOpen, referenc
         : status.status === 'error'
           ? { tone: 'error' as const, label: t('kubecode.reference.state.unavailable') }
           : status.status === 'ready' && status.availability === 'changed'
-          ? { tone: 'warn' as const, label: t('kubecode.reference.state.changedSinceCited') }
-          : status.status === 'ready' && status.availability === 'removed'
-            ? { tone: 'error' as const, label: t('kubecode.reference.state.removed') }
-            : undefined
+            ? { tone: 'warn' as const, label: t('kubecode.reference.state.changedSinceCited') }
+            : status.status === 'ready' && status.availability === 'removed'
+              ? // A private record (a Session this viewer cannot read) is never
+                // declared gone: the resolver cannot tell deletion from denial.
+                status.title === null && (reference.ref.kind === 'session' || reference.ref.kind === 'session_turn')
+                ? { tone: 'error' as const, label: t('kubecode.reference.state.unavailable') }
+                : { tone: 'error' as const, label: t('kubecode.reference.state.removed') }
+              : undefined
     const title =
       status.status === 'ready'
         ? status.title ?? reference.title ?? fallbackTitle(reference.ref, t)
         : reference.title ?? fallbackTitle(reference.ref, t)
-    return {
-      id: `${reference.ref.kind}:${reference.ref.id}`,
+    items.push({
+      id,
       kindLabel: t(kindLabelKey(reference.ref.kind)),
       title,
       versionLabel: formatVersion(reference.ref.kind, reference.ref.revision ?? null, t),
       ...(state ? { state } : {}),
-    }
+    })
   })
   return (
     // The official Sources (ADR 0242); each source is a typed reference that opens in the Workspace, not a link.

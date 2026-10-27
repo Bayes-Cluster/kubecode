@@ -157,6 +157,12 @@ export function AgentUiMatrix({ t }: { t: Translator }) {
                 title: 'draft-notes.md',
                 state: { tone: 'error', label: t('kubecode.matrix.sample.unavailable') },
               },
+              {
+                id: 'pending',
+                kindLabel: t('kubecode.vocab.object.evidence'),
+                title: 'follow-up',
+                state: { tone: 'loading', label: t('kubecode.reference.checking') },
+              },
             ]}
           />
         </div>

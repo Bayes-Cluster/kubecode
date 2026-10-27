@@ -1,4 +1,4 @@
-import { useId, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 
 import { BlurSwap } from './blur-swap'
 import './source-list.css'
@@ -69,11 +69,20 @@ export function SourceList({
   const [internal, setInternal] = useState<string | null>(null)
   const selected = (selectedId === undefined ? internal : selectedId) ?? null
   const current = sources.find((source) => source.id === selected) ?? null
+  // Chips by id, so closing the preview can hand focus back to the chip that
+  // opened it instead of dropping it to the document.
+  const chips = useRef(new Map<string, HTMLButtonElement>())
 
   const select = (id: string) => {
     const next = id === selected ? null : id
     if (selectedId === undefined) setInternal(next)
     onSelect?.(next)
+  }
+
+  const closeFromPreview = () => {
+    if (!current) return
+    chips.current.get(current.id)?.focus()
+    select(current.id)
   }
 
   return (
@@ -90,6 +99,10 @@ export function SourceList({
                 aria-controls={isSelected ? previewId : undefined}
                 data-selected={isSelected || undefined}
                 onClick={() => select(source.id)}
+                ref={(element) => {
+                  if (element) chips.current.set(source.id, element)
+                  else chips.current.delete(source.id)
+                }}
               >
                 <span className="agx-src__chip-head">
                   <span className="agx-src__kind">{source.kindLabel}</span>
@@ -144,7 +157,7 @@ export function SourceList({
                   type="button"
                   className="agx-src__close"
                   aria-label={closeLabel}
-                  onClick={() => select(current.id)}
+                  onClick={closeFromPreview}
                 >
                   <svg viewBox="0 0 16 16" aria-hidden="true">
                     <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />

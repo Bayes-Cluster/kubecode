@@ -53,15 +53,25 @@ export function CopyAction({
   const [state, setState] = useState<CopyState>('idle')
   const inFlight = useRef(false)
   const timer = useRef(0)
-
+  const mounted = useRef(true)
   useEffect(() => {
-    if (state === 'idle') return
-    window.clearTimeout(timer.current)
-    timer.current = window.setTimeout(() => setState('idle'), 1800)
-    return () => window.clearTimeout(timer.current)
-  }, [state])
+    mounted.current = true
+    return () => {
+      mounted.current = false
+      window.clearTimeout(timer.current)
+    }
+  }, [])
 
-  useEffect(() => () => window.clearTimeout(timer.current), [])
+  // Each completion restarts the acknowledgment window, so a re-copy while
+  // "Copied" shows does not shorten it.
+  const finish = (next: CopyState) => {
+    if (!mounted.current) return
+    setState(next)
+    window.clearTimeout(timer.current)
+    timer.current = window.setTimeout(() => {
+      if (mounted.current) setState('idle')
+    }, 1800)
+  }
 
   const name = state === 'copied' ? copiedLabel : state === 'error' ? errorLabel : label
 
@@ -80,30 +90,37 @@ export function CopyAction({
           text = getText()
         } catch {
           inFlight.current = false
-          setState('error')
+          finish('error')
           onFinished?.(false)
           return
         }
         // A clipboard without permission (or without the API at all) refuses;
         // the error state keeps the action available so the next click retries.
-        const write = window.navigator.clipboard?.writeText(text)
+        let write: Promise<void> | undefined
+        try {
+          write = window.navigator.clipboard?.writeText(text)
+        } catch {
+          write = undefined
+        }
         if (!write) {
           inFlight.current = false
-          setState('error')
+          finish('error')
           onFinished?.(false)
           return
         }
         write
           .then(() => {
             inFlight.current = false
-            setState('copied')
-            onCopied?.(text)
-            onFinished?.(true)
+            finish('copied')
+            if (mounted.current) {
+              onCopied?.(text)
+              onFinished?.(true)
+            }
           })
           .catch(() => {
             inFlight.current = false
-            setState('error')
-            onFinished?.(false)
+            finish('error')
+            if (mounted.current) onFinished?.(false)
           })
       }}
     >

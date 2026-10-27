@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { CopyAction } from './message-actions'
@@ -86,5 +86,41 @@ describe('CopyAction', () => {
     vi.advanceTimersByTime(1900)
     expect(container.querySelector('.agx-copy')).toHaveAttribute('data-state', 'idle')
     expect(() => unmount()).not.toThrow()
+  })
+
+  it('restarts the acknowledgment window on a second completion', async () => {
+    vi.useFakeTimers()
+    renderCopy(() => Promise.resolve())
+    fireEvent.click(screen.getByRole('button', { name: 'Copy answer' }))
+    await act(async () => {})
+    act(() => {
+      vi.advanceTimersByTime(1200)
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Copied' }))
+    await act(async () => {})
+    // 1200 ms after the first success + 1200 ms after the second: still shown.
+    act(() => {
+      vi.advanceTimersByTime(1200)
+    })
+    expect(screen.getByRole('button', { name: 'Copied' })).toBeInTheDocument()
+    act(() => {
+      vi.advanceTimersByTime(700)
+    })
+    expect(screen.getByRole('button', { name: 'Copy answer' })).toBeInTheDocument()
+  })
+
+  it('lands in the error state when the clipboard API is missing entirely', () => {
+    Object.assign(window.navigator, { clipboard: undefined })
+    render(
+      <CopyAction
+        copiedLabel="Copied"
+        errorLabel="Copy failed — try again"
+        getText={() => 'answer text'}
+        icon={ICON}
+        label="Copy answer"
+      />,
+    )
+    expect(() => fireEvent.click(screen.getByRole('button', { name: 'Copy answer' }))).not.toThrow()
+    expect(screen.getByRole('button', { name: 'Copy failed — try again' })).toHaveAttribute('data-state', 'error')
   })
 })
