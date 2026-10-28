@@ -480,6 +480,17 @@ change.
   consumed by F/J/K, the decision-lifecycle fixtures (duplicate SSE,
   stale snapshot, reconnect), the NeedsYouView/redaction and counters
   audits, and the interaction captures (deferred to slice L, #289).
+- Slice G (#284): the board audited against the Task Board reference and
+  recorded as conformant — dense container-query columns, card facts
+  (lifecycle, condition, workers, progress, last event), empty lanes, the
+  needs-you filter, narrow stage tabs, scroll memory and focus return all
+  exist. The reference's drag indicator and grouped filter menu are not
+  adoptable: moves are agent-driven (no user drag to indicate, and the
+  test forbids one), and the needs-you toggle is the board's only real
+  filter — chip filters without a domain filter would invent data. The
+  slice's fixture gap closed: rapid board rewrites keep order, focus and
+  selected identity, and 200 cards render inside the frame budget
+  (Tasks.test.tsx, slice G section).
   Bundle delta vs the E2 branch: +0.15 kB gz entry, +1.3 kB gz CSS —
   within the §8 budgets.
 - Slice E2's bundle delta, measured against the C branch
