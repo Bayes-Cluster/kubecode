@@ -493,6 +493,30 @@ change.
   reference resolver remains the nonvisual authority. The reference's
   editable spreadsheet and date-range picker stay out (read-only
   resource model). The walkthrough evidence defers to slice L (#289).
+- Slice L (#289), integration acceptance:
+  - **Inventory regenerated** against final main (223 production TSX
+    files) vs the 211-file planning baseline: +13 new (ten agent-ui
+    components, the AgentUiMatrix gallery section, DecisionCard, the
+    renamed system-messages.tsx), −1 renamed away (SystemMessages.tsx →
+    system-messages.tsx, 100% similarity). Every new file has an owner,
+    disposition and ledger evidence; nothing was lost to a rename.
+  - **Catalog recheck**: the 124 dispositions above are unchanged from
+    the planning snapshot; every slice's audit re-verified its rows
+    against the code at merge time (this ledger's per-slice notes).
+  - **Performance** (`vite build`, gzip): entry 1,632.47 → 1,645.25 kB
+    (+12.78); CSS 42.24 → 49.49 kB (+7.25). Within ADR 0257 §8 budgets
+    (+30/+15). No per-token full-layout work; streaming/burst and
+    200-card board fixtures pinned by tests (slices E2/G).
+  - **Ownership gate**: the checker accepts the intentional agent-ui
+    styling and rejects foreign-internal reach-ins; dead-style checks
+    extended to `agx-*`; engine exceptions narrow and baselined (ADR
+    0257 §6).
+  - **Deferred to the researcher's visual sign-off**: the walkthrough
+    captures at 1440/1024/390/320, both themes, de-DE/CJK/IME,
+    keyboard/touch, 200% zoom and reduced motion — the mechanical
+    assertions behind them (behavior suites, reduced-motion per
+    component, focus/identity fixtures) are green across all slices,
+    but the captures are a human review deliverable, not CI output.
 - Slice K (#288): the research surfaces audited against Experiment Card,
   Tool Call Card's disclosure grammar and Stepper Form, and recorded as
   conformant — `ResearchLayout`/Workspace/Rounds use the common shell and
