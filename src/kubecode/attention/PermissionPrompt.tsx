@@ -46,6 +46,13 @@ export function PermissionPrompt({ deadlineMs, heading, onGone, onResolve, optio
   useFocusHandoff(rootRef)
   const resolve = async (optionId: string) => {
     if (busy || resolving) return
+    // The morph unmounts the option buttons: if one of them holds focus, it
+    // rides the card's root through the collapse, so focus is preserved and
+    // the removal handoff can still move it deliberately (ADR 0257 §7).
+    if (rootRef.current?.contains(document.activeElement)
+      && document.activeElement instanceof HTMLButtonElement) {
+      rootRef.current.focus()
+    }
     setBusy(optionId)
     setOutcome(null)
     try {
@@ -64,12 +71,16 @@ export function PermissionPrompt({ deadlineMs, heading, onGone, onResolve, optio
   return (
     // The official Confirmation (ADR 0242), a named group rather than an alert:
     // only changes are announced (the outcome lines below); the countdown is not.
+    // Once answered and waiting for the authoritative snapshot (ADR 0257, slice D),
+    // the card collapses to its outcome row — the removal follows the snapshot,
+    // never the animation.
     <Confirmation
       approval={{ id: requestId }}
       aria-label={`${title}: ${tool}`}
       className="outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
       data-focus-key={`permission:${requestId}`}
       data-testid="permission-queue-card"
+      data-resolving={resolving || undefined}
       role="group"
       state="approval-requested"
       tabIndex={0}
@@ -85,28 +96,40 @@ export function PermissionPrompt({ deadlineMs, heading, onGone, onResolve, optio
         <strong className="text-foreground [overflow-wrap:anywhere]">{title}</strong>
         {deadlineMs !== null && <PermissionCountdown deadlineMs={deadlineMs} t={t} />}
       </ConfirmationTitle>
-      <ConfirmationRequest>
-        <code className="block max-h-32 overflow-auto rounded-md bg-muted px-2 py-1 font-mono text-xs break-all whitespace-pre-wrap">{tool}</code>
-      </ConfirmationRequest>
-      <ConfirmationActions className="flex-wrap justify-start self-stretch">
-        {options.map((option, index) => {
-          const deciding = busy === option.id || resolving
-          return (
-            <ConfirmationAction
-              aria-busy={deciding || undefined}
-              aria-disabled={deciding || undefined}
-              key={option.id}
-              size="wrap"
-              title={`${index + 1} — ${option.label}`}
-              variant={option.kind.startsWith('reject') ? 'outline' : 'default'}
-              onClick={deciding ? undefined : () => void resolve(option.id)}
-            >
-              {deciding && <Spinner aria-hidden="true" data-icon="inline-start" />}
-              {permissionChoiceLabel(option, t)}
-            </ConfirmationAction>
-          )
-        })}
-      </ConfirmationActions>
+      {resolving ? (
+        // The compact outcome row: what was answered is said by the outcome
+        // line; the options are gone because none can be answered twice.
+        <ConfirmationRequest>
+          <p className="text-sm text-muted-foreground [overflow-wrap:anywhere]">
+            <code className="font-mono">{tool}</code>
+          </p>
+        </ConfirmationRequest>
+      ) : (
+        <ConfirmationRequest>
+          <code className="block max-h-32 overflow-auto rounded-md bg-muted px-2 py-1 font-mono text-xs break-all whitespace-pre-wrap">{tool}</code>
+        </ConfirmationRequest>
+      )}
+      {!resolving && (
+        <ConfirmationActions className="flex-wrap justify-start self-stretch">
+          {options.map((option, index) => {
+            const deciding = busy === option.id
+            return (
+              <ConfirmationAction
+                aria-busy={deciding || undefined}
+                aria-disabled={deciding || undefined}
+                key={option.id}
+                size="wrap"
+                title={`${index + 1} — ${option.label}`}
+                variant={option.kind.startsWith('reject') ? 'outline' : 'default'}
+                onClick={deciding ? undefined : () => void resolve(option.id)}
+              >
+                {deciding && <Spinner aria-hidden="true" data-icon="inline-start" />}
+                {permissionChoiceLabel(option, t)}
+              </ConfirmationAction>
+            )
+          })}
+        </ConfirmationActions>
+      )}
       <PromptOutcome outcome={outcome} resolving={resolving} t={t} />
     </Confirmation>
   )
