@@ -288,7 +288,11 @@ test('@smoke workspace navigation returns to each place, through the inspector s
     await expect(composer).toHaveValue('')
     expect(await sessionSeen(page)).toBe(false)
     await selectWorkspace(page, firstName)
-    await expect(page).toHaveURL(new RegExp(`#/p/${projectId}/general/m/[^?]+$`))
+    // The first Workspace returns to its own place: the anchored message when
+    // the reader left mid-log, or the live conversation when they left at the
+    // newest (the fold's geometry decides; both are that Workspace's place,
+    // never the other Workspace's).
+    await expect(page).toHaveURL(new RegExp(`#/p/${projectId}/general(/m/[^?]+)?$`))
     await expect(composer).toHaveValue(draft)
     await expect(cited).toBeInViewport()
 
