@@ -493,6 +493,23 @@ change.
   reference resolver remains the nonvisual authority. The reference's
   editable spreadsheet and date-range picker stay out (read-only
   resource model). The walkthrough evidence defers to slice L (#289).
+- Slice K (#288): the research surfaces audited against Experiment Card,
+  Tool Call Card's disclosure grammar and Stepper Form, and recorded as
+  conformant — `ResearchLayout`/Workspace/Rounds use the common shell and
+  section hierarchy; `ResearchExecutionSection` shows actual command,
+  execution state, exit code, log tails, analysis status and blockers
+  with reconciliation decisions explicit (missing data is never
+  success); `ResearchImportPanel`/Export keep validation, exact text and
+  stale-reference handling with real phases only; pause-new-launches
+  semantics preserved (`envelope_paused` blocks). Findings/discussion
+  keep the review-centered composition's substance (evidence lists with
+  availability badges, #286's readers for opened records) and open
+  threads through #280's canonical ThreadPane — the sentence names the
+  substance, not literal #278 component composition inside these
+  panels. Zero winner/uplift/
+  confidence references (grep-verified); KPI/Breakdown charts and Evals
+  stay deferred per the parent. Walkthrough evidence defers to slice L
+  (#289).
 - Slice J (#287): audited against Agent Tree/Inbox, Agent Chat and the
   Autonomy Dial's grouping, and recorded as conformant — roster rows are
   official Items with resolving said in words and two-step removal
