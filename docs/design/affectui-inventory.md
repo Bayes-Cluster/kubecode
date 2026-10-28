@@ -491,6 +491,23 @@ change.
   slice's fixture gap closed: rapid board rewrites keep order, focus and
   selected identity, and 200 cards render inside the frame budget
   (Tasks.test.tsx, slice G section).
+- Slice F (#283): audited against Project Card, Review Center, Smart
+  Recommendation and Decision Inbox, and recorded as conformant —
+  `TaskCardView` shows the compact summary with truthful derived progress
+  and everything inline (no hover-only detail to duplicate);
+  `TaskOverview` derives progress from actual work (`progressOf`);
+  `TaskResults` renders the review on the official Confirmation with
+  distinct accepted/send-back/refuted/inconclusive outcomes, operates on
+  the displayed versions, fails stale (`work_evidence_stale` reloads),
+  and its eighteen tests anchor every acceptance case: displayed-version
+  acceptance, send-back with feedback, stale conflict and reload,
+  partial acceptance, gone-evidence acknowledgement, decision held while
+  recording, focus to the accepted evidence. `TaskQuestions` answers in
+  place with option-only questions and unsent drafts; archived Tasks
+  list apart and reopen. No drag-to-admit, no A/B winner, no confidence
+  meter, no duplicate permission prompt (review decisions use the one
+  official Confirmation; Needs you keeps the canonical list). The
+  walkthrough's visual/motion evidence defers to slice L (#289).
   Bundle delta vs the E2 branch: +0.15 kB gz entry, +1.3 kB gz CSS —
   within the §8 budgets.
 - Slice E2's bundle delta, measured against the C branch
