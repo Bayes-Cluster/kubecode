@@ -294,7 +294,10 @@ test('@smoke workspace navigation returns to each place, through the inspector s
     // never the other Workspace's).
     await expect(page).toHaveURL(new RegExp(`#/p/${projectId}/general(/m/[^?]+)?$`))
     await expect(composer).toHaveValue(draft)
-    await expect(cited).toBeInViewport()
+    // The viewport follows the place: the anchored message when the reader
+    // left mid-log, the newest one when they left at the live conversation.
+    const anchored = page.url().includes('/m/')
+    await expect(anchored ? cited : page.locator('article[data-message-id]').last()).toBeInViewport()
 
     // 10. A reload with a three-level link restores the Task and its evidence.
     await page.goto(`${workspaceUrl}/#/p/${projectId}/general/m/${seed.citingMessageId}?task=${seed.taskId}&inspect=evidence~research~${seed.evidenceId}`)
