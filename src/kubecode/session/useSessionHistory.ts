@@ -316,9 +316,15 @@ export function useSessionHistory({
       // The guard keeps older API surfaces (tests, runtimes) rendering.
       if (typeof api.listPromptQueue === 'function') {
         void api.listPromptQueue(historyConversationId).then((items) => {
-          if (!cancelled) setPromptQueue(items)
+          if (!cancelled) {
+            promptQueueRef.current = items
+            setPromptQueue(items)
+          }
         }).catch(() => {
-          if (!cancelled) setPromptQueue([])
+          if (!cancelled) {
+            promptQueueRef.current = []
+            setPromptQueue([])
+          }
         })
       }
       for (const runId of collectMissingRunIds(buffered, merged)) {
@@ -477,10 +483,12 @@ export function useSessionHistory({
           for (const item of previous) {
             const cid = item.client_message_id
             if (!cid || items.some((candidate) => candidate.client_message_id === cid)) continue
-            const confirmed = Object.values(kernelRef.current.runs).some(
-              (run) => run.client_message_id === cid,
+            // The receipt row's data-message-id is the run's own id (the
+            // reconcile swaps the optimistic message for it).
+            const run = Object.values(kernelRef.current.runs).find(
+              (candidate) => candidate.client_message_id === cid,
             )
-            if (confirmed) confirm(cid)
+            if (run) confirm(run.id)
           }
         }
         setPromptQueue(items)

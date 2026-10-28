@@ -457,6 +457,8 @@ change.
   defaults to fabricate), and the queue dock (snapshot-driven, never
   reorders locally). The plan-step landing stays out: the plan model
   has no stable step identity, so the receipt lands on the run row.
+  Bundle delta vs the E2 branch: +0.15 kB gz entry, +1.3 kB gz CSS —
+  within the §8 budgets.
 - Slice E2's bundle delta, measured against the C branch
   (`vite build`): +0.18 kB gzipped entry, +0.31 kB gzipped CSS; cumulative
   over the ADR 0257 baseline: +13.0 kB entry / +6.2 kB CSS — within the

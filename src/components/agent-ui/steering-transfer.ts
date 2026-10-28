@@ -22,8 +22,10 @@ import { prefersReducedMotion } from '@/lib/reducedMotion'
  *
  * Usage: `source(id)` is the dock row's ref (registered by client message
  * id); `request(id)` fires when the confirmation is observed; the receipt
- * row is found by `[data-message-id="…"]`. States: `#/controls`
- * (AgentUiMatrix) demonstrates the landed highlight.
+ * row is found by `[data-message-id="…"]`. The landed state's evidence is
+ * the unit suite and the live Session workspace; `#/controls` does not
+ * mount a fake queue (the dock is snapshot-driven, and a mock would teach
+ * the wrong contract). Motion captures defer to slice L (#289).
  */
 
 const TRANSFER_MS = 620
