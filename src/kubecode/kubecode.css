@@ -205,6 +205,22 @@
   min-width: 0;
 }
 
+/* The steering transfer's landed highlight (ADR 0257, slice E1): the run
+   receipt carries the attribute for a moment after it glides in from the
+   queue. */
+.kubecode-session-turn[data-steering-landed] {
+  animation: kubecode-steering-landed 1200ms ease-out;
+}
+
+@keyframes kubecode-steering-landed {
+  from {
+    background-color: var(--state-selected);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+
 .kubecode-agent-session {
   background: var(--surface-app);
   display: flex;

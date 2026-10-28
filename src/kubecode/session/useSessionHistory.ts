@@ -52,7 +52,7 @@ export type SessionTranscript = {
    */
   enqueueConversationEvents: (events: readonly TimelineEvent[]) => void
   promptQueue: PromptQueueItem[]
-  setPromptQueue: Dispatch<SetStateAction<PromptQueueItem[]>>
+  setPromptQueue: (items: PromptQueueItem[]) => void
   subagents: SubagentEntry[]
   setSubagents: Dispatch<SetStateAction<SubagentEntry[]>>
   pendingWait: { requestId: string; deadlineMs: number } | null
@@ -91,6 +91,10 @@ type UseSessionHistoryOptions = {
   ) => (state: AgentSessionState | null) => void
   /** Fired when a watched run turns terminal with a typed cause (#93). */
   onRunTerminal?: (cause: TerminalCause, run: AgentRun) => void
+  /** A queued prompt's confirmed receipt appeared: the client message id,
+   * observed from explicit identity (run.client_message_id), for the
+   * steering transfer (ADR 0257, slice E1). */
+  onSteeringConfirmation?: (clientMessageId: string) => void
   conversation: Conversation | null
   conversationId: string | null
   directTeammateChatDisabled: boolean
@@ -106,6 +110,7 @@ export function useSessionHistory({
   api,
   beginSessionStateRequest,
   onRunTerminal,
+  onSteeringConfirmation,
   conversation,
   conversationId,
   directTeammateChatDisabled,
@@ -123,6 +128,7 @@ export function useSessionHistory({
   const [elicitationAnswers, setElicitationAnswers] = useState<Record<string, ElicitationAnswer>>({})
   const [sideQuestions, setSideQuestions] = useState<SideQuestionItem[]>([])
   const [promptQueue, setPromptQueue] = useState<PromptQueueItem[]>([])
+  const promptQueueRef = useRef<PromptQueueItem[]>([])
   const [subagents, setSubagents] = useState<SubagentEntry[]>([])
   const [pendingWait, setPendingWait] = useState<{ requestId: string; deadlineMs: number } | null>(null)
   const [revisions, setRevisions] = useState<ConversationRevision[]>([])
@@ -143,6 +149,8 @@ export function useSessionHistory({
   const notifiedTerminalRef = useRef(new Set<string>())
   const onRunTerminalRef = useRef(onRunTerminal)
   onRunTerminalRef.current = onRunTerminal
+  const onSteeringConfirmationRef = useRef(onSteeringConfirmation)
+  onSteeringConfirmationRef.current = onSteeringConfirmation
 
   const activeRun = Boolean(run && ACTIVE_RUN_STATUSES.has(run.status))
   const historyConversationId = viewRevisionId ?? conversation?.id ?? null
@@ -458,7 +466,25 @@ export function useSessionHistory({
       setPendingElicitation,
       setPendingPermission,
       setRun,
-      setPromptQueue,
+      setPromptQueue: (items) => {
+        // Steering confirmations (ADR 0257, slice E1): a client id the
+        // snapshot dropped, whose run carries the same id, is an explicit
+        // confirmation — the receipt may glide from the queue row.
+        const previous = promptQueueRef.current
+        promptQueueRef.current = items
+        const confirm = onSteeringConfirmationRef.current
+        if (confirm) {
+          for (const item of previous) {
+            const cid = item.client_message_id
+            if (!cid || items.some((candidate) => candidate.client_message_id === cid)) continue
+            const confirmed = Object.values(kernelRef.current.runs).some(
+              (run) => run.client_message_id === cid,
+            )
+            if (confirmed) confirm(cid)
+          }
+        }
+        setPromptQueue(items)
+      },
       promptQueue,
       setSideQuestions,
       setSubagents,

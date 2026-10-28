@@ -434,7 +434,9 @@ function ConversationMessage({ userMessage, references, locale = 'en', messageId
   }, [])
 
   return (
-    <div className="kubecode-session-turn min-w-0 max-w-full" data-testid="ai-message">
+    // data-message-id: the steering transfer finds the run receipt row by it
+    // (ADR 0257, slice E1).
+    <div className="kubecode-session-turn min-w-0 max-w-full" data-message-id={messageId} data-testid="ai-message">
       {!internal && (
         <UserBubble content={userMessage} locale={locale} messageId={messageId} onEdit={onEdit} references={references} onOpenNote={onOpenNote} />
       )}
