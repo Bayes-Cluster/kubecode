@@ -318,11 +318,13 @@ export function AgentUiMatrix({ locale = 'en', t }: { locale?: AppLocale; t: Tra
           <div className="agx-pick rounded-lg border bg-card">
             <AgxPickerFill />
             <AgxPickerGroup label={t('kubecode.matrix.sample.mentionLabel')}>
+              {/* Short sample words: the narrow samples wrap instead of
+                  clipping, so the fixture shows no ellipsis. */}
               <div className="agx-pick__row" data-selected="true">
-                <AgxPickerRow hint="@general" name={t('kubecode.matrix.sample.composerLabel')} />
+                <AgxPickerRow hint="@general" name={t('kubecode.matrix.sample.viewBoard')} />
               </div>
               <div className="agx-pick__row">
-                <AgxPickerRow hint="@analyst" name={t('kubecode.matrix.sample.specialistRole')} />
+                <AgxPickerRow hint="@analyst" name={t('kubecode.matrix.sample.viewChart')} />
               </div>
             </AgxPickerGroup>
             <AgxPickerFoot count={`2 · ${t('kubecode.matrix.sample.mentionLabel')}`} />
