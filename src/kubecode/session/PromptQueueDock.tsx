@@ -37,12 +37,16 @@ export function PromptQueueDock({
   onEdit,
   onRemove,
   onSendNow,
+  registerSource,
   t,
 }: {
   items: PromptQueueItem[]
   onEdit: (itemId: string, content: string) => void
   onRemove: (itemId: string) => void
   onSendNow?: (itemId: string) => void
+  /** Registers each row by its client message id, for the steering
+   * transfer's first box (ADR 0257, slice E1). */
+  registerSource?: (id: string) => (element: HTMLElement | null) => void
   t: Translator
 }) {
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -71,7 +75,11 @@ export function PromptQueueDock({
         <QueueSectionContent>
           <QueueList>
             {items.map((item) => (
-              <QueueItem data-testid="prompt-queue-row" key={item.id}>
+              <QueueItem
+                data-testid="prompt-queue-row"
+                key={item.id}
+                ref={registerSource && item.client_message_id ? registerSource(item.client_message_id) : undefined}
+              >
                 <div className="flex items-center gap-2">
                   <QueueItemIndicator />
                   {editingId === item.id ? (

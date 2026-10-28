@@ -13,6 +13,7 @@ export { ShimmerBlock, ShimmerText, type ShimmerBlockProps, type ShimmerTextProp
 export { CopyAction, type CopyActionProps } from './message-actions'
 export { PlanRail, type PlanRailEntry, type PlanRailProps } from './plan-rail'
 export { SegmentedControl, type SegmentedControlProps, type SegmentedOption } from './segmented-control'
+export { STEERING_LANDED_ATTRIBUTE, useSteeringTransfer } from './steering-transfer'
 export { SourceList, type SourceItem, type SourceListProps } from './source-list'
 export { ThinkingLoader, type ThinkingLoaderProps } from './thinking-loader'
 export { Ticker, type TickerProps } from './ticker'

@@ -52,6 +52,7 @@ import { TeamSessionOverview } from '../TeamSessionOverview'
 import { TeamWorkspaceView } from '../TeamWorkspaceView'
 import type { TerminalContextSource } from '../TerminalWorkspace'
 
+import { useSteeringTransfer } from '@/components/agent-ui'
 import { PromptQueueDock } from './PromptQueueDock'
 import { SessionComposer } from './SessionComposer'
 import { SessionTimeline } from './SessionTimeline'
@@ -167,9 +168,11 @@ export function AgentSessionWorkspace({
   }, [agentLabel, systemMessages, t])
 
   const sessionState = useSessionState({ api, conversationId })
+  const steering = useSteeringTransfer()
   const history = useSessionHistory({
     api,
     beginSessionStateRequest: sessionState.beginSessionStateRequest,
+    onSteeringConfirmation: (_clientMessageId, runId) => steering.request(runId),
     onRunTerminal: (cause) => {
       // Convergence surfacing (#93): quiet for cancellations, errors for
       // resource/refusal failures. Copy is localized; payloads carry no
@@ -712,6 +715,7 @@ export function AgentSessionWorkspace({
           />
           <PromptQueueDock
             items={transcript.promptQueue}
+            registerSource={steering.source}
             onEdit={(itemId, content) => {
               void api.editPromptQueueItem(conversation.id, itemId, content)
                 .catch(reportError)

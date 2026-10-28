@@ -52,7 +52,7 @@ export type SessionTranscript = {
    */
   enqueueConversationEvents: (events: readonly TimelineEvent[]) => void
   promptQueue: PromptQueueItem[]
-  setPromptQueue: Dispatch<SetStateAction<PromptQueueItem[]>>
+  setPromptQueue: (items: PromptQueueItem[]) => void
   subagents: SubagentEntry[]
   setSubagents: Dispatch<SetStateAction<SubagentEntry[]>>
   pendingWait: { requestId: string; deadlineMs: number } | null
@@ -91,6 +91,10 @@ type UseSessionHistoryOptions = {
   ) => (state: AgentSessionState | null) => void
   /** Fired when a watched run turns terminal with a typed cause (#93). */
   onRunTerminal?: (cause: TerminalCause, run: AgentRun) => void
+  /** A queued prompt's confirmed receipt appeared: the client message id,
+   * observed from explicit identity (run.client_message_id), for the
+   * steering transfer (ADR 0257, slice E1). */
+  onSteeringConfirmation?: (clientMessageId: string, runId: string) => void
   conversation: Conversation | null
   conversationId: string | null
   directTeammateChatDisabled: boolean
@@ -106,6 +110,7 @@ export function useSessionHistory({
   api,
   beginSessionStateRequest,
   onRunTerminal,
+  onSteeringConfirmation,
   conversation,
   conversationId,
   directTeammateChatDisabled,
@@ -123,6 +128,7 @@ export function useSessionHistory({
   const [elicitationAnswers, setElicitationAnswers] = useState<Record<string, ElicitationAnswer>>({})
   const [sideQuestions, setSideQuestions] = useState<SideQuestionItem[]>([])
   const [promptQueue, setPromptQueue] = useState<PromptQueueItem[]>([])
+  const promptQueueRef = useRef<PromptQueueItem[]>([])
   const [subagents, setSubagents] = useState<SubagentEntry[]>([])
   const [pendingWait, setPendingWait] = useState<{ requestId: string; deadlineMs: number } | null>(null)
   const [revisions, setRevisions] = useState<ConversationRevision[]>([])
@@ -143,6 +149,14 @@ export function useSessionHistory({
   const notifiedTerminalRef = useRef(new Set<string>())
   const onRunTerminalRef = useRef(onRunTerminal)
   onRunTerminalRef.current = onRunTerminal
+  const onSteeringConfirmationRef = useRef(onSteeringConfirmation)
+  onSteeringConfirmationRef.current = onSteeringConfirmation
+  // Queue client ids the snapshot dropped before their run became visible
+  // (the server publishes the snapshot before the run starts on every
+  // admission path). Each entry waits in `commit` for the run to attach;
+  // entries older than the window are pruned as plain removals.
+  const pendingSteeringRef = useRef(new Map<string, number>())
+  const STEERING_PENDING_WINDOW_MS = 30_000
 
   const activeRun = Boolean(run && ACTIVE_RUN_STATUSES.has(run.status))
   const historyConversationId = viewRevisionId ?? conversation?.id ?? null
@@ -184,6 +198,16 @@ export function useSessionHistory({
             ? { ...current, ...nextRun }
             : nextRun
       ))
+      // Steering transfer, phase 2 (ADR 0257, slice E1): the run carrying a
+      // pending queue client id attached — explicit identity, so its receipt
+      // row (data-message-id = the run's own id) may glide from the queue
+      // row's last box.
+      const confirmation = onSteeringConfirmationRef.current
+      if (confirmation && nextRun.client_message_id
+        && pendingSteeringRef.current.has(nextRun.client_message_id)) {
+        pendingSteeringRef.current.delete(nextRun.client_message_id)
+        confirmation(nextRun.client_message_id, nextRun.id)
+      }
       if (hydratingRef.current || !onRunTerminalRef.current) continue
       const wasActiveOrNew = !previous.runs[runId]
         || ACTIVE_RUN_STATUSES.has(previous.runs[runId].status)
@@ -308,9 +332,15 @@ export function useSessionHistory({
       // The guard keeps older API surfaces (tests, runtimes) rendering.
       if (typeof api.listPromptQueue === 'function') {
         void api.listPromptQueue(historyConversationId).then((items) => {
-          if (!cancelled) setPromptQueue(items)
+          if (!cancelled) {
+            promptQueueRef.current = items
+            setPromptQueue(items)
+          }
         }).catch(() => {
-          if (!cancelled) setPromptQueue([])
+          if (!cancelled) {
+            promptQueueRef.current = []
+            setPromptQueue([])
+          }
         })
       }
       for (const runId of collectMissingRunIds(buffered, merged)) {
@@ -458,7 +488,27 @@ export function useSessionHistory({
       setPendingElicitation,
       setPendingPermission,
       setRun,
-      setPromptQueue,
+      setPromptQueue: (items) => {
+        // Steering transfer, phase 1 (ADR 0257, slice E1): a client id the
+        // snapshot dropped becomes pending; phase 2 fires in `commit` when
+        // the run carrying that id attaches. Disappearance without such a
+        // run is plain removal and plays nothing.
+        const previous = promptQueueRef.current
+        promptQueueRef.current = items
+        const now = Date.now()
+        for (const [cid, queuedAt] of pendingSteeringRef.current) {
+          if (now - queuedAt > STEERING_PENDING_WINDOW_MS) pendingSteeringRef.current.delete(cid)
+        }
+        if (onSteeringConfirmationRef.current) {
+          for (const item of previous) {
+            const cid = item.client_message_id
+            if (!cid || pendingSteeringRef.current.has(cid)) continue
+            if (items.some((candidate) => candidate.client_message_id === cid)) continue
+            pendingSteeringRef.current.set(cid, now)
+          }
+        }
+        setPromptQueue(items)
+      },
       promptQueue,
       setSideQuestions,
       setSubagents,
