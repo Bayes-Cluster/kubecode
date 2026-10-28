@@ -155,7 +155,7 @@ describe('PermissionPrompt resolving morph (ADR 0257, slice D)', () => {
       <PermissionPrompt options={options} requestId="q2" resolving t={t} tool="pytest -q" onResolve={onResolve} />,
     )
     const card = screen.getByTestId('permission-queue-card')
-    expect(card).toHaveAttribute('data-resolving')
+    expect(card.querySelector('[data-resolving]')).not.toBeNull()
     // The options are gone (none can be answered twice); the outcome line says
     // the answer is recorded and the removal follows the snapshot.
     expect(container.querySelectorAll('button')).toHaveLength(0)
