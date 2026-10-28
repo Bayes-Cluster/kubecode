@@ -146,3 +146,37 @@ describe('ElicitationPrompt', () => {
     await waitFor(() => expect(onResolve).toHaveBeenCalledWith(false))
   })
 })
+
+describe('PermissionPrompt resolving morph (ADR 0257, slice D)', () => {
+  it('collapses to the compact outcome row while the answer awaits the snapshot, and options cannot be answered twice', async () => {
+    let settle: (() => void) | undefined
+    const onResolve = vi.fn().mockImplementation(() => new Promise<void>((resolve) => { settle = resolve }))
+    const { container, rerender } = render(
+      <PermissionPrompt options={options} requestId="q2" resolving t={t} tool="pytest -q" onResolve={onResolve} />,
+    )
+    const card = screen.getByTestId('permission-queue-card')
+    expect(card).toHaveAttribute('data-resolving')
+    // The options are gone (none can be answered twice); the outcome line says
+    // the answer is recorded and the removal follows the snapshot.
+    expect(container.querySelectorAll('button')).toHaveLength(0)
+    expect(screen.getByText('pytest -q')).toBeInTheDocument()
+    expect(screen.getByText('Answer recorded — updating…')).toBeInTheDocument()
+
+    // The authoritative snapshot drops the card; until then nothing re-opens.
+    rerender(
+      <PermissionPrompt options={options} requestId="q2" resolving={false} t={t} tool="pytest -q" onResolve={onResolve} />,
+    )
+    expect(container.querySelectorAll('button')).toHaveLength(options.length)
+    void settle
+  })
+
+  it('still answers from the full card when it is the caller resolving, then keeps the failure audible', async () => {
+    const onResolve = vi.fn().mockRejectedValue(new Error('transport refused'))
+    render(
+      <PermissionPrompt options={options} requestId="q3" t={t} tool="pytest -q" onResolve={onResolve} />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Allow' }))
+    // The refusal stays audible in the card until the reader answers again.
+    await waitFor(() => expect(screen.getByText('Your answer was not recorded. Try again.')).toBeInTheDocument())
+  })
+})
