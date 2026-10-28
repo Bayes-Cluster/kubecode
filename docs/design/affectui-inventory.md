@@ -515,15 +515,16 @@ change.
   inspector stack (its plan section consumes E2's PlanRail);
   `ProjectFileTree` keeps its ARIA tree, 26px coarse rows, lazy
   per-directory loads, scoped invalidation and stale-generation guards
-  (14 tests); CodeMirror editing, dirty buffers and save-conflict
+  (14 tests); type-ahead is a recorded deviation — the tree has none
+  (selection is by navigation and click), CodeMirror editing, dirty buffers and save-conflict
   handling are untouched; `GitDiffView` renders the server's diff with
   actual counts; the terminal keeps xterm rendering, split-tree restore
   with resized ratios, navigator rename, dock folding and
   restart-in-workspace (8 tests). Large-diff and 200k-line terminal
-  measurements join the captures deferred to slice L; quick-open through
-  the Command Menu is deferred with it — quick-open is a new feature,
-  not a presentation delta, and inventing it here would expand the
-  product. Inline Diff, Agent Ledger and Conflict Radar remain deferred
+  measurements join the captures deferred to slice L. Quick-open exists
+  at the explorer (Command-P → ProjectFilePicker, the shared search-
+  dialog pattern); a global palette quick-open is deferred with it —
+  adding one there is a new feature, not a presentation delta. Inline Diff, Agent Ledger and Conflict Radar remain deferred
   per the parent's disposition.
   Bundle delta vs the E2 branch: +0.15 kB gz entry, +1.3 kB gz CSS —
   within the §8 budgets.
