@@ -502,8 +502,11 @@ change.
   success); `ResearchImportPanel`/Export keep validation, exact text and
   stale-reference handling with real phases only; pause-new-launches
   semantics preserved (`envelope_paused` blocks). Findings/discussion
-  render through #278's presentation and #286's readers; evidence
-  decisions stay in #280's canonical surfaces. Zero winner/uplift/
+  keep the review-centered composition's substance (evidence lists with
+  availability badges, #286's readers for opened records) and open
+  threads through #280's canonical ThreadPane — the sentence names the
+  substance, not literal #278 component composition inside these
+  panels. Zero winner/uplift/
   confidence references (grep-verified); KPI/Breakdown charts and Evals
   stay deferred per the parent. Walkthrough evidence defers to slice L
   (#289).
