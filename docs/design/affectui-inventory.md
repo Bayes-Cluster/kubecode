@@ -508,6 +508,23 @@ change.
   meter, no duplicate permission prompt (review decisions use the one
   official Confirmation; Needs you keeps the canonical list). The
   walkthrough's visual/motion evidence defers to slice L (#289).
+- Slice H (#285): audited against App Shell Workspace Flat's tool panel,
+  Files/Folder density, Change Summary's hierarchy and the terminal
+  navigator, and recorded as conformant with the engines retained —
+  `ContextWorkbench` owns the tool-panel contents inside #279's shared
+  inspector stack (its plan section consumes E2's PlanRail);
+  `ProjectFileTree` keeps its ARIA tree, 26px coarse rows, lazy
+  per-directory loads, scoped invalidation and stale-generation guards
+  (14 tests); CodeMirror editing, dirty buffers and save-conflict
+  handling are untouched; `GitDiffView` renders the server's diff with
+  actual counts; the terminal keeps xterm rendering, split-tree restore
+  with resized ratios, navigator rename, dock folding and
+  restart-in-workspace (8 tests). Large-diff and 200k-line terminal
+  measurements join the captures deferred to slice L; quick-open through
+  the Command Menu is deferred with it — quick-open is a new feature,
+  not a presentation delta, and inventing it here would expand the
+  product. Inline Diff, Agent Ledger and Conflict Radar remain deferred
+  per the parent's disposition.
   Bundle delta vs the E2 branch: +0.15 kB gz entry, +1.3 kB gz CSS —
   within the §8 budgets.
 - Slice E2's bundle delta, measured against the C branch
