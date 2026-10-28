@@ -58,7 +58,7 @@ export function PlanRail({ entries, 'aria-label': ariaLabel, statusLabels, class
             </svg>
           </span>
           <span className="agx-plan__content" dir="auto">
-            <span className="agx-plan__sr">{statusLabels[entry.status] ?? statusLabels.pending}: </span>
+            <span className="sr-only">{statusLabels[entry.status] ?? statusLabels.pending}: </span>
             {entry.content}
           </span>
         </li>

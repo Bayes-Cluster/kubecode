@@ -25,8 +25,8 @@ describe('PlanRail', () => {
     expect(rows[0]).toHaveAttribute('data-status', 'completed')
     expect(rows[1]).toHaveAttribute('data-status', 'in_progress')
     expect(rows[2]).toHaveAttribute('data-status', 'pending')
-    expect(rows[0].querySelector('.agx-plan__sr')).toHaveTextContent('Completed:')
-    expect(rows[1].querySelector('.agx-plan__sr')).toHaveTextContent('In progress:')
+    expect(rows[0].querySelector('.sr-only')).toHaveTextContent('Completed:')
+    expect(rows[1].querySelector('.sr-only')).toHaveTextContent('In progress:')
     expect(rows[1]).toHaveTextContent('Prune the heads')
     // The drawn markers are decorative; the words carry the meaning.
     expect(container.querySelector('.agx-plan__marker')).toHaveAttribute('aria-hidden', 'true')
