@@ -327,7 +327,7 @@ export function AgentUiMatrix({ locale = 'en', t }: { locale?: AppLocale; t: Tra
                 <AgxPickerRow hint="@analyst" name={t('kubecode.matrix.sample.viewChart')} />
               </div>
             </AgxPickerGroup>
-            <AgxPickerFoot count={`2 · ${t('kubecode.matrix.sample.mentionLabel')}`} />
+            <AgxPickerFoot count="2" />
           </div>
           <div className="agx-pick rounded-lg border bg-card">
             <div className="agx-pick__slot" data-state="checked">

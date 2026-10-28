@@ -160,6 +160,9 @@ export function ConversationComposer({
     setActive(0)
     setNavigated(false)
     requestAnimationFrame(() => {
+      // Same guard as the coarse line break: typing since the insertion
+      // owns the caret now.
+      if (area.current?.value !== text) return
       area.current?.focus()
       area.current?.setSelectionRange(next, next)
     })
@@ -214,7 +217,12 @@ export function ConversationComposer({
         const end = box.selectionEnd ?? start
         const next = `${value.slice(0, start)}\n${value.slice(end)}`
         onChange(next)
-        requestAnimationFrame(() => box.setSelectionRange(start + 1, start + 1))
+        // The deferred caret placement only applies if typing has not moved
+        // on: a keystroke that lands before this frame must stay where the
+        // browser put it, not be yanked back mid-word.
+        requestAnimationFrame(() => {
+          if (box.value === next) box.setSelectionRange(start + 1, start + 1)
+        })
         return
       }
       event.preventDefault()
