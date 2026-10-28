@@ -275,3 +275,56 @@ describe('TaskBoardView keeps its place (ADR 0228 §4)', () => {
     }
   })
 })
+
+describe('board under rapid updates and at scale (ADR 0257, slice G)', () => {
+  it('keeps ordering, focus and selected identity across a burst of board rewrites', () => {
+    const cards = [
+      taskCard({ id: 'r1', title: 'First', stage: 'ready' }),
+      taskCard({ id: 'r2', title: 'Second', stage: 'in_progress' }),
+      taskCard({ id: 'r3', title: 'Third', stage: 'review', review_requested: true }),
+    ]
+    const props = { drafts: [] as TaskDraft[], status: 'ready' as const, t }
+    const mounted = view({ board: board(cards), ...props })
+    const selected = within(screen.getByRole('region', { name: 'Review' })).getByRole('button', { name: /Third/ })
+    act(() => {
+      selected.focus()
+    })
+    expect(document.activeElement).toBe(selected)
+
+    // A burst: five rewrites in one batch, reordering and adding columns' worth.
+    for (let round = 0; round < 5; round += 1) {
+      mounted.rerender(<TaskBoardView
+        board={board([
+          taskCard({ id: 'r3', title: 'Third', stage: 'review', review_requested: true }),
+          taskCard({ id: 'r1', title: `First ${round}`, stage: 'ready' }),
+          taskCard({ id: 'r2', title: 'Second', stage: 'in_progress' }),
+          taskCard({ id: `r-new-${round}`, title: 'Newcomer', stage: 'ready' }),
+        ])}
+        {...props}
+      />)
+    }
+    // The inspected card keeps its identity and its focus, and the columns
+    // keep their order.
+    expect(document.activeElement).toBe(
+      within(screen.getByRole('region', { name: 'Review' })).getByRole('button', { name: /Third/ }),
+    )
+    const order = screen.getAllByRole('region').filter((r) => r.hasAttribute('data-stage'))
+      .map((r) => r.getAttribute('data-stage'))
+    expect(order).toEqual(['ready', 'in_progress', 'review', 'done'])
+  })
+
+  it('renders a large board (200 cards over four stages) inside the frame budget', () => {
+    const stages = ['ready', 'in_progress', 'review', 'done'] as const
+    const cards = Array.from({ length: 200 }, (_, index) => (
+      taskCard({ id: `bulk-${index}`, title: `Task ${index}`, stage: stages[index % 4] })
+    ))
+    const started = performance.now()
+    const props = { drafts: [] as TaskDraft[], status: 'ready' as const, t }
+    const mounted = view({ board: board(cards), ...props })
+    const elapsed = performance.now() - started
+    expect(mounted.container.querySelectorAll('[data-focus-key^=\'card:\']')).toHaveLength(200)
+    // Well under the 30s test timeout: a regression that re-renders the
+    // board per streamed update shows up here as seconds, not milliseconds.
+    expect(elapsed).toBeLessThan(2_000)
+  })
+})
