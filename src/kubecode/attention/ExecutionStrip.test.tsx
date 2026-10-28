@@ -250,9 +250,9 @@ describe('ExecutionStrip', () => {
     const { api } = strip(value)
     const prompt = screen.getByTestId('permission-queue-card')
     expect(prompt).toHaveTextContent('Answer recorded — updating…')
-    const allow = within(prompt).getByRole('button', { name: 'Allow' })
-    expect(allow).toHaveAttribute('aria-disabled', 'true')
-    fireEvent.click(allow)
+    // The answered card collapses to its outcome row (ADR 0257, slice D):
+    // there is no button to answer twice, and the digit key finds no options.
+    expect(within(prompt).queryAllByRole('button')).toHaveLength(0)
     fireEvent.keyDown(prompt, { key: '1' })
     expect(api.resolvePermission).not.toHaveBeenCalled()
   })
