@@ -472,7 +472,14 @@ change.
   snapshots flagged), `ExecutionRow`/`ExecutionStrip` (compact running
   rows), and the real-deadline countdown (the server's own deadline; the
   reference's invented one-hour grant, risk badge and approval countdown
-  stay out).
+  stay out). The morph's focus behavior is deliberate: the answer's focus
+  rides the card root through the collapse, and the removal handoff moves
+  it to the next prompt or the composer. Compared refs for the delta
+  below: `feat/ui3-e2-session-timeline` (base) vs `feat/ui3-d-decisions`.
+  Open for the slice: the shared DecisionCard/DecisionInbox extraction
+  consumed by F/J/K, the decision-lifecycle fixtures (duplicate SSE,
+  stale snapshot, reconnect), the NeedsYouView/redaction and counters
+  audits, and the interaction captures (deferred to slice L, #289).
   Bundle delta vs the E2 branch: +0.15 kB gz entry, +1.3 kB gz CSS —
   within the §8 budgets.
 - Slice E2's bundle delta, measured against the C branch

@@ -46,6 +46,13 @@ export function PermissionPrompt({ deadlineMs, heading, onGone, onResolve, optio
   useFocusHandoff(rootRef)
   const resolve = async (optionId: string) => {
     if (busy || resolving) return
+    // The morph unmounts the option buttons: if one of them holds focus, it
+    // rides the card's root through the collapse, so focus is preserved and
+    // the removal handoff can still move it deliberately (ADR 0257 §7).
+    if (rootRef.current?.contains(document.activeElement)
+      && document.activeElement instanceof HTMLButtonElement) {
+      rootRef.current.focus()
+    }
     setBusy(optionId)
     setOutcome(null)
     try {
