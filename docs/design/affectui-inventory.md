@@ -480,6 +480,19 @@ change.
   consumed by F/J/K, the decision-lifecycle fixtures (duplicate SSE,
   stale snapshot, reconnect), the NeedsYouView/redaction and counters
   audits, and the interaction captures (deferred to slice L, #289).
+- Slice I (#286): audited against Files/Folder, Client Context and the
+  Command-Menu search-dialog pattern, and recorded as conformant —
+  `ContextWorkbench`'s explorer groups resources with server-derived
+  status badges; `WorkspaceSearch`/`AddContextDialog` keep scope,
+  pagination, no-results, failure and walk-limit states distinct on
+  official readers; `RecordPreview` pages long records one page at a
+  time (stopping rather than splicing two versions) and renders through
+  #278's hardened presentation; `ReferenceSources` composes E2's
+  SourceList over the official Sources disclosure with
+  changed/removed/unavailable still validated per cited revision; the
+  reference resolver remains the nonvisual authority. The reference's
+  editable spreadsheet and date-range picker stay out (read-only
+  resource model). The walkthrough evidence defers to slice L (#289).
 - Slice G (#284): the board audited against the Task Board reference and
   recorded as conformant — dense container-query columns, card facts
   (lifecycle, condition, workers, progress, last event), empty lanes, the
