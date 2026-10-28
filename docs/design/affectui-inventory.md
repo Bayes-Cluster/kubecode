@@ -521,6 +521,9 @@ change.
     assertions behind them (behavior suites, reduced-motion per
     component, focus/identity fixtures) are green across all slices,
     but the captures are a human review deliverable, not CI output.
+    The capture pass produced 12 shots (desktop walkthrough + matrix);
+    the phone steps surfaced #307 — the Session workspace crashes the
+    renderer at 390px — which now tracks the fix.
 - Slice K (#288): the research surfaces audited against Experiment Card,
   Tool Call Card's disclosure grammar and Stepper Form, and recorded as
   conformant — `ResearchLayout`/Workspace/Rounds use the common shell and
