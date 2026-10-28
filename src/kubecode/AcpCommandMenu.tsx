@@ -1,3 +1,4 @@
+import { AgxPickerFill, AgxPickerRow } from '@/components/agent-ui'
 import { Badge } from '@/components/ui/badge'
 import { Command, CommandGroup, CommandItem, CommandList } from '@/components/ui/command'
 
@@ -18,7 +19,8 @@ function commandKey(command: AcpCommand): string {
 
 // The composer keeps focus and owns arrow/Enter handling
 // (useComposerController.handleCommandKeyDown); the official Command list
-// renders the suggestions and mirrors that selection through `value`.
+// renders the suggestions and mirrors that selection through `value`, with
+// the shared picker presentation: the fill glides along the selected row.
 export function AcpCommandMenu({
   commands,
   label,
@@ -30,7 +32,7 @@ export function AcpCommandMenu({
   const selected = commands[selectedIndex]
   return (
     <Command
-      className="kubecode-command-suggestions h-auto rounded-lg border shadow-md"
+      className="kubecode-command-suggestions h-auto rounded-lg"
       label={label}
       shouldFilter={false}
       value={selected ? commandKey(selected) : ''}
@@ -39,12 +41,14 @@ export function AcpCommandMenu({
         if (index >= 0) onHover(index)
       }}
     >
-      <CommandList label={label}>
+      <CommandList className="agx-pick__list" label={label}>
+        <AgxPickerFill />
         <CommandGroup>
           {commands.map((command) => {
             const disabled = command.ambiguous || command.input.kind === 'unsupported'
             return (
               <CommandItem
+                className="agx-pick__slot"
                 disabled={disabled}
                 key={commandKey(command)}
                 value={commandKey(command)}
@@ -52,8 +56,11 @@ export function AcpCommandMenu({
                   if (!disabled) onSelect(command)
                 }}
               >
-                <code>/{command.name}</code>
-                <span className="min-w-0 flex-1 truncate text-muted-foreground">{command.description}</span>
+                <AgxPickerRow
+                  check={false}
+                  hint={command.description}
+                  name={<code>/{command.name}</code>}
+                />
                 {command.input.kind === 'text' && command.input.hint !== undefined && (
                   <Badge variant="outline">{command.input.hint}</Badge>
                 )}

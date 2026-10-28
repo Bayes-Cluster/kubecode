@@ -454,14 +454,29 @@ change.
   silence) and the identity chain was review-verified end to end; a
   workspace-level admission-sequence fixture was attempted and deferred —
   the fixture environment fights the live-event pump, and the capture
-  work belongs to slice L (#289). Audited and already conformant,
-  unchanged: the three composer adapters (shared official
-  PromptInput engine with the full IME/keyboard contract), the Model
-  Picker (the provider's own config options are the only catalog,
-  rendered through native controls — no scores, voice or hosted
-  defaults to fabricate), and the queue dock (snapshot-driven, never
-  reorders locally). The plan-step landing stays out: the plan model
-  has no stable step identity, so the receipt lands on the run row.
+  work belongs to slice L (#289). The queue dock landed conformant
+  (snapshot-driven, never reorders locally) and the plan-step landing
+  stays out: the plan model has no stable step identity, so the receipt
+  lands on the run row. Correction (recorded after the slice was
+  accepted): the composer adapters and the Model Picker were recorded
+  here as "conformant, unchanged" — that verdict was wrong; #281's
+  implementation terms require recreating the composer presentation, the
+  Combobox row grammar and the Model Picker disclosure. Delivered in the
+  follow-up increment (2026-10-28, same issue): the Chat Composer card
+  (`agent-ui/composer` — inset field, animated auto-height, focus state
+  on the card, chips, action rail) consumed by the channel composer and
+  the session input; the Combobox grammar (`agent-ui/picker` — gliding
+  row fill, groups, mark, check, footer) on the mention picker, the
+  command suggestions, the capability/context lists and the wikilink
+  menu; and the Model Picker presentation (`agent-ui/model-picker` —
+  trigger pill with glyph and turning chevron, option rows with the
+  provider's own descriptions, switch toggles, sub-menus replaced by
+  inline disclosure). Engines unchanged: the official Prompt Input, cmdk
+  and Radix menus keep every keyboard, IME, routing and privacy
+  contract; the provider catalog stays the only picker content. Bundle
+  delta +0.71 kB gz entry, +1.02 kB gz CSS (cumulative +13.49/+8.27 of
+  the §8 budgets). The gallery gained the composer card and the picker
+  states (`#/controls`).
 - Slice D (#280): the answered permission card collapses to its compact
   outcome row while the answer awaits the authoritative snapshot (removal
   follows the snapshot, never the animation); refusals stay audible in

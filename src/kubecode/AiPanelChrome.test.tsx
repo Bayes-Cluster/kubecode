@@ -232,11 +232,17 @@ describe('AiPanelComposer', () => {
     )
 
     const surface = screen.getByTestId('agent-composer-surface')
-    expect(surface).toHaveAttribute('data-layout', 'single-row')
+    // The composer presents as the agent-ui card (ADR 0257): the field over
+    // one action rail, tools left and send right.
+    expect(surface).toHaveAttribute('data-layout', 'card')
     expect(surface).toContainElement(screen.getByRole('button', { name: 'Add context' }))
     expect(surface).toContainElement(screen.getByRole('button', { name: 'Agent settings' }))
     expect(surface).toContainElement(screen.getByRole('button', { name: 'Send message' }))
     expect(surface).toContainElement(screen.getByTestId('agent-input'))
+    const rail = surface.querySelector('.agx-comp__rail') as HTMLElement
+    expect(rail).toContainElement(screen.getByRole('button', { name: 'Add context' }))
+    expect(rail).toContainElement(screen.getByRole('button', { name: 'Agent settings' }))
+    expect(rail).toContainElement(screen.getByRole('button', { name: 'Send message' }))
   })
 
   it('keeps multiline prompts scrolling while allowing Composer pickers to overflow', () => {
@@ -260,13 +266,11 @@ describe('AiPanelComposer', () => {
       minHeight: '32px',
       overflowY: 'auto',
     })
+    // The card holds the frame; the editor scrolls inside the field region
+    // and the pickers may overflow the rail.
     const surface = screen.getByTestId('agent-composer-surface')
-    expect(surface).toHaveClass(
-      'min-h-[50px]',
-      'max-h-[202px]',
-      'overflow-visible',
-    )
-    expect(surface.firstElementChild).toHaveClass('overflow-visible')
+    expect(surface).toHaveClass('agx-comp')
+    expect(surface.querySelector('.agx-comp__rail')).not.toBeNull()
   })
 
   it('keeps Stop visible while submitting a provider-native active action', () => {

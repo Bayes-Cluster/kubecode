@@ -7,7 +7,27 @@
 import './tokens.css'
 
 export { BlurSwap, type BlurSwapProps } from './blur-swap'
+export {
+  AgxComposer,
+  AgxComposerChip,
+  AgxComposerChips,
+  AgxComposerField,
+  AgxComposerNotices,
+  AgxComposerRail,
+} from './composer'
 export { CommandMenuFeedback, CommandMenuPill, highlightMatch } from './command-menu'
+export {
+  AgxModelPickerOption,
+  AgxModelPickerToggle,
+  AgxModelPickerTrigger,
+} from './model-picker'
+export {
+  AgxPickerEmpty,
+  AgxPickerFill,
+  AgxPickerFoot,
+  AgxPickerGroup,
+  AgxPickerRow,
+} from './picker'
 export { FLIP_DURATION, FLIP_EASING, playFlip, readRect, useFlipGroup, type FlipOptions, type FlipRect } from './flip'
 export { ShimmerBlock, ShimmerText, type ShimmerBlockProps, type ShimmerTextProps } from './shimmer'
 export { CopyAction, type CopyActionProps } from './message-actions'

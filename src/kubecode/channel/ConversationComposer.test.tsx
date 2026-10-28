@@ -190,7 +190,8 @@ describe('ConversationComposer (official Prompt Input, ADR 0242)', () => {
     ]} />)
     fireEvent.change(box(), { target: { value: '@', selectionStart: 1 } })
     const options = await screen.findAllByRole('option')
-    expect(options[0]).toHaveTextContent('GGeneral@generalProject manager')
+    // The row says who the member is: name, handle, then the quiet role line.
+    expect(options[0]).toHaveTextContent('GGeneral@general · Project manager')
     expect(options[0].querySelector('[data-slot="avatar"]')).not.toBeNull()
     expect(options[1]).toHaveTextContent("Can't receive messages yet")
   })

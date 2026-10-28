@@ -844,19 +844,6 @@
   margin: 0;
 }
 
-.kubecode-composer {
-  display: flex;
-  flex: 0 0 auto;
-  flex-direction: column;
-  gap: 6px;
-}
-.kubecode-composer-row {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  justify-content: flex-end;
-}
 .kubecode-composer-controls {
   align-items: center;
   display: flex;
@@ -1582,7 +1569,6 @@
 .kubecode-channel-messages { padding-block-end: var(--ws-space-4); scroll-padding-block-end: var(--ws-space-4); }
 
 /* Empty, the card is one line over its tools (ADR 0240); it grows with the text up to a limit, then scrolls. */
-.kubecode-conversation-dock .kubecode-composer { gap: 2px; }
 
 @media (max-width: 767px) {
   .kubecode-channel-messages { padding-inline: var(--ws-space-3); }
@@ -1691,8 +1677,7 @@
 .kubecode-message-body :is(th, td) { overflow-wrap: normal; word-break: normal; }
 .kubecode-message-action { color: var(--text-secondary); }
 
-/* The composer: the official Prompt Input card, one line over its tools when empty (ADR 0240). */
-.kubecode-composer { display: flex; flex-direction: column; gap: 2px; position: relative; }
+/* The composer's text box: the official Prompt Input's field (ADR 0240). */
 .kubecode-composer-textarea {
   field-sizing: content;
   max-height: min(40dvh, 18rem);

@@ -26,6 +26,7 @@ import type {
   InlineWikilinkSegment,
 } from './inlineWikilinkText'
 import type { InlineWikilinkSuggestion } from './inlineWikilinkSuggestions'
+import { AgxPickerFill } from '@/components/agent-ui'
 import { cn } from '@/lib/utils'
 import type { InlineContextReference, InlineContextSuggestion } from './inlineContext'
 
@@ -184,7 +185,7 @@ export function InlineContextSuggestionList({
       aria-label={label}
       aria-busy={loading}
       aria-live="polite"
-      className="absolute bottom-full left-0 right-0 z-20 mb-1 max-h-64 overflow-y-auto rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-lg"
+      className="agx-pick absolute bottom-full left-0 right-0 z-20 mb-1 max-h-64 overflow-y-auto rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-lg"
       data-testid="composer-context-menu"
       id={id}
       role="listbox"
@@ -195,7 +196,11 @@ export function InlineContextSuggestionList({
         <p className="px-3 py-3 text-sm text-destructive">{errorLabel}</p>
       ) : suggestions.length === 0 ? (
         <p className="px-3 py-3 text-sm text-muted-foreground">{emptyLabel}</p>
-      ) : suggestions.map((suggestion, index) => {
+      ) : (
+        <>
+        {/* The fill glides to the highlighted row; the rows carry no backgrounds. */}
+        <AgxPickerFill />
+        {suggestions.map((suggestion, index) => {
         const Icon = suggestion.kind === 'directory'
           ? Folder
           : suggestion.kind === 'git_diff' ? GitCompare : File
@@ -205,8 +210,8 @@ export function InlineContextSuggestionList({
             id={`${id}-option-${index}`}
             aria-selected={index === selectedIndex}
             className={cn(
-              'flex min-h-11 w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left',
-              index === selectedIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/60',
+              'agx-pick__row flex min-h-11 w-full items-start gap-2 px-2 py-1.5 text-left',
+              !enabled && 'cursor-not-allowed opacity-65',
             )}
             key={`${suggestion.kind}:${suggestion.path}`}
             disabled={!enabled}
@@ -233,6 +238,8 @@ export function InlineContextSuggestionList({
           </button>
         )
       })}
+        </>
+      )}
     </div>
   )
 }
@@ -258,9 +265,9 @@ function InlineSuggestionRow({
   return (
     <button
       type="button"
+      aria-selected={selected}
       className={cn(
-        'mx-1 flex w-[calc(100%-0.5rem)] cursor-pointer items-center justify-between rounded-md border-0 bg-transparent px-3 py-2 text-left transition-colors',
-        selected ? 'bg-accent' : 'hover:bg-secondary',
+        'agx-pick__row mx-1 flex w-[calc(100%-0.5rem)] cursor-pointer items-center justify-between rounded-md border-0 bg-transparent px-3 py-2 text-left',
       )}
       onMouseDown={(event) => event.preventDefault()}
       onClick={onSelect}
@@ -318,16 +325,17 @@ export function InlineWikilinkSuggestionList({
 
   return (
     <div
-      className={variant === 'floating'
+      className={cn('agx-pick', variant === 'floating'
         ? 'absolute bottom-full left-0 right-0 z-10 mb-1 max-h-64 overflow-y-auto rounded-lg border border-border bg-popover py-1 shadow-lg'
-        : 'py-1'}
+        : 'py-1')}
       data-testid="wikilink-menu"
     >
+      <AgxPickerFill />
       {suggestions.map((suggestion, index) => (
         <InlineSuggestionRow
           key={`${suggestion.entry.path}:${suggestion.target}`}
-          suggestion={suggestion}
           selected={index === selectedIndex}
+          suggestion={suggestion}
           onHover={() => onHover(index)}
           onSelect={() => onSelect(index)}
           typeEntryMap={typeEntryMap}

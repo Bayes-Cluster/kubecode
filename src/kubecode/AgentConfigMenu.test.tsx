@@ -34,11 +34,6 @@ function openMenu() {
   return screen.getByRole('menu', { name: 'Agent settings' })
 }
 
-function openSub(name: RegExp) {
-  const item = screen.getByRole('menuitem', { name })
-  fireEvent.keyDown(item, { key: 'ArrowRight' })
-}
-
 describe('AgentControlMenu', () => {
   it('keeps mode and every Agent-native option behind one official dropdown menu', () => {
     const onChange = vi.fn()
@@ -57,7 +52,9 @@ describe('AgentControlMenu', () => {
     expect(screen.getByRole('button', { name: 'Agent settings' })).toHaveTextContent('Plan')
     const menu = openMenu()
     expect(menu).toHaveAttribute('data-slot', 'dropdown-menu-content')
-    openSub(/Model/)
+    // The provider's options are disclosed inline, under their group labels —
+    // no sub-menus (ADR 0257, the Model Picker presentation).
+    expect(screen.getByText('Model')).toHaveClass('agx-pick__group-label')
     const model = screen.getByRole('menuitemradio', { name: 'GPT-5.6 Sol' })
     expect(model).toHaveAttribute('aria-checked', 'true')
     fireEvent.click(screen.getByRole('menuitemradio', { name: 'GPT-5.5' }))
@@ -90,7 +87,7 @@ describe('AgentControlMenu', () => {
     expect(onChange).toHaveBeenCalledWith('thinking', true)
   })
 
-  it('keeps a long OpenCode model catalog inside a scrollable sub menu', () => {
+  it('keeps a long OpenCode model catalog scrollable inside the one panel', () => {
     const modelOptions = Array.from({ length: 40 }, (_, index) => ({
       id: `model-${index}`,
       name: `Provider model ${index}`,
@@ -110,12 +107,11 @@ describe('AgentControlMenu', () => {
       />,
     )
 
-    openMenu()
-    openSub(/Provider model 0/)
-
-    const sub = document.querySelector('[data-slot="dropdown-menu-sub-content"]')
-    expect(sub).toHaveTextContent('Model')
-    expect(sub).toHaveClass('overflow-y-auto')
-    expect(screen.getAllByRole('menuitemradio')).toHaveLength(40)
+    const menu = openMenu()
+    // All rows live in the one scrollable panel — forty models plus the two
+    // effort options beside them; the fill rides the panel.
+    expect(screen.getAllByRole('menuitemradio')).toHaveLength(42)
+    expect(screen.getByText('Provider model 0')).toBeInTheDocument()
+    expect(menu.querySelector('.agx-pick__list')).not.toBeNull()
   })
 })

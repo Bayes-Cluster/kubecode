@@ -1744,7 +1744,6 @@ describe('AgentSessionWorkspace', () => {
     expect(await screen.findByText('/review')).toBeInTheDocument()
 
     fireEvent.keyDown(screen.getByRole('button', { name: 'Agent settings' }), { key: 'Enter' })
-    fireEvent.keyDown(screen.getByRole('menuitem', { name: /Manual.*Agent mode/i }), { key: 'ArrowRight' })
     fireEvent.click(screen.getByRole('menuitemradio', { name: /Accept Edits/ }))
     await waitFor(() => expect(getSessionState).toHaveBeenCalledTimes(2))
 
@@ -2055,7 +2054,7 @@ describe('AgentSessionWorkspace', () => {
     const settings = await screen.findByRole('button', { name: 'Agent settings' })
     expect(settings).toBeEnabled()
     fireEvent.keyDown(settings, { key: 'Enter' })
-    expect(screen.getByRole('menuitem', { name: /Manual.*Permission/i })).not.toHaveAttribute('data-disabled')
+    expect(screen.getByRole('menuitemradio', { name: 'Manual' })).not.toHaveAttribute('data-disabled')
   })
 
   it('shows only distinct Agent-native controls with visible labels', async () => {
@@ -2139,8 +2138,10 @@ describe('AgentSessionWorkspace', () => {
 
     fireEvent.keyDown(settings, { key: 'Enter' })
     expect(screen.queryByText('Permission')).not.toBeInTheDocument()
-    expect(screen.getByRole('menuitem', { name: /Default.*Model/i })).toBeInTheDocument()
-    fireEvent.keyDown(screen.getByRole('menuitem', { name: /Manual.*Agent mode/i }), { key: 'ArrowRight' })
+    // The model catalog and the mode options are disclosed inline, under
+    // their own group labels (ADR 0257, the Model Picker presentation).
+    expect(screen.getByText('Model')).toHaveClass('agx-pick__group-label')
+    expect(screen.getAllByRole('menuitemradio', { name: 'Default' }).length).toBeGreaterThan(0)
     expect(screen.getByText('Automatically accept file edits')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('menuitemradio', { name: /Accept Edits/ }))
     await waitFor(() => {
@@ -2185,7 +2186,6 @@ describe('AgentSessionWorkspace', () => {
     const settings = await screen.findByRole('button', { name: 'Agent settings' })
     expect(settings).toHaveTextContent("Don't Ask")
     fireEvent.keyDown(settings, { key: 'Enter' })
-    fireEvent.keyDown(screen.getByRole('menuitem', { name: /Don't Ask.*Agent mode/i }), { key: 'ArrowRight' })
     fireEvent.click(screen.getByRole('menuitemradio', { name: 'Plan Mode' }))
 
     expect(await screen.findByText('ACP session could not reconnect')).toBeInTheDocument()

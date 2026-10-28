@@ -42,7 +42,8 @@ describe('control matrix (ADR 0227)', () => {
   it('shows the production composer, not a demo-only Prompt Input (ADR 0247)', () => {
     render(<ControlMatrix t={createTranslator('en')} />)
     const official = screen.getByTestId('official-components')
-    const composers = official.querySelectorAll('.kubecode-composer')
+    // The channel composer presents through the agent-ui card (ADR 0257).
+    const composers = official.querySelectorAll('.agx-comp')
     expect(composers).toHaveLength(2)
     for (const composer of composers) expect(composer.querySelector('[data-slot="input-group"], form')).not.toBeNull()
     expect(document.querySelector('.kubecode-composer-to')).toBeNull()
