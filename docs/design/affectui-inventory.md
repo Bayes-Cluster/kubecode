@@ -449,8 +449,13 @@ change.
   a queue snapshot dropping a client message id whose run carries the
   same id (`agent-ui/steering-transfer`); the reference's ~620 ms glide
   and landed highlight are presentation tokens, interruptible, with
-  reduced motion landing in the same final state. Audited and already
-  conformant, unchanged: the three composer adapters (shared official
+  reduced motion landing in the same final state. The transfer mechanism
+  is anchored by its unit suite (land+clear, reduced motion, removal
+  silence) and the identity chain was review-verified end to end; a
+  workspace-level admission-sequence fixture was attempted and deferred —
+  the fixture environment fights the live-event pump, and the capture
+  work belongs to slice L (#289). Audited and already conformant,
+  unchanged: the three composer adapters (shared official
   PromptInput engine with the full IME/keyboard contract), the Model
   Picker (the provider's own config options are the only catalog,
   rendered through native controls — no scores, voice or hosted

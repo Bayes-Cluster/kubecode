@@ -1251,6 +1251,7 @@ describe('AgentSessionWorkspace', () => {
     })
   })
 
+
   it('keeps unknown slash text on the ordinary visible prompt path', async () => {
     sessionStorage.setItem('kubecode:session-draft:session-1', '/unknown')
     const startRun = vi.fn().mockImplementation((

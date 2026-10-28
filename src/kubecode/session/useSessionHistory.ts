@@ -94,7 +94,7 @@ type UseSessionHistoryOptions = {
   /** A queued prompt's confirmed receipt appeared: the client message id,
    * observed from explicit identity (run.client_message_id), for the
    * steering transfer (ADR 0257, slice E1). */
-  onSteeringConfirmation?: (clientMessageId: string) => void
+  onSteeringConfirmation?: (clientMessageId: string, runId: string) => void
   conversation: Conversation | null
   conversationId: string | null
   directTeammateChatDisabled: boolean
@@ -151,6 +151,12 @@ export function useSessionHistory({
   onRunTerminalRef.current = onRunTerminal
   const onSteeringConfirmationRef = useRef(onSteeringConfirmation)
   onSteeringConfirmationRef.current = onSteeringConfirmation
+  // Queue client ids the snapshot dropped before their run became visible
+  // (the server publishes the snapshot before the run starts on every
+  // admission path). Each entry waits in `commit` for the run to attach;
+  // entries older than the window are pruned as plain removals.
+  const pendingSteeringRef = useRef(new Map<string, number>())
+  const STEERING_PENDING_WINDOW_MS = 30_000
 
   const activeRun = Boolean(run && ACTIVE_RUN_STATUSES.has(run.status))
   const historyConversationId = viewRevisionId ?? conversation?.id ?? null
@@ -192,6 +198,16 @@ export function useSessionHistory({
             ? { ...current, ...nextRun }
             : nextRun
       ))
+      // Steering transfer, phase 2 (ADR 0257, slice E1): the run carrying a
+      // pending queue client id attached — explicit identity, so its receipt
+      // row (data-message-id = the run's own id) may glide from the queue
+      // row's last box.
+      const confirmation = onSteeringConfirmationRef.current
+      if (confirmation && nextRun.client_message_id
+        && pendingSteeringRef.current.has(nextRun.client_message_id)) {
+        pendingSteeringRef.current.delete(nextRun.client_message_id)
+        confirmation(nextRun.client_message_id, nextRun.id)
+      }
       if (hydratingRef.current || !onRunTerminalRef.current) continue
       const wasActiveOrNew = !previous.runs[runId]
         || ACTIVE_RUN_STATUSES.has(previous.runs[runId].status)
@@ -473,22 +489,22 @@ export function useSessionHistory({
       setPendingPermission,
       setRun,
       setPromptQueue: (items) => {
-        // Steering confirmations (ADR 0257, slice E1): a client id the
-        // snapshot dropped, whose run carries the same id, is an explicit
-        // confirmation — the receipt may glide from the queue row.
+        // Steering transfer, phase 1 (ADR 0257, slice E1): a client id the
+        // snapshot dropped becomes pending; phase 2 fires in `commit` when
+        // the run carrying that id attaches. Disappearance without such a
+        // run is plain removal and plays nothing.
         const previous = promptQueueRef.current
         promptQueueRef.current = items
-        const confirm = onSteeringConfirmationRef.current
-        if (confirm) {
+        const now = Date.now()
+        for (const [cid, queuedAt] of pendingSteeringRef.current) {
+          if (now - queuedAt > STEERING_PENDING_WINDOW_MS) pendingSteeringRef.current.delete(cid)
+        }
+        if (onSteeringConfirmationRef.current) {
           for (const item of previous) {
             const cid = item.client_message_id
-            if (!cid || items.some((candidate) => candidate.client_message_id === cid)) continue
-            // The receipt row's data-message-id is the run's own id (the
-            // reconcile swaps the optimistic message for it).
-            const run = Object.values(kernelRef.current.runs).find(
-              (candidate) => candidate.client_message_id === cid,
-            )
-            if (run) confirm(run.id)
+            if (!cid || pendingSteeringRef.current.has(cid)) continue
+            if (items.some((candidate) => candidate.client_message_id === cid)) continue
+            pendingSteeringRef.current.set(cid, now)
           }
         }
         setPromptQueue(items)

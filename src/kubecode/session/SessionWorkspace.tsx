@@ -172,7 +172,7 @@ export function AgentSessionWorkspace({
   const history = useSessionHistory({
     api,
     beginSessionStateRequest: sessionState.beginSessionStateRequest,
-    onSteeringConfirmation: (clientMessageId) => steering.request(clientMessageId),
+    onSteeringConfirmation: (_clientMessageId, runId) => steering.request(runId),
     onRunTerminal: (cause) => {
       // Convergence surfacing (#93): quiet for cancellations, errors for
       // resource/refusal failures. Copy is localized; payloads carry no
