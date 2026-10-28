@@ -498,8 +498,12 @@ change.
     files) vs the 211-file planning baseline: +13 new (ten agent-ui
     components, the AgentUiMatrix gallery section, DecisionCard, the
     renamed system-messages.tsx), −1 renamed away (SystemMessages.tsx →
-    system-messages.tsx, 100% similarity). Every new file has an owner,
-    disposition and ledger evidence; nothing was lost to a rename.
+    system-messages.tsx — a near-pure rename: only the toaster host
+    import swapped, git rename detection 87%). None of the + files has a
+    file-inventory owner row (the table is the planning snapshot); each
+    is owned instead by its cataloged reference row, ADR 0257's layer
+    ownership and the slice notes in this ledger. Nothing was lost to
+    the rename.
   - **Catalog recheck**: the 124 dispositions above are unchanged from
     the planning snapshot; every slice's audit re-verified its rows
     against the code at merge time (this ledger's per-slice notes).
