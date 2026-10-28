@@ -1,0 +1,81 @@
+/* ADR 0257, the affectUI "Agent Plan" presentation (Clean, 2026-10-26): one
+   hairline rail through the status markers; the active entry emphasized.
+   Colour from the tokens. */
+
+.agx-plan {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+}
+
+.agx-plan__row {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  padding: 4px 0 4px 0;
+  color: var(--agx-text);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+/* The rail: one hairline joining the markers, drawn on every row but the
+   last, through the marker column. */
+.agx-plan__row:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  top: 26px;
+  bottom: -6px;
+  left: 9px;
+  width: 1px;
+  background: var(--agx-line-strong);
+}
+
+.agx-plan__marker {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  background: var(--agx-surface);
+  box-shadow: 0 0 0 1px var(--agx-line-strong);
+  color: var(--agx-faint);
+  align-self: flex-start;
+}
+
+.agx-plan__marker svg {
+  width: 12px;
+  height: 12px;
+}
+
+.agx-plan__row[data-status='completed'] .agx-plan__marker {
+  color: var(--agx-success);
+  box-shadow: 0 0 0 1px var(--feedback-success-bg);
+}
+
+.agx-plan__row[data-status='in_progress'] .agx-plan__marker {
+  color: var(--agx-solid);
+  box-shadow: 0 0 0 1px var(--agx-accent-soft);
+}
+
+.agx-plan__row[data-status='in_progress'] .agx-plan__content {
+  color: var(--agx-ink);
+  font-weight: 500;
+}
+
+.agx-plan__content {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agx-plan .agx-plan__row {
+    transition: none;
+  }
+}

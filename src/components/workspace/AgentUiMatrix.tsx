@@ -5,6 +5,7 @@ import {
   CommandMenuFeedback,
   CommandMenuPill,
   CopyAction,
+  PlanRail,
   highlightMatch,
   SegmentedControl,
   ShimmerBlock,
@@ -13,9 +14,10 @@ import {
   Ticker,
   ThinkingLoader,
 } from '@/components/agent-ui'
+import { AiActionCard } from '@/components/AiActionCard'
 import { Button } from '@/components/ui/button'
 import { Command, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
-import type { Translator } from '@/lib/i18n'
+import type { AppLocale, Translator } from '@/lib/i18n'
 
 function Section({ children, title }: { children: ReactNode; title: string }) {
   const id = useId()
@@ -45,7 +47,7 @@ const PHASES = ['kubecode.matrix.sample.thinkingPhase', 'kubecode.matrix.sample.
  * stand-in for a real event, never a timer. The toast presentation is not
  * shown here: its host is global and stays the app's one Sonner mount.
  */
-export function AgentUiMatrix({ t }: { t: Translator }) {
+export function AgentUiMatrix({ locale = 'en', t }: { locale?: AppLocale; t: Translator }) {
   const [phase, setPhase] = useState(0)
   const [done, setDone] = useState(false)
   const [count, setCount] = useState(128)
@@ -170,6 +172,45 @@ export function AgentUiMatrix({ t }: { t: Translator }) {
                 state: { tone: 'loading', label: t('kubecode.reference.checking') },
               },
             ]}
+          />
+        </div>
+      </Row>
+      <Row label={t('kubecode.matrix.state.busy')}>
+        {/* The session's production tool card: running and done, the glyph
+            resolving between them (ADR 0257, slice E2). */}
+        <AiActionCard
+          expanded={false}
+          label="read_file src/kubecode/session/sessionModel.ts"
+          locale={locale}
+          status="pending"
+          tool="read_file"
+          onToggle={() => undefined}
+        />
+        <AiActionCard
+          expanded
+          input='{"path": "src/kubecode/session/sessionModel.ts"}'
+          label="read_file src/kubecode/session/sessionModel.ts"
+          locale="en"
+          output="export type SessionPlanEntry = {...}"
+          status="done"
+          tool="read_file"
+          onToggle={() => undefined}
+        />
+      </Row>
+      <Row label={t('kubecode.matrix.state.default')}>
+        <div className="kubecode-control-matrix-narrow">
+          <PlanRail
+            aria-label={t('kubecode.agentPlan')}
+            entries={[
+              { content: t('kubecode.matrix.sample.viewList'), status: 'completed' },
+              { content: t('kubecode.matrix.sample.viewBoard'), status: 'in_progress' },
+              { content: t('kubecode.matrix.sample.viewChart'), status: 'pending' },
+            ]}
+            statusLabels={{
+              completed: t('kubecode.status.plan.completed'),
+              in_progress: t('kubecode.status.plan.inProgress'),
+              pending: t('kubecode.status.plan.pending'),
+            }}
           />
         </div>
       </Row>

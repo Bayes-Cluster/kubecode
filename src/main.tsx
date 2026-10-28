@@ -32,7 +32,7 @@ createRoot(document.getElementById('root')!).render(
     <TooltipProvider>
       {matrix ? (
         <Suspense fallback={null}>
-          <ControlMatrix t={createTranslator(matrix.locale)} />
+          <ControlMatrix locale={matrix.locale} t={createTranslator(matrix.locale)} />
         </Suspense>
       ) : prototypes ? (
         <Suspense fallback={null}>

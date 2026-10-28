@@ -33,7 +33,6 @@ import {
   EmptyTitle,
 } from '@/components/ui/empty'
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '@/components/ui/input-group'
-import { Item, ItemContent, ItemGroup, ItemMedia, ItemTitle } from '@/components/ui/item'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 import type { Translator } from '@/lib/i18n'
@@ -47,6 +46,7 @@ import { resolveFileIcon } from './icons/resolveFileIcon'
 import { GIT_STATE_ICONS, type GitState } from './icons/statusIcons'
 import type { SessionPlanEntry } from './AgentSessionWorkspace'
 import type { WorkspaceConnectionState } from './useWorkspaceEventStream'
+import { PlanRail } from '@/components/agent-ui'
 import { PathPicker, type PathPickerRow } from './PathPicker'
 import { ProjectFilePicker } from './ProjectFilePicker'
 import { ProjectFileTree } from './ProjectFileTree'
@@ -531,28 +531,21 @@ export function ContextWorkbench({
               }}
               section="plan"
             >
-              <ItemGroup className="p-1" role="list">
-                {planEntries.map((entry, index) => (
-                  <Item
-                    data-priority={entry.priority}
-                    data-status={entry.status}
-                    key={`${index}-${entry.content}`}
-                    role="listitem"
-                    size="sm"
-                  >
-                    <ItemMedia aria-hidden="true">
-                      <Icon role="status" size="secondary" source={PLAN_STATUS_ICONS[entry.status].Icon} />
-                    </ItemMedia>
-                    <ItemContent>
-                      {/* The glyph is drawn for the eye; the status is said in words. */}
-                      <ItemTitle className="font-normal">
-                        <span className="sr-only">{t(PLAN_STATUS_ICONS[entry.status].labelKey)}: </span>
-                        {entry.content}
-                      </ItemTitle>
-                    </ItemContent>
-                  </Item>
-                ))}
-              </ItemGroup>
+              {/* The shared read-only plan rail (ADR 0257, slice E2): one
+                  hairline through the markers, the status said in words. */}
+              <PlanRail
+                aria-label={t('kubecode.agentPlan')}
+                entries={planEntries.map((entry) => ({
+                  content: entry.content,
+                  priority: entry.priority || undefined,
+                  status: entry.status,
+                }))}
+                statusLabels={{
+                  completed: t(PLAN_STATUS_ICONS.completed.labelKey),
+                  in_progress: t(PLAN_STATUS_ICONS.in_progress.labelKey),
+                  pending: t(PLAN_STATUS_ICONS.pending.labelKey),
+                }}
+              />
             </ExplorerSection>
           )}
           <ExplorerSection

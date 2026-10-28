@@ -59,7 +59,7 @@ function Captioned({ entry, role, t }: { entry: WorkspaceIconEntry; role: 'navig
  * Workspace shell, so both themes, keyboard focus, accessible names, long
  * translations, and touch targets can be checked in one place.
  */
-export function ControlMatrix({ t }: { t: Translator }) {
+export function ControlMatrix({ locale, t }: { locale: AppLocale; t: Translator }) {
   const reasonId = useId()
   const [paused, setPaused] = useState(false)
   const [cited, setCited] = useState(true)
@@ -314,7 +314,7 @@ export function ControlMatrix({ t }: { t: Translator }) {
       </Section>
 
       <OfficialComponentMatrix t={t} />
-      <AgentUiMatrix t={t} />
+      <AgentUiMatrix locale={locale} t={t} />
     </main>
   )
 }
