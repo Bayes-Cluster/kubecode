@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { createTranslator } from '@/lib/i18n'
 
-import { SystemMessageProvider } from '../SystemMessages'
+import { SystemMessageProvider } from '../system-messages'
 import { useNotificationOnboardingToast } from './useNotificationOnboardingToast'
 
 const t = createTranslator('en')

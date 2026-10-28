@@ -54,7 +54,7 @@ import {
   type TerminalInfo,
 } from '../api'
 import { TerminalWorkspace, type TerminalContextSource } from '../TerminalWorkspace'
-import { SystemMessageProvider } from '../SystemMessages'
+import { SystemMessageProvider } from '../system-messages'
 import { WorkspaceNotificationBridge } from '../WorkspaceNotificationBridge'
 import type { PreferenceStorage } from '../preferenceStorage'
 import {

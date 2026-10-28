@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 import { Button } from '@/components/ui/button'
 
-import { SystemMessageProvider } from './SystemMessages'
+import { SystemMessageProvider } from './system-messages'
 import { useSystemMessages } from './systemMessages'
 
 function MessagePublisher() {
