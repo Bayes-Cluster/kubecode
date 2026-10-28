@@ -1,8 +1,7 @@
 import { ShieldAlert } from 'lucide-react'
-import { type RefObject, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import {
-  Confirmation,
   ConfirmationAction,
   ConfirmationActions,
   ConfirmationRequest,
@@ -14,6 +13,8 @@ import type { Translator } from '@/lib/i18n'
 import type { PendingOption } from '../api'
 import { permissionChoiceLabel } from '../session/sessionModel'
 import { isGone } from './attentionContext'
+import { DecisionCard } from './DecisionCard'
+import { rideFocusThrough } from './decisionFocus'
 import { PromptOutcome } from './PromptOutcome'
 
 export type PermissionPromptProps = {
@@ -43,16 +44,12 @@ export function PermissionPrompt({ deadlineMs, heading, onGone, onResolve, optio
   const [outcome, setOutcome] = useState<'failed' | 'gone' | null>(null)
   const title = heading ?? t('kubecode.permissionRequired')
   const rootRef = useRef<HTMLDivElement>(null)
-  useFocusHandoff(rootRef)
   const resolve = async (optionId: string) => {
     if (busy || resolving) return
     // The morph unmounts the option buttons: if one of them holds focus, it
-    // rides the card's root through the collapse, so focus is preserved and
-    // the removal handoff can still move it deliberately (ADR 0257 §7).
-    if (rootRef.current?.contains(document.activeElement)
-      && document.activeElement instanceof HTMLButtonElement) {
-      rootRef.current.focus()
-    }
+    // rides the card's root through the collapse (DecisionCard), so focus
+    // is preserved and the removal handoff can still move it deliberately.
+    rideFocusThrough(rootRef)
     setBusy(optionId)
     setOutcome(null)
     try {
@@ -74,23 +71,19 @@ export function PermissionPrompt({ deadlineMs, heading, onGone, onResolve, optio
     // Once answered and waiting for the authoritative snapshot (ADR 0257, slice D),
     // the card collapses to its outcome row — the removal follows the snapshot,
     // never the animation.
-    <Confirmation
-      approval={{ id: requestId }}
-      aria-label={`${title}: ${tool}`}
+    <DecisionCard
+      attentionKey={requestId}
       className="outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-      data-focus-key={`permission:${requestId}`}
-      data-testid="permission-queue-card"
-      data-resolving={resolving || undefined}
-      role="group"
-      state="approval-requested"
-      tabIndex={0}
-      ref={rootRef}
+      focusKeyPrefix="permission"
+      label={`${title}: ${tool}`}
       onKeyDown={(event) => {
         // 1–9 keyboard option select (#111).
         const digit = Number.parseInt(event.key, 10)
         if (!Number.isNaN(digit) && digit >= 1 && digit <= options.length) void resolve(options[digit - 1].id)
       }}
+      testId="permission-queue-card"
     >
+      <div data-resolving={resolving || undefined}>
       <ConfirmationTitle className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <ShieldAlert aria-hidden className="size-4 shrink-0 text-foreground" />
         <strong className="text-foreground [overflow-wrap:anywhere]">{title}</strong>
@@ -131,7 +124,8 @@ export function PermissionPrompt({ deadlineMs, heading, onGone, onResolve, optio
         </ConfirmationActions>
       )}
       <PromptOutcome outcome={outcome} resolving={resolving} t={t} />
-    </Confirmation>
+      </div>
+    </DecisionCard>
   )
 }
 
@@ -139,22 +133,6 @@ export function PermissionPrompt({ deadlineMs, heading, onGone, onResolve, optio
  * When the prompt holding focus goes (answered, timed out), focus moves to the
  * next permission prompt, or else the composer, instead of falling to <body> (#229).
  */
-function useFocusHandoff(rootRef: RefObject<HTMLDivElement | null>) {
-  useLayoutEffect(() => {
-    const root = rootRef.current
-    return () => {
-      if (!root || !root.contains(document.activeElement)) return
-      const doc = root.ownerDocument
-      window.setTimeout(() => {
-        if (doc.activeElement && doc.activeElement !== doc.body) return
-        const next = Array.from(doc.querySelectorAll<HTMLElement>('[data-focus-key^="permission:"]')).find((node) => node !== root && node.isConnected)
-        const target = next ?? doc.querySelector<HTMLElement>('.kubecode-composer-textarea')
-        target?.focus()
-      }, 0)
-    }
-  }, [rootRef])
-}
-
 function remainingSeconds(deadlineMs: number): number {
   return Math.max(0, Math.ceil((deadlineMs - Date.now()) / 1000))
 }
