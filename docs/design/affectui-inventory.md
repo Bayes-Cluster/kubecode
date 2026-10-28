@@ -493,6 +493,18 @@ change.
   reference resolver remains the nonvisual authority. The reference's
   editable spreadsheet and date-range picker stay out (read-only
   resource model). The walkthrough evidence defers to slice L (#289).
+- Slice J (#287): audited against Agent Tree/Inbox, Agent Chat and the
+  Autonomy Dial's grouping, and recorded as conformant — roster rows are
+  official Items with resolving said in words and two-step removal
+  confirmations (UI record only; the server's removeMember never touches
+  directories or provider history); team tasks use the official
+  AlertDialog; `TeamPermissionView` renders exactly the options each
+  provider advertises (with a yolo-unavailable note for non-OpenCode
+  agents) — no universal three-level dial, time-limited grants, auto-
+  execution rules or Revoke; member DMs stay private and team overviews
+  keep actual run states. Where the server provides no parentage, the
+  roster renders as a list (E2's tree stays available for real
+  relationships). Walkthrough evidence defers to slice L (#289).
 - Slice G (#284): the board audited against the Task Board reference and
   recorded as conformant — dense container-query columns, card facts
   (lifecycle, condition, workers, progress, last event), empty lanes, the
