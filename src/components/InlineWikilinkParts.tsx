@@ -208,11 +208,9 @@ export function InlineContextSuggestionList({
         return (
           <button
             id={`${id}-option-${index}`}
+            aria-disabled={enabled ? undefined : true}
             aria-selected={index === selectedIndex}
-            className={cn(
-              'agx-pick__row flex min-h-11 w-full items-start gap-2 px-2 py-1.5 text-left',
-              !enabled && 'cursor-not-allowed opacity-65',
-            )}
+            className="agx-pick__row w-full text-left"
             key={`${suggestion.kind}:${suggestion.path}`}
             disabled={!enabled}
             onClick={() => enabled && onSelect(index)}
@@ -265,10 +263,8 @@ function InlineSuggestionRow({
   return (
     <button
       type="button"
-      aria-selected={selected}
-      className={cn(
-        'agx-pick__row mx-1 flex w-[calc(100%-0.5rem)] cursor-pointer items-center justify-between rounded-md border-0 bg-transparent px-3 py-2 text-left',
-      )}
+      data-selected={selected ? '' : undefined}
+      className="agx-pick__row mx-1 w-[calc(100%-0.5rem)] justify-between text-left"
       onMouseDown={(event) => event.preventDefault()}
       onClick={onSelect}
       onMouseEnter={onHover}

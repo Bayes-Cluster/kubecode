@@ -132,13 +132,15 @@
   transition: transform 280ms var(--agx-ease);
 }
 
-.agx-mpick__toggle[data-state='checked'] .agx-mpick__switch,
-.agx-mpick__toggle[aria-checked='true'] .agx-mpick__switch {
+/* The state lives on the engine row (the Radix checkbox item carries
+   data-state and aria-checked); the switch inside it only draws it. */
+[data-state='checked'] .agx-mpick__switch,
+[aria-checked='true'] .agx-mpick__switch {
   background: var(--agx-solid);
 }
 
-.agx-mpick__toggle[data-state='checked'] .agx-mpick__switch::after,
-.agx-mpick__toggle[aria-checked='true'] .agx-mpick__switch::after {
+[data-state='checked'] .agx-mpick__switch::after,
+[aria-checked='true'] .agx-mpick__switch::after {
   transform: translateX(10px);
 }
 
@@ -164,8 +166,8 @@
     height: 16px;
   }
 
-  .agx-mpick__toggle[data-state='checked'] .agx-mpick__switch::after,
-  .agx-mpick__toggle[aria-checked='true'] .agx-mpick__switch::after {
+  [data-state='checked'] .agx-mpick__switch::after,
+  [aria-checked='true'] .agx-mpick__switch::after {
     transform: translateX(14px);
   }
 }

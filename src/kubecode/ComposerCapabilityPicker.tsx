@@ -115,10 +115,7 @@ export function ComposerCapabilityPicker({
               aria-describedby={!item.enabled ? reasonId : undefined}
               aria-disabled={!item.enabled}
               aria-selected={index === selectedIndex}
-              className={cn(
-                'agx-pick__row min-h-12 w-full items-start text-left',
-                !item.enabled && 'cursor-not-allowed opacity-65',
-              )}
+              className="agx-pick__row w-full text-left"
               disabled={!item.enabled}
               id={`${id}-option-${index}`}
               key={item.id}

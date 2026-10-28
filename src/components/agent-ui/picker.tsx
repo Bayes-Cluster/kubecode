@@ -54,12 +54,14 @@ export function AgxPickerFill({
     // The first box lands one frame in; the fill fades in anyway.
     const frame = requestAnimationFrame(measure)
     // Selection flips attributes without changing the DOM structure;
-    // observe attribute and size changes rather than re-rendering rows.
+    // observe attribute and childList changes rather than re-rendering
+    // rows (a disjoint candidate set swaps the selected node itself).
     const attributes = [...selector.matchAll(/\[([a-z-]+)(?:=[^\]]*)?\]/gi)].map((match) => match[1])
     const observer = new MutationObserver(measure)
     observer.observe(list, {
       attributeFilter: attributes.length > 0 ? attributes : ['data-selected', 'aria-selected'],
       attributes: true,
+      childList: true,
       subtree: true,
     })
     const resize = new ResizeObserver(measure)

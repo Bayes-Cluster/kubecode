@@ -7,6 +7,10 @@
    selection, filtering and keyboard semantics. */
 
 .agx-pick {
+  /* Motion, on the reference's own scale: the fill snaps between rows, the
+     check springs in, both instant under reduced motion. */
+  --agx-pick-glide: 90ms;
+  --agx-pick-spring: 380ms;
   position: relative;
   min-width: 0;
   font-size: 13px;
@@ -63,8 +67,8 @@
   opacity: 0;
   pointer-events: none;
   transition:
-    transform 90ms ease-out,
-    height 90ms ease-out,
+    transform var(--agx-pick-glide) ease-out,
+    height var(--agx-pick-glide) ease-out,
     opacity 140ms ease;
 }
 
@@ -121,11 +125,7 @@
   color: var(--agx-faint);
 }
 
-.agx-pick mark {
-  border-radius: 3px;
-  background: var(--agx-accent-soft);
-  color: inherit;
-}
+/* Matched text is marked by `highlightMatch` (the command menu's skin). */
 
 /* The chosen row's check pops in (the reference's spring). */
 .agx-pick__check {
@@ -148,7 +148,7 @@
   transform: none;
   transition:
     opacity 160ms ease,
-    transform 380ms var(--agx-ease);
+    transform var(--agx-pick-spring) var(--agx-ease);
 }
 
 /* The quiet footer: count left, keys right. */

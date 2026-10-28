@@ -46,10 +46,12 @@ describe('AgxComposerField', () => {
     expect(area).toHaveAttribute('data-autosize')
     // jsdom lays nothing out: scrollHeight reports 0, so the floor holds.
     expect(area.style.height).toBe('40px')
-    expect(area.style.overflowY).toBe('hidden')
+    // Scrolling stays the stylesheet's business: a shorter viewport's own
+    // max-height may clamp below the measured height.
+    expect(area.style.overflowY).toBe('')
 
-    // Growing text is measured and presented, until the cap turns the
-    // field into a scroller.
+    // Growing text is measured and presented, until the cap bounds the
+    // presented height.
     Object.defineProperty(area, 'scrollHeight', { value: 96, configurable: true })
     rerender(
       <AgxComposerField min={40} max={72} value="one\ntwo\nthree\nfour">
@@ -57,7 +59,7 @@ describe('AgxComposerField', () => {
       </AgxComposerField>,
     )
     expect(area.style.height).toBe('72px')
-    expect(area.style.overflowY).toBe('auto')
+    expect(area.style.overflowY).toBe('')
   })
 
   it('presents the whole measurement when nothing caps it', () => {
@@ -74,7 +76,6 @@ describe('AgxComposerField', () => {
       </AgxComposerField>,
     )
     expect(area.style.height).toBe('96px')
-    expect(area.style.overflowY).toBe('hidden')
   })
 })
 

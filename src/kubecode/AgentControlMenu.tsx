@@ -66,7 +66,11 @@ function SelectRows({
         <div className="agx-pick__group-label">{label}</div>
       </DropdownMenuLabel>
       {group.options.map((option) => (
-        <DropdownMenuRadioItem className="agx-pick__slot" key={option.id} value={option.id}>
+        <DropdownMenuRadioItem
+          className="agx-pick__slot focus:bg-transparent focus:text-inherit"
+          key={option.id}
+          value={option.id}
+        >
           <AgxModelPickerOption description={option.description ?? undefined} name={option.name} />
         </DropdownMenuRadioItem>
       ))}
@@ -115,7 +119,11 @@ export function AgentControlMenu({
           <AgxPickerFill selector="[data-highlighted]" />
           {mode && (
             modeDisabled ? (
-              <DropdownMenuItem className="agx-pick__slot" disabled title={modeDisabledReason}>
+              <DropdownMenuItem
+              className="agx-pick__slot focus:bg-transparent focus:text-inherit"
+              disabled
+              title={modeDisabledReason}
+            >
                 <AgxModelPickerOption
                   check={<Lock className="agx-mpick__lock" size={14} />}
                   description={t('kubecode.agentMode')}
@@ -130,7 +138,7 @@ export function AgentControlMenu({
           {configs.map((config) => config.type === 'boolean' ? (
             <DropdownMenuCheckboxItem
               checked={config.currentValue}
-              className="agx-pick__slot"
+              className="agx-pick__slot focus:bg-transparent focus:text-inherit"
               key={config.id}
               onCheckedChange={(checked) => onConfigChange(config.id, checked === true)}
               onSelect={(event) => event.preventDefault()}

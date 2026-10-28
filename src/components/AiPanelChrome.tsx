@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from '
 import { ArrowDown, Sparkle } from 'lucide-react'
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import { PromptInputSubmit } from '@/components/ai-elements/prompt-input'
-import { AgxComposer } from '@/components/agent-ui'
+import { AgxComposer, AgxComposerRail } from '@/components/agent-ui'
 import { AiMessage } from './AiMessage'
 import { Button } from '@/components/ui/button'
 import {
@@ -521,13 +521,13 @@ export function AiPanelComposer({
             placeholder={placeholder}
           />}
         </div>
-        <div className="agx-comp__rail">
+        <AgxComposerRail>
           <div className="agx-comp__rail-group">
             {leadingControl}
             {controls}
           </div>
           <div className="agx-comp__rail-end">{sendButton}</div>
-        </div>
+        </AgxComposerRail>
       </AgxComposer>
     </div>
   )

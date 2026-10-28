@@ -465,18 +465,23 @@ change.
   follow-up increment (2026-10-28, same issue): the Chat Composer card
   (`agent-ui/composer` — inset field, animated auto-height, focus state
   on the card, chips, action rail) consumed by the channel composer and
-  the session input; the Combobox grammar (`agent-ui/picker` — gliding
-  row fill, groups, mark, check, footer) on the mention picker, the
-  command suggestions, the capability/context lists and the wikilink
-  menu; and the Model Picker presentation (`agent-ui/model-picker` —
-  trigger pill with glyph and turning chevron, option rows with the
-  provider's own descriptions, switch toggles, sub-menus replaced by
+  the session input; the Combobox grammar as agent-ui primitives
+  (`agent-ui/picker` — the gliding row fill, groups, mark, check,
+  footer), with the fill riding the mention picker, the command
+  suggestions and the control menu through their engines' selection
+  attributes (the engine's own highlight paint stepping aside via
+  call-site utilities), and the full row grammar on the capability,
+  context and wikilink lists; and the Model Picker presentation
+  (`agent-ui/model-picker` — trigger pill with glyph and turning
+  chevron, option rows with the provider's own descriptions, the switch
+  that draws the engine row's checked state, sub-menus replaced by
   inline disclosure). Engines unchanged: the official Prompt Input, cmdk
   and Radix menus keep every keyboard, IME, routing and privacy
   contract; the provider catalog stays the only picker content. Bundle
   delta +0.71 kB gz entry, +1.02 kB gz CSS (cumulative +13.49/+8.27 of
   the §8 budgets). The gallery gained the composer card and the picker
-  states (`#/controls`).
+  states (`#/controls`); two adversarial reviews found the switch state
+  and the fill occlusion dead on arrival, fixed here before merge.
 - Slice D (#280): the answered permission card collapses to its compact
   outcome row while the answer awaits the authoritative snapshot (removal
   follows the snapshot, never the animation); refusals stay audible in

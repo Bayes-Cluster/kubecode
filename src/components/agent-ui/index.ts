@@ -10,7 +10,6 @@ export { BlurSwap, type BlurSwapProps } from './blur-swap'
 export {
   AgxComposer,
   AgxComposerChip,
-  AgxComposerChips,
   AgxComposerField,
   AgxComposerNotices,
   AgxComposerRail,

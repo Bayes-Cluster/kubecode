@@ -32,7 +32,7 @@ export function AcpCommandMenu({
   const selected = commands[selectedIndex]
   return (
     <Command
-      className="kubecode-command-suggestions h-auto rounded-lg"
+      className="kubecode-command-suggestions h-auto rounded-lg border shadow-md"
       label={label}
       shouldFilter={false}
       value={selected ? commandKey(selected) : ''}
@@ -48,7 +48,7 @@ export function AcpCommandMenu({
             const disabled = command.ambiguous || command.input.kind === 'unsupported'
             return (
               <CommandItem
-                className="agx-pick__slot"
+                className="agx-pick__slot data-[selected=true]:bg-transparent data-[selected=true]:text-inherit"
                 disabled={disabled}
                 key={commandKey(command)}
                 value={commandKey(command)}

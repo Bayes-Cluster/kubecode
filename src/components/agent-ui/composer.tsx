@@ -82,12 +82,14 @@ export function AgxComposerField({
     if (!area) return
     area.setAttribute('data-autosize', '')
     // Measure the text, not the box: auto returns the field-sizing height
-    // (the engine's own floor), then the measured height takes over.
+    // (the engine's own floor), then the measured height takes over. The
+    // stylesheet's own max-height (a shorter viewport's 40dvh, say) may
+    // still clamp the box below the measured height, so scrolling stays
+    // the stylesheet's business — this never writes overflow.
     area.style.setProperty('height', 'auto')
     const text = Math.max(area.scrollHeight, min ?? 0)
     const height = Math.min(text, max ?? Number.POSITIVE_INFINITY)
     area.style.setProperty('height', `${height}px`)
-    area.style.setProperty('overflow-y', height < text ? 'auto' : 'hidden')
   }, [min, max])
 
   // Compositions update the value too (the engine mirrors them into the
@@ -126,15 +128,6 @@ export function AgxComposerRail({ children, className, ...props }: HTMLAttribute
   )
 }
 
-/** Context chips: the structured draft's references, above the field. */
-export function AgxComposerChips({ children, className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return (
-    <div {...props} className={className ? `agx-comp__chips ${className}` : 'agx-comp__chips'}>
-      {children}
-    </div>
-  )
-}
-
 /** One context chip: the accent glyph, the label, then anything after. */
 export function AgxComposerChip({
   children,
@@ -144,7 +137,7 @@ export function AgxComposerChip({
   ...props
 }: HTMLAttributes<HTMLSpanElement> & {
   accent?: boolean
-  /** The chip's text; truncated, and said in full to assistive tech. */
+  /** The chip's full text, kept for the truncation tooltip. */
   label: string
 }) {
   return (

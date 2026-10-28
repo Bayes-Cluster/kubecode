@@ -30,6 +30,7 @@ import {
   AgxComposerNotices,
   AgxPickerFill,
   AgxPickerRow,
+  highlightMatch,
 } from '@/components/agent-ui'
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -261,7 +262,9 @@ export function ConversationComposer({
               <PromptInputCommandGroup>
                 {candidates.map((option) => (
                   <PromptInputCommandItem
-                    className="agx-pick__slot"
+                    // The fill paints the selection; the engine's own
+                    // highlight steps aside (ADR 0257, the Combobox grammar).
+                    className="agx-pick__slot data-[selected=true]:bg-transparent data-[selected=true]:text-inherit"
                     key={option.id}
                     value={option.id}
                     // Keep focus in the text box while choosing.
@@ -269,6 +272,7 @@ export function ConversationComposer({
                     onSelect={() => choose(option)}
                   >
                     <AgxPickerRow
+                      check={false}
                       hint={[
                         option.identity ? `@${option.handle}` : option.label,
                         option.identity?.roleLabel,
@@ -277,7 +281,10 @@ export function ConversationComposer({
                       ]
                         .filter(Boolean)
                         .join(' · ')}
-                      name={option.identity ? option.label : `@${option.handle}`}
+                      name={highlightMatch(
+                        option.identity ? option.label : `@${option.handle}`,
+                        typing?.query ?? '',
+                      )}
                     >
                       {option.identity && (
                         <MemberAvatar name={option.label} role={option.identity.role} size="sm" />

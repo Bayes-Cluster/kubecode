@@ -312,24 +312,26 @@ export function AgentUiMatrix({ locale = 'en', t }: { locale?: AppLocale; t: Tra
         </div>
         <div className="kubecode-control-matrix-narrow">
           {/* The shared picker presentation (ADR 0257, slice E1): grouped
-              rows under the gliding fill, the chosen check, and the footer. */}
-          <div aria-label={t('kubecode.matrix.sample.mentionLabel')} className="agx-pick rounded-lg border bg-card" role="listbox">
+              rows under the gliding fill, and the switch that draws the
+              engine row's checked state. A visual specimen — no roles: the
+              production pickers carry the real semantics. */}
+          <div className="agx-pick rounded-lg border bg-card">
             <AgxPickerFill />
             <AgxPickerGroup label={t('kubecode.matrix.sample.mentionLabel')}>
-              <div aria-selected="true" className="agx-pick__row" role="option">
+              <div className="agx-pick__row" data-selected="true">
                 <AgxPickerRow hint="@general" name={t('kubecode.matrix.sample.composerLabel')} />
               </div>
-              <div aria-selected="false" className="agx-pick__row" role="option">
+              <div className="agx-pick__row">
                 <AgxPickerRow hint="@analyst" name={t('kubecode.matrix.sample.specialistRole')} />
               </div>
             </AgxPickerGroup>
             <AgxPickerFoot count={`2 · ${t('kubecode.matrix.sample.mentionLabel')}`} />
           </div>
-          <div aria-label={t('kubecode.agentSettings')} className="agx-pick rounded-lg border bg-card" role="group">
-            <div aria-checked="true" className="agx-mpick__toggle" role="menuitemcheckbox">
+          <div className="agx-pick rounded-lg border bg-card">
+            <div className="agx-pick__slot" data-state="checked">
               <AgxModelPickerToggle label={t('kubecode.matrix.sample.sending')} />
             </div>
-            <div aria-checked="false" className="agx-mpick__toggle" role="menuitemcheckbox">
+            <div className="agx-pick__slot">
               <AgxModelPickerToggle label={t('kubecode.matrix.sample.needsSetup')} />
             </div>
           </div>

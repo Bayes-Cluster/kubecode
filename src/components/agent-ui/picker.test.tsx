@@ -1,5 +1,5 @@
 import { render, screen, waitFor } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { AgxPickerEmpty, AgxPickerFill, AgxPickerFoot, AgxPickerGroup, AgxPickerRow } from './picker'
 
@@ -62,6 +62,47 @@ describe('AgxPickerFill', () => {
     )
     rowAt(0, 'Ada')
     await waitFor(() => expect(document.querySelector('.agx-pick__fill')).toHaveAttribute('data-lit'))
+  })
+
+  it('follows a selection that arrives with a freshly rendered row', async () => {
+    render(
+      <div className="agx-pick__list">
+        <AgxPickerFill />
+        <div className="agx-pick__row">
+          <span>Ada</span>
+        </div>
+      </div>,
+    )
+    // A disjoint candidate set swaps the rows themselves, not attributes.
+    const list = document.querySelector('.agx-pick__list') as HTMLElement
+    list.querySelector('.agx-pick__row')?.remove()
+    const born = document.createElement('div')
+    born.className = 'agx-pick__row'
+    born.setAttribute('data-selected', 'true')
+    born.innerHTML = '<span>Grace</span>'
+    Object.defineProperty(born, 'offsetTop', { value: 66, configurable: true })
+    Object.defineProperty(born, 'offsetHeight', { value: 32, configurable: true })
+    list.append(born)
+    await waitFor(() =>
+      expect(document.querySelector('.agx-pick__fill')?.style.transform).toBe('translateY(66px)'),
+    )
+  })
+
+  it('disconnects its observers when it unmounts', async () => {
+    const disconnect = vi.spyOn(MutationObserver.prototype, 'disconnect')
+    const resizeDisconnect = vi.spyOn(ResizeObserver.prototype, 'disconnect')
+    const view = render(
+      <div className="agx-pick__list">
+        <AgxPickerFill />
+        <div className="agx-pick__row" data-selected="true">
+          <span>Ada</span>
+        </div>
+      </div>,
+    )
+    await waitFor(() => expect(document.querySelector('.agx-pick__fill')).toHaveAttribute('data-lit'))
+    view.unmount()
+    expect(disconnect).toHaveBeenCalled()
+    expect(resizeDisconnect).toHaveBeenCalled()
   })
 })
 

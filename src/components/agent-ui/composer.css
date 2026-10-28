@@ -60,21 +60,13 @@
 
 /* Auto-height: the presentation measures the text and animates between the
    measured heights (the reference glides 260ms; the engine's field-sizing
-   snaps). The inline height set by `AgxComposerField` transitions here. */
+   snaps). `AgxComposerField` writes the measured height inline; this only
+   animates it. */
 .agx-comp__field textarea[data-autosize] {
-  height: var(--agx-comp-h, auto);
-  overflow-y: var(--agx-comp-scroll, hidden);
   transition: height var(--agx-dur-base) var(--agx-ease);
 }
 
 /* Context chips above the field: the structured draft and its references. */
-.agx-comp__chips {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 10px 12px 0;
-}
-
 .agx-comp__chip {
   display: inline-flex;
   align-items: center;
