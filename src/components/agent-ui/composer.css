@@ -1,0 +1,150 @@
+/* ADR 0257, the affectUI "Chat Composer" presentation (Clean, captured
+   2026-10-28): one inset card — a hairline body holding a borderless field,
+   context chips above it and one action rail below (tools left, send right).
+   The official Prompt Input stays the engine (ADR 0242); these classes only
+   present it. Colour, radius and motion come from the Kubecode tokens. */
+
+.agx-comp {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-radius: 10px;
+  background: var(--agx-surface);
+  box-shadow: var(--agx-shadow);
+  transition: box-shadow var(--agx-dur-base) var(--agx-ease);
+}
+
+/* The focus state lives on the card: the field itself stays quiet. */
+.agx-comp[data-focused] {
+  box-shadow: var(--agx-shadow-hover);
+  outline: 2px solid var(--agx-focus);
+  outline-offset: -1px;
+}
+
+/* The write region. */
+.agx-comp__field {
+  position: relative;
+  min-width: 0;
+  padding: 10px 12px 2px;
+  cursor: text;
+}
+
+/* The field's textarea: transparent, quiet, the card holds the frame. */
+.agx-comp__field textarea {
+  background: transparent;
+  border: 0;
+  outline: none;
+  box-shadow: none;
+  color: var(--agx-ink);
+  caret-color: var(--agx-solid);
+  resize: none;
+}
+
+.agx-comp__field textarea::placeholder {
+  color: var(--agx-faint);
+  opacity: 1;
+}
+
+/* The session editor is a contenteditable, not a textarea: the same quiet
+   field, presented through the card. */
+.agx-comp [contenteditable] {
+  background: transparent;
+  caret-color: var(--agx-solid);
+  color: var(--agx-ink);
+}
+
+.agx-comp [contenteditable]:focus {
+  outline: none;
+}
+
+/* Auto-height: the presentation measures the text and animates between the
+   measured heights (the reference glides 260ms; the engine's field-sizing
+   snaps). `AgxComposerField` writes the measured height inline; this only
+   animates it. */
+.agx-comp__field textarea[data-autosize] {
+  transition: height var(--agx-dur-base) var(--agx-ease);
+}
+
+/* Context chips above the field: the structured draft and its references. */
+.agx-comp__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  height: 26px;
+  padding: 0 8px 0 6px;
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 0.5px var(--agx-line);
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+  color: var(--agx-text);
+}
+
+.agx-comp__chip[data-accent] > svg,
+.agx-comp__chip[data-accent] > [data-svg] {
+  color: var(--agx-solid);
+}
+
+.agx-comp__chip-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The action rail: tools left, stop and send right. */
+.agx-comp__rail {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 40px;
+  padding: 4px 8px 8px;
+}
+
+.agx-comp__rail-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.agx-comp__rail-end {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+
+/* Notices under the field, above the rail. */
+.agx-comp__notices {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 12px;
+}
+
+/* Touch: every rail control and chip at least a 44px target (ADR 0256). */
+@media (hover: none) and (pointer: coarse) {
+  .agx-comp__rail {
+    min-height: 48px;
+  }
+
+  .agx-comp__rail :is(button, [role='button']) {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .agx-comp__chip {
+    height: 32px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agx-comp,
+  .agx-comp__field textarea[data-autosize] {
+    transition: none;
+  }
+}

@@ -24,13 +24,20 @@ import {
   PromptInputTextarea,
   PromptInputTools,
 } from '@/components/ai-elements/prompt-input'
+import {
+  AgxComposer,
+  AgxComposerField,
+  AgxComposerNotices,
+  AgxPickerFill,
+  AgxPickerRow,
+  highlightMatch,
+} from '@/components/agent-ui'
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { MemberAvatar } from '@/components/workspace/MemberIdentity'
 import { filterMentions, insertMention, mentionQueryAt, type MentionOption } from '@/components/workspace/mentions'
 import { Icon } from '@/kubecode/icons'
 import { WORKSPACE_COMMAND_ICONS } from '@/kubecode/icons/workspaceIcons'
-import { cn } from '@/lib/utils'
 import { useCoarsePointer } from './useCoarsePointer'
 
 export type ConversationComposerProps = {
@@ -153,6 +160,9 @@ export function ConversationComposer({
     setActive(0)
     setNavigated(false)
     requestAnimationFrame(() => {
+      // Same guard as the coarse line break: typing since the insertion
+      // owns the caret now.
+      if (area.current?.value !== text) return
       area.current?.focus()
       area.current?.setSelectionRange(next, next)
     })
@@ -207,7 +217,12 @@ export function ConversationComposer({
         const end = box.selectionEnd ?? start
         const next = `${value.slice(0, start)}\n${value.slice(end)}`
         onChange(next)
-        requestAnimationFrame(() => box.setSelectionRange(start + 1, start + 1))
+        // The deferred caret placement only applies if typing has not moved
+        // on: a keystroke that lands before this frame must stay where the
+        // browser put it, not be yanked back mid-word.
+        requestAnimationFrame(() => {
+          if (box.value === next) box.setSelectionRange(start + 1, start + 1)
+        })
         return
       }
       event.preventDefault()
@@ -230,11 +245,11 @@ export function ConversationComposer({
       }}
     >
     <PopoverAnchor asChild>
-    <div className={cn('kubecode-composer', className)}>
+    <AgxComposer className={className}>
       {menuOpen && (
         <PopoverContent
           align="start"
-          className="w-(--radix-popover-trigger-width) p-0"
+          className="w-(--radix-popover-trigger-width) p-1"
           ref={setMenu}
           side="top"
           // Focus stays in the text box: the list is driven from there.
@@ -250,18 +265,39 @@ export function ConversationComposer({
               if (index >= 0) setActive(index)
             }}
           >
-            <PromptInputCommandList label={mentionLabel ?? label}>
+            <PromptInputCommandList className="agx-pick__list" label={mentionLabel ?? label}>
+              <AgxPickerFill />
               <PromptInputCommandGroup>
                 {candidates.map((option) => (
                   <PromptInputCommandItem
-                   
+                    // The fill paints the selection; the engine's own
+                    // highlight steps aside (ADR 0257, the Combobox grammar).
+                    className="agx-pick__slot data-[selected=true]:bg-transparent data-[selected=true]:text-inherit"
                     key={option.id}
                     value={option.id}
                     // Keep focus in the text box while choosing.
                     onMouseDown={(event) => event.preventDefault()}
                     onSelect={() => choose(option)}
                   >
-                    <MentionRow option={option} />
+                    <AgxPickerRow
+                      check={false}
+                      hint={[
+                        option.identity ? `@${option.handle}` : option.label,
+                        option.identity?.roleLabel,
+                        option.identity?.unavailable,
+                        option.identity ? undefined : option.detail,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                      name={highlightMatch(
+                        option.identity ? option.label : `@${option.handle}`,
+                        typing?.query ?? '',
+                      )}
+                    >
+                      {option.identity && (
+                        <MemberAvatar name={option.label} role={option.identity.role} size="sm" />
+                      )}
+                    </AgxPickerRow>
                   </PromptInputCommandItem>
                 ))}
               </PromptInputCommandGroup>
@@ -271,8 +307,9 @@ export function ConversationComposer({
       )}
       {/* The form never submits on its own: Enter and the send button go through `submit`. */}
       <PromptInput data-testid="conversation-prompt-input" uploadLabel={attachLabel} onSubmit={() => submit()}>
-        {header && <PromptInputHeader className="kubecode-composer-context">{header}</PromptInputHeader>}
+        {header && <PromptInputHeader className="kubecode-composer-context flex flex-col gap-0.5 px-3 pt-2.5">{header}</PromptInputHeader>}
         <PromptInputBody>
+          <AgxComposerField max={192} min={64} value={value}>
           <PromptInputTextarea
             aria-autocomplete={mentions.length > 0 ? 'list' : undefined}
             aria-expanded={mentions.length > 0 ? menuOpen : undefined}
@@ -304,57 +341,40 @@ export function ConversationComposer({
             onKeyUp={(event) => track(event.currentTarget)}
             onSelect={(event) => track(event.currentTarget)}
           />
+          </AgxComposerField>
         </PromptInputBody>
-        <PromptInputFooter className="kubecode-composer-row">
-          <PromptInputTools className="kubecode-composer-controls">
-            {tools}
-            {stop && (
-              <PromptInputButton aria-label={stop.label} size="sm" variant="outline" onClick={stop.onStop}>
-                <Icon role="status" source={WORKSPACE_COMMAND_ICONS.stopRun.Icon} />
-                <span aria-hidden="true" className="pointer-fine:sr-only">{stop.shortLabel ?? stop.label}</span>
-              </PromptInputButton>
-            )}
-          </PromptInputTools>
-          {reason && <span className="sr-only" id={reasonId}>{reason}</span>}
-          <PromptInputSubmit
-            aria-describedby={reason ? reasonId : undefined}
-            aria-label={sendLabel}
-            disabled={!ready}
-            title={sendLabel}
-            type="button"
-            variant={ready ? 'default' : 'ghost'}
-            onClick={submit}
-          >
-            <Icon role="command" source={WORKSPACE_COMMAND_ICONS.send.Icon} />
-          </PromptInputSubmit>
+        <PromptInputFooter className="min-h-10 px-2 pb-2 pt-1">
+          <div className="agx-comp__rail-group">
+            <PromptInputTools className="kubecode-composer-controls">
+              {tools}
+              {stop && (
+                <PromptInputButton aria-label={stop.label} size="sm" variant="outline" onClick={stop.onStop}>
+                  <Icon role="status" source={WORKSPACE_COMMAND_ICONS.stopRun.Icon} />
+                  <span aria-hidden="true" className="pointer-fine:sr-only">{stop.shortLabel ?? stop.label}</span>
+                </PromptInputButton>
+              )}
+            </PromptInputTools>
+          </div>
+          <div className="agx-comp__rail-end">
+            {reason && <span className="sr-only" id={reasonId}>{reason}</span>}
+            <PromptInputSubmit
+              aria-describedby={reason ? reasonId : undefined}
+              aria-label={sendLabel}
+              disabled={!ready}
+              title={sendLabel}
+              type="button"
+              variant={ready ? 'default' : 'ghost'}
+              onClick={submit}
+            >
+              <Icon role="command" source={WORKSPACE_COMMAND_ICONS.send.Icon} />
+            </PromptInputSubmit>
+          </div>
         </PromptInputFooter>
-        {notices && <div className="flex flex-col gap-1 self-stretch px-3 pb-2">{notices}</div>}
+        {notices && <AgxComposerNotices className="pb-2">{notices}</AgxComposerNotices>}
       </PromptInput>
-    </div>
+    </AgxComposer>
     </PopoverAnchor>
     </Popover>
     </TooltipProvider>
-  )
-}
-
-/** One suggestion: who the member is, as everywhere (avatar, name, handle, role in words). */
-function MentionRow({ option }: { option: MentionOption }) {
-  if (!option.identity) {
-    return (
-      <>
-        <strong>@{option.handle}</strong>
-        <span>{option.label}</span>
-        {option.detail && <small className="ms-auto text-muted-foreground">{option.detail}</small>}
-      </>
-    )
-  }
-  return (
-    <>
-      <MemberAvatar name={option.label} role={option.identity.role} size="sm" />
-      <span>{option.label}</span>
-      <strong>@{option.handle}</strong>
-      {option.identity.roleLabel && <small className="ms-auto text-muted-foreground">{option.identity.roleLabel}</small>}
-      {option.identity.unavailable && <small className="text-muted-foreground">{option.identity.unavailable}</small>}
-    </>
   )
 }

@@ -15,9 +15,18 @@ import {
   ThinkingLoader,
 } from '@/components/agent-ui'
 import { AiActionCard } from '@/components/AiActionCard'
+import {
+  AgxComposerChip,
+  AgxModelPickerToggle,
+  AgxPickerFill,
+  AgxPickerFoot,
+  AgxPickerGroup,
+  AgxPickerRow,
+} from '@/components/agent-ui'
 import { Button } from '@/components/ui/button'
 import { Command, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import type { AppLocale, Translator } from '@/lib/i18n'
+import { ConversationComposer } from '@/kubecode/channel/ConversationComposer'
 
 function Section({ children, title }: { children: ReactNode; title: string }) {
   const id = useId()
@@ -56,6 +65,7 @@ export function AgentUiMatrix({ locale = 'en', t }: { locale?: AppLocale; t: Tra
   const [tray, setTray] = useState('board')
   const [commandQuery, setCommandQuery] = useState('')
   const [commandRan, setCommandRan] = useState<string | null>(null)
+  const [draft, setDraft] = useState('')
 
   return (
     <Section title={t('kubecode.matrix.section.agentui')}>
@@ -274,6 +284,60 @@ export function AgentUiMatrix({ locale = 'en', t }: { locale?: AppLocale; t: Tra
           }
           label={t('kubecode.matrix.sample.copyAnswer')}
         />
+      </Row>
+      <Row label={t('kubecode.matrix.state.default')}>
+        {/* The channel composer's production card (ADR 0257, slice E1): the
+            inset field, its chips and the action rail, with the draft held
+            here as the fixture's own state. */}
+        <div className="kubecode-control-matrix-narrow">
+          <ConversationComposer
+            attachLabel={t('kubecode.vocab.command.attachFile')}
+            header={(
+              <AgxComposerChip label={t('kubecode.matrix.sample.changed')}>
+                {t('kubecode.matrix.sample.changed')}
+              </AgxComposerChip>
+            )}
+            label={t('kubecode.matrix.sample.composerLabel')}
+            placeholder={t('kubecode.matrix.sample.composerLabel')}
+            sendLabel={t('kubecode.channel.send')}
+            stop={{
+              label: t('kubecode.matrix.sample.stopAnalyst'),
+              onStop: () => undefined,
+              shortLabel: t('kubecode.vocab.command.stopRun'),
+            }}
+            value={draft}
+            onChange={setDraft}
+            onSend={() => undefined}
+          />
+        </div>
+        <div className="kubecode-control-matrix-narrow">
+          {/* The shared picker presentation (ADR 0257, slice E1): grouped
+              rows under the gliding fill, and the switch that draws the
+              engine row's checked state. A visual specimen — no roles: the
+              production pickers carry the real semantics. */}
+          <div className="agx-pick rounded-lg border bg-card">
+            <AgxPickerFill />
+            <AgxPickerGroup label={t('kubecode.matrix.sample.mentionLabel')}>
+              {/* Short sample words: the narrow samples wrap instead of
+                  clipping, so the fixture shows no ellipsis. */}
+              <div className="agx-pick__row" data-selected="true">
+                <AgxPickerRow hint="@general" name={t('kubecode.matrix.sample.viewBoard')} />
+              </div>
+              <div className="agx-pick__row">
+                <AgxPickerRow hint="@analyst" name={t('kubecode.matrix.sample.viewChart')} />
+              </div>
+            </AgxPickerGroup>
+            <AgxPickerFoot count="2" />
+          </div>
+          <div className="agx-pick rounded-lg border bg-card">
+            <div className="agx-pick__slot" data-state="checked">
+              <AgxModelPickerToggle label={t('kubecode.matrix.sample.sending')} />
+            </div>
+            <div className="agx-pick__slot">
+              <AgxModelPickerToggle label={t('kubecode.matrix.sample.needsSetup')} />
+            </div>
+          </div>
+        </div>
       </Row>
     </Section>
   )

@@ -1,26 +1,38 @@
-import { ChevronDown, Lock } from 'lucide-react'
-
 import { AiAgentIcon } from '@/components/AiAgentIcon'
+import {
+  AgxModelPickerOption,
+  AgxModelPickerToggle,
+  AgxModelPickerTrigger,
+  AgxPickerFill,
+} from '@/components/agent-ui'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
-  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { ChevronDown, Lock } from 'lucide-react'
 import type { Translator } from '@/lib/i18n'
 
 import type { AgentId } from './api'
 import type { NativeSessionConfig, NativeSessionSelect } from './agentSessionOptions'
+
+/**
+ * The session's control menu, presented as the affectUI "Model Picker"
+ * (ADR 0257; slice E1): one quiet trigger pill opening one panel where the
+ * provider's own options are disclosed inline — the mode as selectable rows
+ * with the provider's descriptions, boolean configs as switch toggles —
+ * instead of the sub-menus it had before. The Radix menu stays the engine:
+ * its arrows, typeahead and focus semantics own the panel; the fill glides
+ * along its highlighted row. The provider catalog is the only content
+ * (ADR 0257 §3): no capability meters, no prices, no hosted defaults.
+ */
 
 type AgentControlMenuProps = {
   agent: AgentId
@@ -38,7 +50,8 @@ function selectedOption(group: NativeSessionSelect): string {
     ?? group.currentValue
 }
 
-function SelectSubMenu({
+/** One select group, disclosed inline: label, then its options as rows. */
+function SelectRows({
   group,
   label,
   onSelect,
@@ -48,31 +61,20 @@ function SelectSubMenu({
   onSelect: (value: string) => void
 }) {
   return (
-    <DropdownMenuSub>
-      <DropdownMenuSubTrigger>
-        <span className="flex min-w-0 flex-col">
-          <span className="truncate">{selectedOption(group)}</span>
-          <span className="truncate text-xs text-muted-foreground">{label}</span>
-        </span>
-      </DropdownMenuSubTrigger>
-      <DropdownMenuSubContent
-        className="max-h-(--radix-dropdown-menu-content-available-height) w-72 overflow-y-auto"
-      >
-        <DropdownMenuLabel>{label}</DropdownMenuLabel>
-        <DropdownMenuRadioGroup value={group.currentValue} onValueChange={onSelect}>
-          {group.options.map((option) => (
-            <DropdownMenuRadioItem key={option.id} value={option.id}>
-              <span className="flex min-w-0 flex-col">
-                <span>{option.name}</span>
-                {option.description && (
-                  <span className="text-xs text-muted-foreground">{option.description}</span>
-                )}
-              </span>
-            </DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
-      </DropdownMenuSubContent>
-    </DropdownMenuSub>
+    <DropdownMenuRadioGroup value={group.currentValue} onValueChange={onSelect}>
+      <DropdownMenuLabel asChild>
+        <div className="agx-pick__group-label">{label}</div>
+      </DropdownMenuLabel>
+      {group.options.map((option) => (
+        <DropdownMenuRadioItem
+          className="agx-pick__slot focus:bg-transparent focus:text-inherit"
+          key={option.id}
+          value={option.id}
+        >
+          <AgxModelPickerOption description={option.description ?? undefined} name={option.name} />
+        </DropdownMenuRadioItem>
+      ))}
+    </DropdownMenuRadioGroup>
   )
 }
 
@@ -94,55 +96,64 @@ export function AgentControlMenu({
       <DropdownMenuTrigger asChild>
         <Button
           aria-label={t('kubecode.agentSettings')}
-          className="min-w-8 max-w-44 shrink"
+          className="max-w-44"
           size="sm"
           title={t('kubecode.agentSettings')}
           type="button"
-          variant="secondary"
+          variant="ghost"
         >
-          <AiAgentIcon agent={agent} size={14} />
-          <span className="min-w-0 truncate">{modeName}</span>
-          <ChevronDown data-icon="inline-end" />
+          <AgxModelPickerTrigger
+            chevron={<ChevronDown size={14} />}
+            glyph={<AiAgentIcon agent={agent} size={14} />}
+            name={modeName}
+          />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent aria-label={t('kubecode.agentSettings')} align="end" className="w-72" side="top">
-        {mode && (
-          <DropdownMenuGroup>
-            {modeDisabled ? (
-              <DropdownMenuItem disabled title={modeDisabledReason}>
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate">{selectedOption(mode)}</span>
-                  <span className="truncate text-xs text-muted-foreground">{t('kubecode.agentMode')}</span>
-                </span>
-                <Lock />
+      <DropdownMenuContent
+        aria-label={t('kubecode.agentSettings')}
+        align="end"
+        className="w-80"
+        side="top"
+      >
+        <div className="agx-pick__list">
+          <AgxPickerFill selector="[data-highlighted]" />
+          {mode && (
+            modeDisabled ? (
+              <DropdownMenuItem
+              className="agx-pick__slot focus:bg-transparent focus:text-inherit"
+              disabled
+              title={modeDisabledReason}
+            >
+                <AgxModelPickerOption
+                  check={<Lock className="agx-mpick__lock" size={14} />}
+                  description={t('kubecode.agentMode')}
+                  name={selectedOption(mode)}
+                />
               </DropdownMenuItem>
             ) : (
-              <SelectSubMenu group={mode} label={t('kubecode.agentMode')} onSelect={onModeChange} />
-            )}
-          </DropdownMenuGroup>
-        )}
-        {mode && configs.length > 0 && <DropdownMenuSeparator />}
-        {configs.length > 0 && (
-          <DropdownMenuGroup>
-            {configs.map((config) => config.type === 'boolean' ? (
-              <DropdownMenuCheckboxItem
-                checked={config.currentValue}
-                key={config.id}
-                onCheckedChange={(checked) => onConfigChange(config.id, checked === true)}
-                onSelect={(event) => event.preventDefault()}
-              >
-                {config.name}
-              </DropdownMenuCheckboxItem>
-            ) : (
-              <SelectSubMenu
-                group={config}
-                key={config.id}
-                label={config.name}
-                onSelect={(value) => onConfigChange(config.id, value)}
-              />
-            ))}
-          </DropdownMenuGroup>
-        )}
+              <SelectRows group={mode} label={t('kubecode.agentMode')} onSelect={onModeChange} />
+            )
+          )}
+          {mode && configs.length > 0 && <DropdownMenuSeparator />}
+          {configs.map((config) => config.type === 'boolean' ? (
+            <DropdownMenuCheckboxItem
+              checked={config.currentValue}
+              className="agx-pick__slot focus:bg-transparent focus:text-inherit"
+              key={config.id}
+              onCheckedChange={(checked) => onConfigChange(config.id, checked === true)}
+              onSelect={(event) => event.preventDefault()}
+            >
+              <AgxModelPickerToggle label={config.name} />
+            </DropdownMenuCheckboxItem>
+          ) : (
+            <SelectRows
+              group={config}
+              key={config.id}
+              label={config.name}
+              onSelect={(value) => onConfigChange(config.id, value)}
+            />
+          ))}
+        </div>
       </DropdownMenuContent>
     </DropdownMenu>
   )

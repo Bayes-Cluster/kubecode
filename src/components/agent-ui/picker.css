@@ -1,0 +1,220 @@
+/* ADR 0257, the affectUI "Combobox" presentation (Clean, captured
+   2026-10-28): the shared list-picker surface — a floating hairline panel,
+   uppercase group labels, one light fill that glides to the active row,
+   matched-text marks, a check that pops in on the chosen row, and a quiet
+   count/keys footer. The mention, command, context and capability pickers
+   all present through these classes; cmdk/Radix stay the engines and own
+   selection, filtering and keyboard semantics. */
+
+.agx-pick {
+  /* Motion, on the reference's own scale: the fill snaps between rows, the
+     check springs in, both instant under reduced motion. */
+  --agx-pick-glide: 90ms;
+  --agx-pick-spring: 380ms;
+  position: relative;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+/* The scrollable row area. The engine's own list (cmdk/Radix) keeps its
+   chrome and height; this only places the fill's coordinate space over the
+   rows. */
+.agx-pick__list {
+  position: relative;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+/* Grouped results: the uppercase label the reference sets over each group. */
+.agx-pick__group {
+  padding: 0;
+  margin: 0;
+}
+
+.agx-pick__group-label {
+  padding: 8px 8px 4px;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 16px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--agx-faint);
+}
+
+.agx-pick__group:first-child .agx-pick__group-label {
+  padding-top: 4px;
+}
+
+/* Rows that belong to an official engine part (cmdk items, Radix menu
+   items) take only this slot: positioned above the fill, whose pill paints
+   the selection. The engine keeps its own row appearance (ADR 0247). */
+.agx-pick__slot {
+  position: relative;
+  z-index: 1;
+}
+
+/* The gliding fill: one light pill behind the active row, translated by
+   `AgxPickerFill`, never per-row backgrounds. */
+.agx-pick__fill {
+  position: absolute;
+  top: 0;
+  left: 4px;
+  right: 4px;
+  border-radius: 6px;
+  background: var(--agx-track);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform var(--agx-pick-glide) ease-out,
+    height var(--agx-pick-glide) ease-out,
+    opacity 140ms ease;
+}
+
+.agx-pick__fill[data-lit] {
+  opacity: 1;
+}
+
+/* One row. */
+.agx-pick__row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.agx-pick__row[aria-disabled='true'],
+.agx-pick__row[data-disabled] {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.agx-pick__text {
+  display: flex;
+  flex: 1;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.agx-pick__name {
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 500;
+  color: var(--agx-ink);
+}
+
+.agx-pick__hint {
+  flex: 0 100 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--agx-faint);
+}
+
+/* Matched text is marked by `highlightMatch` (the command menu's skin). */
+
+/* The chosen row's check pops in (the reference's spring). */
+.agx-pick__check {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-left: auto;
+  color: var(--agx-solid);
+  opacity: 0;
+  transform: scale(0.4);
+  transition:
+    opacity 120ms ease,
+    transform 160ms ease;
+}
+
+.agx-pick__row[aria-selected='true'] .agx-pick__check,
+.agx-pick__row[data-selected='true'] .agx-pick__check,
+.agx-pick__row[data-state='checked'] .agx-pick__check {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity 160ms ease,
+    transform var(--agx-pick-spring) var(--agx-ease);
+}
+
+/* The quiet footer: count left, keys right. */
+.agx-pick__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 32px;
+  padding: 2px 8px 0;
+  border-top: 0.5px solid var(--agx-line);
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--agx-faint);
+}
+
+.agx-pick__count {
+  display: inline-flex;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.agx-pick__keys {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  white-space: nowrap;
+}
+
+.agx-pick__keys kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 0.5px var(--agx-line);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--agx-faint);
+}
+
+/* Empty and create states. */
+.agx-pick__empty {
+  padding: 12px 8px 10px;
+  overflow-wrap: anywhere;
+  text-align: center;
+  color: var(--agx-faint);
+}
+
+/* Touch: rows and footer targets at least 44px (ADR 0256). */
+@media (hover: none) and (pointer: coarse) {
+  .agx-pick__row {
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agx-pick__fill,
+  .agx-pick__check,
+  .agx-pick__list {
+    transition: none;
+  }
+}

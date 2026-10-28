@@ -1,3 +1,4 @@
+import { AgxPickerFill } from '@/components/agent-ui'
 import { AppWindow, Puzzle, Zap } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
@@ -90,7 +91,7 @@ export function ComposerCapabilityPicker({
       aria-label={labels.picker}
       aria-live="polite"
       className={cn(
-        'max-h-72 min-w-0 overflow-y-auto p-1 text-popover-foreground',
+        'agx-pick max-h-72 min-w-0 overflow-y-auto p-1 text-popover-foreground',
         !embedded && 'absolute bottom-full left-0 right-0 z-20 mb-1 rounded-md border border-border bg-popover shadow-lg',
       )}
       data-testid="composer-capability-menu"
@@ -103,33 +104,34 @@ export function ComposerCapabilityPicker({
         <p className="px-3 py-3 text-sm text-destructive">{labels.error}</p>
       ) : items.length === 0 ? (
         <p className="px-3 py-3 text-sm text-muted-foreground">{labels.empty}</p>
-      ) : items.map((item, index) => {
-        const reasonId = `${id}-option-${index}-reason`
-        return (
-          <button
-            aria-describedby={!item.enabled ? reasonId : undefined}
-            aria-disabled={!item.enabled}
-            aria-selected={index === selectedIndex}
-            className={cn(
-              'flex min-h-12 w-full min-w-0 items-start gap-2 rounded-sm px-2 py-2 text-left',
-              item.enabled && index === selectedIndex && 'bg-accent text-accent-foreground',
-              item.enabled && index !== selectedIndex && 'hover:bg-accent/60',
-              !item.enabled && 'cursor-not-allowed opacity-65',
-            )}
-            disabled={!item.enabled}
-            id={`${id}-option-${index}`}
-            key={item.id}
-            onClick={() => onSelect(index)}
-            onMouseDown={(event) => event.preventDefault()}
-            onMouseEnter={() => item.enabled && onHover(index)}
-            onPointerDown={(event) => event.pointerType === 'touch' && event.preventDefault()}
-            role="option"
-            type="button"
-          >
-            <CapabilityRowContent item={item} labels={labels} reasonId={reasonId} />
-          </button>
-        )
-      })}
+      ) : (
+        <>
+          {/* The fill glides to the selected row; the rows carry no backgrounds of their own. */}
+          <AgxPickerFill />
+          {items.map((item, index) => {
+          const reasonId = `${id}-option-${index}-reason`
+          return (
+            <button
+              aria-describedby={!item.enabled ? reasonId : undefined}
+              aria-disabled={!item.enabled}
+              aria-selected={index === selectedIndex}
+              className="agx-pick__row w-full text-left"
+              disabled={!item.enabled}
+              id={`${id}-option-${index}`}
+              key={item.id}
+              onClick={() => onSelect(index)}
+              onMouseDown={(event) => event.preventDefault()}
+              onMouseEnter={() => item.enabled && onHover(index)}
+              onPointerDown={(event) => event.pointerType === 'touch' && event.preventDefault()}
+              role="option"
+              type="button"
+            >
+              <CapabilityRowContent item={item} labels={labels} reasonId={reasonId} />
+            </button>
+          )
+        })}
+        </>
+      )}
     </div>
   )
 }

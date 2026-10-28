@@ -1,12 +1,8 @@
 import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { ArrowDown, Sparkle } from 'lucide-react'
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
-import {
-  PromptInputBody,
-  PromptInputSubmit,
-  PromptInputTools,
-} from '@/components/ai-elements/prompt-input'
-import { InputGroup } from '@/components/ui/input-group'
+import { PromptInputSubmit } from '@/components/ai-elements/prompt-input'
+import { AgxComposer, AgxComposerRail } from '@/components/agent-ui'
 import { AiMessage } from './AiMessage'
 import { Button } from '@/components/ui/button'
 import {
@@ -496,48 +492,43 @@ export function AiPanelComposer({
       {statusMessage && (
         <FieldError className="px-2" role="status">{statusMessage}</FieldError>
       )}
-      <InputGroup
-        className={cn(
-          'kubecode-session-prompt-input h-auto',
-          hasControls
-            ? 'max-h-[202px] min-h-[50px] items-end gap-1 overflow-visible px-2 py-1.5'
-            : 'items-end gap-2',
-        )}
-        data-layout={hasControls ? 'single-row' : undefined}
+      <AgxComposer
+        className="kubecode-session-prompt-input"
+        data-layout={hasControls ? 'card' : undefined}
         data-testid="agent-composer-surface"
       >
-        {hasControls && leadingControl && (
-          <PromptInputTools className="shrink-0">{leadingControl}</PromptInputTools>
-        )}
-        <PromptInputBody className="overflow-visible">
-          <div className="min-w-0 flex-1 overflow-visible">
-            {inputContent ?? <ComposerInput
-              disabled={inputDisabled}
-              entries={entries}
-              hasControls={hasControls}
-              input={input}
-              inputRef={inputRef}
-              onChange={onChange}
-              onSend={(text, references) => {
-                if (inputDisabled) return
-                if (isActive) {
-                  // A side question keeps its dedicated send; plain drafts queue
-                  // for the next turn (#97). Slash drafts stay untouched while a
-                  // run is active — the command menu owns them.
-                  if (onActiveSend) onActiveSend(text, references)
-                  else if (!text.startsWith('/')) onSend(text, references)
-                } else {
-                  onSend(text, references)
-                }
-              }}
-              onUnsupportedAiPaste={onUnsupportedAiPaste}
-              placeholder={placeholder}
-            />}
+        <div className="min-w-0">
+          {inputContent ?? <ComposerInput
+            disabled={inputDisabled}
+            entries={entries}
+            hasControls={hasControls}
+            input={input}
+            inputRef={inputRef}
+            onChange={onChange}
+            onSend={(text, references) => {
+              if (inputDisabled) return
+              if (isActive) {
+                // A side question keeps its dedicated send; plain drafts queue
+                // for the next turn (#97). Slash drafts stay untouched while a
+                // run is active — the command menu owns them.
+                if (onActiveSend) onActiveSend(text, references)
+                else if (!text.startsWith('/')) onSend(text, references)
+              } else {
+                onSend(text, references)
+              }
+            }}
+            onUnsupportedAiPaste={onUnsupportedAiPaste}
+            placeholder={placeholder}
+          />}
+        </div>
+        <AgxComposerRail>
+          <div className="agx-comp__rail-group">
+            {leadingControl}
+            {controls}
           </div>
-        </PromptInputBody>
-        {hasControls && <PromptInputTools className="min-w-0 shrink overflow-hidden">{controls}</PromptInputTools>}
-        {sendButton}
-      </InputGroup>
+          <div className="agx-comp__rail-end">{sendButton}</div>
+        </AgxComposerRail>
+      </AgxComposer>
     </div>
   )
 }
