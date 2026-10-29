@@ -261,8 +261,12 @@ test('@smoke workspace navigation returns to each place, through the inspector s
       await expect(page.getByRole('heading', { name: 'General', exact: true, level: 2 })).toBeVisible()
       await go(view)
       // The place, not the pixel: the runner's fonts settle a line or two
-      // after the return, and the restored position reads a few px off.
-      await expect.poll(() => Math.abs(scrollOf(page, scroller) - left)).toBeLessThanOrEqual(8)
+      // after the return, and a remount race can read the scroller before
+      // it is live — both retry until the restored position settles.
+      await expect.poll(async () => {
+        const top = await scrollOf(page, scroller).then(Number).catch(() => Number.POSITIVE_INFINITY)
+        return Math.abs((Number.isFinite(top) ? top : Number.POSITIVE_INFINITY) - left)
+      }).toBeLessThanOrEqual(8)
     }
     await page.setViewportSize({ width: 1440, height: 900 })
     // The Sheet was put away on the narrow window; it never changed the wide-screen
