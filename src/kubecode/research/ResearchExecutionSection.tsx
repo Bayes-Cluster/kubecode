@@ -582,7 +582,8 @@ function ExperimentCard({
           <ChevronRight aria-hidden size={16} />
         </button>
       </div>
-      <span className="kubecode-disclosure-fold flex-col gap-2 text-xs" data-expanded={expanded || undefined} id={detailId}>
+      <span className="kubecode-disclosure-fold" data-expanded={expanded || undefined} id={detailId}>
+        <span className="flex min-h-0 flex-col items-start gap-2 overflow-hidden text-xs" data-testid={`experiment-detail-${experiment.id}`}>
         {experiment.label && <code className="[overflow-wrap:anywhere]">{commandText(experiment.argv)}</code>}
         <span className="text-muted-foreground empty:hidden">
           {experiment.exit_code !== null && t('kubecode.research.exec.exitCode', { code: experiment.exit_code })}
@@ -635,6 +636,7 @@ function ExperimentCard({
             ))}
           </div>
         )}
+        </span>
       </span>
       {experiment.state === 'unknown' && (
         <Alert aria-label={`${t('kubecode.research.exec.reconcile')}: ${title}`} role="group">

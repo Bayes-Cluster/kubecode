@@ -354,4 +354,19 @@ describe('ResearchExecutionSection', () => {
     expect(setResearchEnvelope.mock.calls[0][3].deadline_at).toBe(1_800_000_000 + 5 * 3600 + 3 * 3600)
     clock.mockRestore()
   })
+
+  it('folds the experiment details behind a real disclosure', async () => {
+    await mount()
+    await screen.findByText('python3 train.py')
+    const toggle = screen.getByTestId('experiment-disclosure-x-1')
+    // Folded: the disclosure says closed, and opening it is its own act.
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    // The folded facts ride the card once the fold is open (jsdom applies
+    // no stylesheet; the browser collapses the rows the same way the Task
+    // card's fold does).
+    const detail = screen.getByTestId('experiment-detail-x-1')
+    expect(within(detail).getByText(/python3 train\.py/)).toBeInTheDocument()
+  })
 })
