@@ -710,3 +710,16 @@ change.
   RecordPreview and the readers verified previously (#278). The 108
   resources tests cover the acceptance list; the preview-copy and 1024px
   captures ride slice L as before.
+- Slice J (#287), the recreation term the audit had left implicit: the
+  leader's permission options present through the shared option grammar
+  (agent-ui's Model Picker rows — the provider's own name and description
+  on the slot, the engine's check drawing the selection), the Autonomy
+  Dial's visual grouping over exact provider-native options; no universal
+  levels, locks, grants or Revoke, as before. Re-verified against the
+  issue's terms: the roster rows were already the Inbox shape (identity,
+  the state in words, two-step removal on official Items; the server
+  provides no parentage, so the list stands in for a tree); member DMs
+  stay private, team overviews keep actual run states, and the walkthrough
+  captures ride slice L as before. The team suites cover propose and
+  pause/resume; the members suites cover add/edit/remove/defaults and
+  replace-session.

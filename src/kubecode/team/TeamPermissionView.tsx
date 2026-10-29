@@ -1,3 +1,4 @@
+import { AgxModelPickerOption } from '@/components/agent-ui'
 import {
   Field,
   FieldDescription,
@@ -87,11 +88,20 @@ export function NativeLeaderOptions({
                   void request.then(() => api.getSessionState(conversationId)).then(setSessionState)
                 }}
               >
-                <SelectTrigger aria-label={label} id={id}><SelectValue /></SelectTrigger>
+                {/* The value node carries the chosen name itself: Radix
+                    otherwise portals the selected row — description and
+                    all — into the trigger. */}
+                <SelectTrigger aria-label={label} id={id}>
+                  <SelectValue>
+                    {option.options.find((item) => item.id === option.currentValue)?.name ?? option.currentValue}
+                  </SelectValue>
+                </SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
                     {option.options.map((item) => (
-                      <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>
+                      <SelectItem key={item.id} value={item.id}>
+                        <AgxModelPickerOption description={item.description ?? undefined} name={item.name} />
+                      </SelectItem>
                     ))}
                   </SelectGroup>
                 </SelectContent>
