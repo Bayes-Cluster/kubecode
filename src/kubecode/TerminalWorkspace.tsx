@@ -551,7 +551,7 @@ function TerminalNavigatorLeaf({
           {...dragAttributes}
           {...dragListeners}
           aria-selected={active}
-          className="kubecode-terminal-navigator-row [&>span]:font-medium hover:bg-(--state-hover-subtle) aria-selected:bg-(--state-selected) aria-selected:shadow-[inset_0_0_0_1px_var(--border-default)] data-[active=true]:bg-(--state-selected) data-[active=true]:shadow-[inset_0_0_0_1px_var(--border-default)]"
+          className="kubecode-terminal-navigator-row [&>.kubecode-terminal-navigator-title]:font-medium  hover:bg-(--state-hover-subtle) dark:hover:bg-(--state-hover-subtle) aria-selected:bg-(--state-selected) aria-selected:shadow-[inset_0_0_0_1px_var(--border-default)] data-[active=true]:bg-(--state-selected) data-[active=true]:shadow-[inset_0_0_0_1px_var(--border-default)]"
           data-active={active}
           role="treeitem"
           size="xs"

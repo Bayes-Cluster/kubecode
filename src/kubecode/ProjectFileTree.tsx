@@ -433,7 +433,7 @@ function TreeRow({
       aria-posinset={row.siblingIndex + 1}
       aria-selected={selected}
       aria-setsize={row.siblingCount}
-      className="kubecode-file-tree-row [&>span:last-child]:font-medium [&>span:last-child]:text-(--text-primary) hover:bg-(--state-hover-subtle) aria-selected:bg-(--state-selected) aria-selected:shadow-[inset_0_0_0_1px_var(--border-default)] data-[active=true]:bg-(--state-hover)"
+      className="kubecode-file-tree-row [&>span:last-child]:font-medium [&>span:last-child]:text-(--text-primary) hover:bg-(--state-hover-subtle) dark:hover:bg-(--state-hover-subtle) aria-selected:bg-(--state-selected) aria-selected:shadow-[inset_0_0_0_1px_var(--border-default)] data-[active=true]:bg-(--state-hover)"
       data-active={active || undefined}
       // A 26px virtual row (ADR 0256 §2): xs keeps its height on a coarse pointer.
       size="xs"

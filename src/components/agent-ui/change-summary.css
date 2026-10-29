@@ -17,10 +17,6 @@
   transition: background-color var(--agx-dur-fast) ease;
 }
 
-.agx-csum__row:first-child {
-  border-top: 0;
-}
-
 .agx-csum__row:hover {
   background: var(--agx-wash);
 }
@@ -63,7 +59,6 @@
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  overflow-wrap: anywhere;
   text-align: start;
   font-weight: 500;
   color: var(--agx-ink);

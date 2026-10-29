@@ -430,14 +430,6 @@
     },
     {
       "file": "src/kubecode/kubecode.css",
-      "text": "font-weight: 550;",
-      "context": ".kubecode-file-tree-row[aria-expanded]",
-      "kind": "appearance-on-official",
-      "component": "Button",
-      "owner": "H #285 (UI2)"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
       "text": "border-radius: 3px;",
       "context": ".kubecode-terminal-navigator-row",
       "kind": "appearance-on-official",

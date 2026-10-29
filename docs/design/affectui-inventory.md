@@ -690,3 +690,8 @@ change.
   Collapsible sections with the turning chevron were already the shape,
   the engines untouched (CodeMirror, xterm, virtualization, ownership).
   Large-diff and 200k-line measurements remain with slice L's captures.
+  The directory names' 550 weight flattened to the label's 500 (the
+  treatment's one label weight); the dark hover carries the wash
+  explicitly (the ghost variant's dark accent would otherwise win the
+  cascade). Bundle delta vs the F head: +1.58 kB gz entry, +0.56 kB gz
+  CSS — cumulative +15.11/+9.69 of the §8 budgets.
