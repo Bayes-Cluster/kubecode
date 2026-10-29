@@ -1,0 +1,100 @@
+/* ADR 0257, the affectUI "Change Summary" presentation (Clean, captured
+   2026-10-29): one compact summary row — a tinted square (the tone), the
+   label, and the count — under a hairline. A summary of the adapter's own
+   tallies: the numbers come from real data and absent ones stay absent.
+   Colour and motion come from the Kubecode tokens. */
+
+.agx-csum__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 8px;
+  border-top: 0.5px solid var(--agx-line);
+  font-size: 13px;
+  line-height: 20px;
+  animation: agx-csum-in 520ms var(--agx-ease) both;
+  transition: background-color var(--agx-dur-fast) ease;
+}
+
+.agx-csum__row:first-child {
+  border-top: 0;
+}
+
+.agx-csum__row:hover {
+  background: var(--agx-wash);
+}
+
+/* The tinted square: no strokes. */
+.agx-csum__mark {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  background: var(--agx-track);
+  color: var(--agx-text);
+}
+
+.agx-csum__row[data-tone='bad'] .agx-csum__mark {
+  background: var(--feedback-error-bg, var(--agx-track));
+  color: var(--agx-error);
+}
+
+.agx-csum__row[data-tone='good'] .agx-csum__mark {
+  background: var(--feedback-success-bg, var(--agx-track));
+  color: var(--agx-success);
+}
+
+.agx-csum__row[data-tone='info'] .agx-csum__mark {
+  background: var(--agx-accent-soft);
+  color: var(--agx-solid);
+}
+
+.agx-csum__mark > * {
+  width: 12px;
+  height: 12px;
+}
+
+.agx-csum__label {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+  text-align: start;
+  font-weight: 500;
+  color: var(--agx-ink);
+}
+
+.agx-csum__count {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  color: var(--agx-text);
+}
+
+@keyframes agx-csum-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .agx-csum__row {
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agx-csum__row {
+    transition: none;
+    animation: none;
+  }
+}

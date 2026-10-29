@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { ChevronDown, File, Folder, GitCommitHorizontal, GitCompare, Minus, Plus, RotateCw, Search, Trash2, TriangleAlert, X } from 'lucide-react'
+import { AlertOctagon, ChevronDown, CircleCheck, File, FilePen, Folder, GitCommitHorizontal, GitCompare, Minus, Plus, RotateCw, Search, Trash2, TriangleAlert, X } from 'lucide-react'
 import { Virtuoso } from 'react-virtuoso'
+
+import { AgxChangeSummaryRow } from '@/components/agent-ui'
 
 import { IconButton } from '@/components/workspace/IconButton'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -781,10 +783,17 @@ function GitChangeGroup({
   return (
     <section data-group={group} data-virtualized={isVirtualized || undefined}>
       {label && (
-        <header className="flex h-7 items-center justify-between px-1.5 text-xs font-semibold uppercase text-muted-foreground">
-          <span>{label}</span>
-          <Badge variant="secondary">{changes.length}</Badge>
-        </header>
+        <AgxChangeSummaryRow
+          count={changes.length}
+          data-testid={`git-group-head-${group}`}
+          icon={group === 'conflict'
+            ? <AlertOctagon aria-hidden />
+            : group === 'staged'
+              ? <CircleCheck aria-hidden />
+              : <FilePen aria-hidden />}
+          label={label}
+          tone={group === 'conflict' ? 'bad' : group === 'staged' ? 'info' : undefined}
+        />
       )}
       {isVirtualized ? (
         <Virtuoso
