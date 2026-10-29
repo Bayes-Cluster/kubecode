@@ -1,0 +1,221 @@
+/* ADR 0257, the affectUI "Task Board" presentation (block preview, captured
+   2026-10-29): a horizontal run of tray columns holding ring-framed cards —
+   column head with the live count, compact fact chips on each card, the
+   accent drop indicator where a move would land, the tinted drop target, and
+   the dashed empty lane. The domain stages, allowed moves and admission
+   rules stay with the adapter (#284: Work here, #283: Tasks later); this
+   stylesheet only presents. Colour and motion come from the Kubecode
+   tokens. */
+
+.agx-board {
+  min-width: 0;
+}
+
+/* The column run: one scroller sideways, columns at least 224px wide. */
+.agx-board__columns {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(224px, 1fr);
+  gap: 10px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  padding-bottom: 4px;
+}
+
+.agx-board__column {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 220px;
+  padding: 4px 6px 6px;
+  border-radius: 16px;
+  background: var(--agx-wash);
+  transition:
+    background-color var(--agx-dur-fast) ease,
+    box-shadow var(--agx-dur-fast) ease;
+}
+
+/* Where a supported move would land. */
+.agx-board__column[data-over] {
+  background: var(--agx-accent-soft);
+  box-shadow: inset 0 0 0 1px var(--agx-solid);
+}
+
+.agx-board__col-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 4px 0 8px;
+}
+
+.agx-board__col-title {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--agx-ink);
+}
+
+.agx-board__col-count {
+  flex: none;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--agx-faint);
+}
+
+.agx-board__cards {
+  display: grid;
+  flex: 1;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* The card shell. The adapter's button inside carries the interaction; the
+   shell owns the frame, the drag states and the arrival. */
+.agx-board__card {
+  min-width: 0;
+  border-radius: 12px;
+  background: var(--agx-surface);
+  box-shadow:
+    0 0 0 1px var(--agx-line),
+    0 1px 2px var(--shadow-dialog);
+  transition:
+    box-shadow var(--agx-dur-fast) ease,
+    opacity var(--agx-dur-fast) ease,
+    transform 200ms var(--agx-ease);
+  animation: agx-board-in 320ms var(--agx-ease) both;
+}
+
+.agx-board__card:hover {
+  box-shadow:
+    0 0 0 1px var(--agx-line-strong),
+    0 6px 16px -8px var(--shadow-dialog);
+}
+
+.agx-board__card[data-dragging] {
+  opacity: 0.35;
+  transform: scale(0.98);
+}
+
+.agx-board__card-body {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  min-width: 0;
+  padding: 10px 12px 11px;
+}
+
+/* The adapter's compact mode hides the lines it marked secondary; the title
+   and the counts stay. */
+.agx-board__card[data-compact] .agx-board__card-secondary {
+  display: none;
+}
+
+.agx-board__card-secondary {
+  min-width: 0;
+}
+
+/* One fact chip: key, value, a tone. */
+.agx-board__chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 7px;
+  box-shadow: inset 0 0 0 1px var(--agx-line);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--agx-text);
+}
+
+.agx-board__chip > svg {
+  color: var(--agx-faint);
+}
+
+.agx-board__chip[data-tone='warn'] {
+  color: var(--feedback-warning-text);
+}
+
+.agx-board__chip[data-tone='bad'] {
+  color: var(--agx-error);
+}
+
+.agx-board__chip[data-tone='good'] {
+  color: var(--agx-success);
+}
+
+.agx-board__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
+}
+
+/* Where a move would land inside a column. */
+.agx-board__drop {
+  height: 3px;
+  margin: -1px 4px;
+  border-radius: 2px;
+  background: var(--agx-solid);
+  animation: agx-board-grow 160ms var(--agx-ease);
+}
+
+/* The empty lane. */
+.agx-board__empty {
+  display: grid;
+  place-items: center;
+  min-height: 72px;
+  border: 1px dashed var(--agx-line-strong);
+  border-radius: 12px;
+  font-size: 12px;
+  color: var(--agx-faint);
+  text-align: center;
+  padding: 4px 10px;
+}
+
+@keyframes agx-board-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes agx-board-grow {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: none;
+  }
+}
+
+/* Touch: the shell keeps out of the way; the adapter's controls inside carry
+   the ADR 0256 targets. Columns keep their width so a lane never squeezes
+   its cards below readable size. */
+@media (hover: none) and (pointer: coarse) {
+  .agx-board__columns {
+    grid-auto-columns: minmax(248px, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agx-board__card,
+  .agx-board__column,
+  .agx-board__drop {
+    transition: none;
+    animation: none;
+  }
+}

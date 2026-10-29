@@ -1,7 +1,7 @@
 import { AlertCircle, FlaskConical, GitBranch, MessageSquareText, Repeat2 } from 'lucide-react'
 
+import { AgxBoardCard } from '@/components/agent-ui'
 import { Badge } from '@/components/ui/badge'
-import { Card } from '@/components/ui/card'
 import { AiAgentIcon } from '@/components/AiAgentIcon'
 import type { Translator } from '@/lib/i18n'
 
@@ -11,6 +11,8 @@ import { statusToneVariant } from '../statusTone'
 
 export type WorkCardViewProps = {
   card: WorkCard
+  /** This card is the one being dragged across the board. */
+  dragging?: boolean
   draggable: boolean
   selected: boolean
   onDragStart: (card: WorkCard) => void
@@ -20,13 +22,16 @@ export type WorkCardViewProps = {
 }
 
 /**
- * One work item. Retries stay under this card (the attempt count), valid
- * negative results and accepted delivery are marked differently from a failed
- * run, and waits, blockers, pauses, and human-input needs read separately from
- * the stage the card sits in.
+ * One work item, on the shared board presentation (ADR 0257, #284). Retries
+ * stay under this card (the attempt count), valid negative results and
+ * accepted delivery are marked differently from a failed run, and waits,
+ * blockers, pauses, and human-input needs read separately from the stage the
+ * card sits in. The shell owns the frame and the drag states; the button
+ * inside opens the item and carries focus and the inspected ring.
  */
 export function WorkCardView({
   card,
+  dragging = false,
   draggable,
   onDragEnd,
   onDragStart,
@@ -40,12 +45,10 @@ export function WorkCardView({
   const failed = card.latest_attempt?.status === 'failed'
   const closed = item.lifecycle !== 'active'
   return (
-    // The official Card is the frame and owns the surface; one native button opens the item
-    // and shows focus and the inspected item as a ring (the TaskCardView pattern, #259).
-    <Card className="kubecode-work-card overflow-hidden" size="compact">
+    <AgxBoardCard data-testid={`work-card-shell-${item.id}`} dragging={dragging}>
     <button
       aria-current={selected ? 'true' : undefined}
-      className="flex w-full min-w-0 flex-col items-start gap-1.5 rounded-[inherit] p-2.5 text-left outline-none ring-inset focus-visible:ring-[3px] focus-visible:ring-ring aria-[current=true]:ring-2 aria-[current=true]:ring-primary"
+      className="agx-board__card-body kubecode-work-card cursor-pointer text-left ring-inset outline-none focus-visible:ring-[3px] focus-visible:ring-ring aria-[current=true]:ring-2 aria-[current=true]:ring-primary"
       data-acceptance={item.acceptance}
       data-condition={item.condition}
       data-lifecycle={item.lifecycle}
@@ -63,10 +66,10 @@ export function WorkCardView({
     >
       <span className="kubecode-work-card-title">{item.title}</span>
       {item.description && (
-        <small className="kubecode-work-card-objective">{clip(item.description, 110)}</small>
+        <small className="agx-board__card-secondary kubecode-work-card-objective">{clip(item.description, 110)}</small>
       )}
       {card.research && (
-        <small className="kubecode-work-card-context">
+        <small className="agx-board__card-secondary kubecode-work-card-context">
           {card.research.title}
           {card.round ? ` · ${t('kubecode.work.roundNumber', { round: card.round.number })}` : ''}
         </small>
@@ -110,7 +113,7 @@ export function WorkCardView({
         )}
       </span>
       {dependencyBlockers.length > 0 && (
-        <small className="kubecode-work-card-blocker">
+        <small className="agx-board__card-secondary kubecode-work-card-blocker">
           <GitBranch aria-hidden size={12} />
           {dependencyBlockers[0].kind === 'dependency' && dependencyBlockers[0].closed
             ? t('kubecode.work.dependencyClosed', { title: dependencyBlockers[0].title })
@@ -121,15 +124,15 @@ export function WorkCardView({
         </small>
       )}
       {item.condition_reason && condition && (
-        <small className="kubecode-work-card-blocker">{item.condition_reason}</small>
+        <small className="agx-board__card-secondary kubecode-work-card-blocker">{item.condition_reason}</small>
       )}
       {closed && item.closed_reason && (
-        <small className="kubecode-work-card-blocker">
+        <small className="agx-board__card-secondary kubecode-work-card-blocker">
           {t('kubecode.work.closedReason', { reason: item.closed_reason })}
         </small>
       )}
       {progress(card, t) && (
-        <small className="kubecode-work-card-progress">{progress(card, t)}</small>
+        <small className="agx-board__card-secondary kubecode-work-card-progress">{progress(card, t)}</small>
       )}
       <span className="kubecode-work-card-footer">
         {card.executor ? (
@@ -161,7 +164,7 @@ export function WorkCardView({
         </span>
       </span>
     </button>
-    </Card>
+    </AgxBoardCard>
   )
 }
 

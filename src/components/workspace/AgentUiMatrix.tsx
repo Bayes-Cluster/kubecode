@@ -16,7 +16,19 @@ import {
 } from '@/components/agent-ui'
 import { AiActionCard } from '@/components/AiActionCard'
 import {
+  AgxBoard,
+  AgxBoardCardBody,
+  AgxBoardCard,
+  AgxBoardChips,
+  AgxBoardChip,
+  AgxBoardColumn,
+  AgxBoardColumns,
+  AgxBoardDrop,
   AgxComposerChip,
+  AgxFilterChip,
+  AgxFilterGroup,
+  AgxFilterMenu,
+  AgxFilterOption,
   AgxModelPickerToggle,
   AgxPickerFill,
   AgxPickerFoot,
@@ -66,6 +78,8 @@ export function AgentUiMatrix({ locale = 'en', t }: { locale?: AppLocale; t: Tra
   const [commandQuery, setCommandQuery] = useState('')
   const [commandRan, setCommandRan] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
+  const [filterOpen, setFilterOpen] = useState(true)
+  const [filterPicked, setFilterPicked] = useState(true)
 
   return (
     <Section title={t('kubecode.matrix.section.agentui')}>
@@ -284,6 +298,43 @@ export function AgentUiMatrix({ locale = 'en', t }: { locale?: AppLocale; t: Tra
           }
           label={t('kubecode.matrix.sample.copyAnswer')}
         />
+      </Row>
+      <Row label={t('kubecode.matrix.state.default')}>
+        {/* The shared board presentation (ADR 0257, slice G): tray columns
+            with live counts, the fact chips, the drop indicator and the
+            empty lane. A visual specimen; the Work board owns legality. */}
+        <div className="kubecode-control-matrix-narrow">
+          <AgxBoard>
+            <AgxBoardColumns>
+              <AgxBoardColumn count={1} label={t('kubecode.work.stage.executing')}>
+                <AgxBoardCard>
+                  <AgxBoardCardBody>
+                    <span className="agx-board__card-secondary agx-pick__hint">{t('kubecode.matrix.sample.viewBoard')}</span>
+                    <AgxBoardChips>
+                      <AgxBoardChip tone="warn">{t('kubecode.matrix.sample.running')}</AgxBoardChip>
+                    </AgxBoardChips>
+                  </AgxBoardCardBody>
+                </AgxBoardCard>
+                <AgxBoardDrop />
+              </AgxBoardColumn>
+              <AgxBoardColumn count={0} emptyLabel={t('kubecode.matrix.sample.needsSetup')} label={t('kubecode.work.stage.review')} />
+            </AgxBoardColumns>
+          </AgxBoard>
+        </div>
+        <div className="kubecode-control-matrix-narrow">
+          <AgxFilterMenu
+            chips={filterPicked ? <AgxFilterChip>{t('kubecode.matrix.sample.viewChart')}</AgxFilterChip> : undefined}
+            clearDisabled={false}
+            clearLabel={t('kubecode.work.filter.clear')}
+            title={t('kubecode.work.filters')}
+            onClear={() => setFilterPicked(false)}
+          >
+            <AgxFilterGroup count={2} label={t('kubecode.matrix.sample.detailView')} onOpenChange={setFilterOpen} open={filterOpen} picked={filterPicked ? t('kubecode.matrix.sample.viewChart') : undefined}>
+              <AgxFilterOption checked={filterPicked} label={t('kubecode.matrix.sample.viewChart')} onToggle={() => setFilterPicked((v) => !v)} />
+              <AgxFilterOption checked={false} disabled label={t('kubecode.matrix.sample.viewNotes')} onToggle={() => undefined} />
+            </AgxFilterGroup>
+          </AgxFilterMenu>
+        </div>
       </Row>
       <Row label={t('kubecode.matrix.state.default')}>
         {/* The channel composer's production card (ADR 0257, slice E1): the

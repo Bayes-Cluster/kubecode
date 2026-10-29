@@ -1,0 +1,331 @@
+/* ADR 0257, the affectUI "Filter Menu" presentation (Clean, captured
+   2026-10-29): one quiet card — a title with a ghost clear-all, the active
+   selections as chips on one line, collapsible option groups with their live
+   counts and a picked summary, checkbox options whose check draws itself
+   in, and the keyboard hints at the foot. Which groups exist, what the
+   options mean and what selecting them does belong to the adapter (#284:
+   the Work board; #283: Tasks). Colour and motion come from the Kubecode
+   tokens. Deviation: the chip line scrolls sideways instead of folding its
+   overflow into a popover — the adapters carry at most a handful of active
+   selections, and the popover added a portal for no data the boards have. */
+
+.agx-filt {
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 10px;
+  background: var(--agx-surface);
+  box-shadow: var(--agx-shadow);
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--agx-text);
+}
+
+.agx-filt__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 10px 8px 12px;
+}
+
+.agx-filt__title {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-align: start;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+  color: var(--agx-ink);
+}
+
+.agx-filt__clear {
+  flex: none;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--agx-text);
+  transition:
+    color var(--agx-dur-fast) ease,
+    background-color var(--agx-dur-fast) ease;
+}
+
+.agx-filt__clear:hover:not(:disabled) {
+  background: var(--agx-wash);
+  color: var(--agx-ink);
+}
+
+.agx-filt__clear:disabled {
+  color: var(--agx-faint);
+  cursor: default;
+}
+
+/* The active selections, one line. */
+.agx-filt__chips {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  padding: 0 12px 10px;
+}
+
+.agx-filt__chips[data-empty] {
+  display: none;
+}
+
+.agx-filt__chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: var(--agx-track);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--agx-ink);
+}
+
+/* The option groups. */
+.agx-filt__groups {
+  display: grid;
+  padding: 4px;
+  border-top: 0.5px solid var(--agx-line);
+}
+
+.agx-filt__group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  padding: 0 8px;
+  border-radius: 6px;
+  transition: background-color 140ms ease;
+}
+
+.agx-filt__group-head:hover {
+  background: var(--agx-wash);
+  transition-duration: 90ms;
+}
+
+.agx-filt__group-head:focus-visible {
+  outline: 2px solid var(--agx-focus);
+  outline-offset: -2px;
+}
+
+.agx-filt__chevron {
+  flex: none;
+  color: var(--agx-faint);
+  transform: rotate(-90deg);
+  transition: transform 260ms var(--agx-ease);
+}
+
+.agx-filt__group[data-open] .agx-filt__chevron {
+  transform: none;
+}
+
+.agx-filt__group-label {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-align: start;
+  font-weight: 500;
+  color: var(--agx-ink);
+}
+
+.agx-filt__group-count {
+  flex: none;
+  font-size: 12px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+  color: var(--agx-faint);
+}
+
+.agx-filt__group-picked {
+  display: inline-flex;
+  flex: none;
+  margin-left: auto;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--agx-text);
+}
+
+/* The folding panel: the reference's grid-rows collapse. */
+.agx-filt__panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 320ms var(--agx-ease);
+}
+
+.agx-filt__group[data-open] .agx-filt__panel {
+  grid-template-rows: 1fr;
+}
+
+.agx-filt__panel-inner {
+  display: grid;
+  min-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  /* A folded group's options stay out of the tab order: invisible means
+     gone, not merely transparent (the fold still animates — the visibility
+     flips after the rows have collapsed). */
+  visibility: hidden;
+  transition:
+    opacity 220ms ease,
+    padding 320ms var(--agx-ease),
+    visibility 0s linear 320ms;
+}
+
+.agx-filt__group[data-open] .agx-filt__panel-inner {
+  opacity: 1;
+  padding: 0 0 4px;
+  max-height: 320px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  visibility: visible;
+  transition:
+    opacity 220ms ease,
+    padding 320ms var(--agx-ease),
+    visibility 0s;
+}
+
+/* One option: the checkbox lined up with its text. */
+.agx-filt__option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  padding: 2px 8px 2px 32px;
+  border-radius: 6px;
+  color: var(--agx-ink);
+  text-align: start;
+  transition: background-color 140ms ease;
+}
+
+.agx-filt__option:hover {
+  background: var(--agx-wash);
+  transition-duration: 90ms;
+}
+
+.agx-filt__option:focus-visible {
+  outline: 2px solid var(--agx-focus);
+  outline-offset: -2px;
+}
+
+.agx-filt__option[aria-disabled='true'] {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.agx-filt__option-label {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* The checkbox: a hairline box; the check draws itself in. */
+.agx-filt__box {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  background: var(--agx-surface);
+  box-shadow:
+    inset 0 0 0 0.5px var(--agx-line-strong),
+    0 1px 1px 0 var(--shadow-dialog);
+  transition:
+    background-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.agx-filt__box svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: var(--agx-on-solid);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 12;
+  stroke-dashoffset: 12;
+  transition: stroke-dashoffset 240ms var(--agx-ease);
+}
+
+.agx-filt__option[aria-checked='true'] .agx-filt__box {
+  background: var(--agx-solid);
+  box-shadow: none;
+}
+
+.agx-filt__option[aria-checked='true'] .agx-filt__box svg {
+  stroke-dashoffset: 0;
+  transition-delay: 40ms;
+}
+
+/* The keyboard hints at the foot. */
+.agx-filt__hints {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 32px;
+  padding: 0 12px;
+  border-top: 0.5px solid var(--agx-line);
+  color: var(--agx-faint);
+  font-size: 12px;
+}
+
+.agx-filt__hints kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 0.5px var(--agx-line);
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--agx-text);
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .agx-filt__option {
+    min-height: 44px;
+  }
+
+  .agx-filt__group-head {
+    min-height: 44px;
+  }
+
+  .agx-filt__clear {
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agx-filt__panel,
+  .agx-filt__panel-inner,
+  .agx-filt__chevron,
+  .agx-filt__box,
+  .agx-filt__box svg,
+  .agx-filt__group-head,
+  .agx-filt__option,
+  .agx-filt__clear {
+    transition: none;
+  }
+}

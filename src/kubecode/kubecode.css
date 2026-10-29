@@ -1133,47 +1133,11 @@
   gap: 8px;
 }
 
-.kubecode-work-columns {
-  display: flex;
-  min-height: 360px;
-  overflow-x: auto;
-}
-.kubecode-work-column {
-  border-right: 1px solid var(--border-subtle);
-  flex: 1 1 200px;
-  min-width: 180px;
-}
-/* A stage nothing is in stays on the board but takes little room. */
-.kubecode-work-column[data-empty='true'][data-column='analyzing'] { flex: 0 0 120px; min-width: 120px; }
-.kubecode-work-closed {
-  border-right: 1px solid var(--border-subtle);
-  min-width: 0;
-}
-.kubecode-work-column:last-child { border-right: 0; }
-.kubecode-work-column.is-drop-target,
-.kubecode-work-closed.is-drop-target { background: var(--surface-hover); }
-.kubecode-work-column[data-empty='true'] { opacity: 0.75; }
-.kubecode-work-column > header,
-.kubecode-work-closed > header {
-  align-items: center;
-  border-bottom: 1px solid var(--border-subtle);
-  display: flex;
-  gap: 8px;
-  height: 36px;
-  justify-content: space-between;
-  padding: 0 10px;
-}
-.kubecode-work-column > div,
-.kubecode-work-closed > div {
-  align-content: start;
-  display: grid;
-  gap: 8px;
-  padding: 8px;
-}
-.kubecode-work-closed { border: 1px dashed var(--border-subtle); border-radius: 6px; }
-.kubecode-work-closed > div { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+/* The filter menu holds itself to the reference card's width; the scoped
+   badge rides beside it. */
+.kubecode-work-filter-menu { max-width: 400px; }
 
-.kubecode-work-card [data-lifecycle]:not([data-lifecycle='active']) { opacity: 0.8; }
+.kubecode-work-card[data-lifecycle]:not([data-lifecycle='active']) { opacity: 0.8; }
 .kubecode-work-card-title {
   font-size: 13px;
   font-weight: 550;
@@ -1229,7 +1193,6 @@
 @media (max-width: 900px) {
   .kubecode-work-board { flex-direction: column; overflow-y: auto; }
   .kubecode-work-inspector { border-left: 0; border-top: 1px solid var(--border-subtle); flex: 0 0 auto; }
-  .kubecode-work-column { flex-basis: 80vw; }
 }
 
 .kubecode-work-header { align-items: flex-start; display: flex; gap: 12px; justify-content: space-between; }

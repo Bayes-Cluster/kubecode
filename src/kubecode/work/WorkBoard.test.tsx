@@ -118,12 +118,13 @@ describe('WorkBoard', () => {
     view(workApi({ workBoard: vi.fn().mockResolvedValue(boardOf(cards)) }))
     await screen.findByText('Plan it')
     expect(screen.getAllByTestId(/^work-column-/)).toHaveLength(6)
-    expect(within(screen.getByTestId('work-column-executing')).getByText('2', { selector: '[data-slot="badge"]' })).toBeInTheDocument()
+    // The shared board presentation carries the live count (#284).
+    expect(within(screen.getByTestId('work-column-executing')).getByText('2', { selector: '.agx-board__col-count' })).toBeInTheDocument()
 
     const run = screen.getByTestId('work-card-run')
-    // The official Card is the frame; one native button inside opens the item (like TaskCardView).
+    // The board shell is the frame; one native button inside opens the item.
     expect(run.tagName).toBe('BUTTON')
-    expect(run.parentElement).toHaveAttribute('data-slot', 'card')
+    expect(run.parentElement).toHaveClass('agx-board__card')
     expect(within(run).getByText('kubecode.work.attemptFailed')).toBeInTheDocument()
     expect(run).toHaveTextContent('3')
     expect(run).toHaveTextContent('Pruner')
@@ -142,7 +143,7 @@ describe('WorkBoard', () => {
     expect(within(attention).getByText(/kubecode.work.condition.waiting · 1/)).toBeInTheDocument()
   })
 
-  it('narrows the same board with filters and chips, and clears them', async () => {
+  it('narrows the same board with the filter menu, and clears it', async () => {
     const workBoard = vi.fn().mockResolvedValue(boardOf([
       workCard({ id: 'w1', title: 'One', condition: 'waiting' }),
     ]))
@@ -150,26 +151,26 @@ describe('WorkBoard', () => {
     const v = view(workApi({ workBoard }), { onFilterChange })
     await screen.findByText('One')
     expect(workBoard).toHaveBeenLastCalledWith('p1', {})
-    const researchFilter = screen.getByRole('combobox', { name: 'kubecode.work.field.research' })
-    expect(researchFilter).toHaveAttribute('data-slot', 'select-trigger')
-    fireEvent.click(researchFilter)
-    fireEvent.click(await screen.findByRole('option', { name: 'Pruning' }))
+    // The menu discloses each group's options inline (#284, the Filter Menu).
+    fireEvent.click(screen.getByRole('button', { name: /kubecode.work.field.research/ }))
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Pruning' }))
     expect(onFilterChange).toHaveBeenLastCalledWith({ research_id: 'r1' })
-    fireEvent.click(screen.getByRole('combobox', { name: 'kubecode.work.field.agent' }))
-    fireEvent.click(await screen.findByRole('option', { name: 'Analyst' }))
+    fireEvent.click(screen.getByRole('button', { name: /kubecode.work.field.agent/ }))
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Analyst' }))
     expect(onFilterChange).toHaveBeenLastCalledWith({ conversation_id: 's2' })
     const waiting = within(screen.getByRole('status', { name: 'kubecode.work.attention' })).getByRole('radio', { name: /kubecode.work.condition.waiting/ })
     expect(waiting).toHaveAttribute('data-slot', 'toggle-group-item')
     fireEvent.click(waiting)
     expect(onFilterChange).toHaveBeenLastCalledWith({ condition: 'waiting' })
-    const includeClosed = screen.getByRole('checkbox', { name: 'kubecode.work.filter.includeClosed' })
-    expect(includeClosed).toHaveAttribute('data-slot', 'checkbox')
-    fireEvent.click(includeClosed)
+    fireEvent.click(screen.getByRole('button', { name: /kubecode.work.closedLane/ }))
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'kubecode.work.filter.includeClosed' }))
     expect(onFilterChange).toHaveBeenLastCalledWith({ include_closed: true })
 
-    // The host applies a filter: the board asks for exactly that, and can be cleared.
+    // The host applies a filter: the board asks for exactly that, the chip
+    // says so, and the menu can be cleared.
     v.update([], 'live', { research_id: 'r1', thread_id: 't1' })
     await waitFor(() => expect(workBoard).toHaveBeenLastCalledWith('p1', { research_id: 'r1', thread_id: 't1' }))
+    await screen.findByText('Pruning', { selector: '.agx-filt__chip' })
     fireEvent.click(await screen.findByRole('button', { name: 'kubecode.work.filter.clear' }))
     expect(onFilterChange).toHaveBeenLastCalledWith({})
   })
@@ -727,5 +728,20 @@ describe('WorkBoard evidence review', () => {
     fireEvent.click(within(inspector).getByRole('button', { name: 'kubecode.work.evidence.more' }))
     expect(await within(inspector).findByText('second page')).toBeInTheDocument()
     expect(within(inspector).getByText('first page')).toBeInTheDocument()
+  })
+
+  it('renders a large board (200 cards over six stages) inside the frame budget', async () => {
+    const stages = ['planned', 'ready', 'executing', 'analyzing', 'review', 'done'] as const
+    const cards = Array.from({ length: 200 }, (_, index) => (
+      workCard({ id: `bulk-${index}`, title: `Work ${index}`, stage: stages[index % 6] })
+    ))
+    const started = performance.now()
+    view(workApi({ workBoard: vi.fn().mockResolvedValue(boardOf(cards)) }))
+    await screen.findByText('Work 199')
+    const elapsed = performance.now() - started
+    expect(screen.getAllByTestId(/^work-card-bulk-/)).toHaveLength(200)
+    // Well under the 30s test timeout: a board that re-renders per streamed
+    // update shows up here as seconds, not milliseconds (#284 acceptance).
+    expect(elapsed).toBeLessThan(2_000)
   })
 })

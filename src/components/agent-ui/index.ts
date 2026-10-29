@@ -8,6 +8,16 @@ import './tokens.css'
 
 export { BlurSwap, type BlurSwapProps } from './blur-swap'
 export {
+  AgxBoard,
+  AgxBoardCardBody,
+  AgxBoardCard,
+  AgxBoardChips,
+  AgxBoardChip,
+  AgxBoardColumn,
+  AgxBoardColumns,
+  AgxBoardDrop,
+} from './board'
+export {
   AgxComposer,
   AgxComposerChip,
   AgxComposerField,
@@ -15,6 +25,12 @@ export {
   AgxComposerRail,
 } from './composer'
 export { CommandMenuFeedback, CommandMenuPill, highlightMatch } from './command-menu'
+export {
+  AgxFilterChip,
+  AgxFilterGroup,
+  AgxFilterMenu,
+  AgxFilterOption,
+} from './filter-menu'
 export {
   AgxModelPickerOption,
   AgxModelPickerToggle,
