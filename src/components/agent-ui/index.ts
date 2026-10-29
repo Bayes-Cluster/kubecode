@@ -26,6 +26,12 @@ export {
 } from './composer'
 export { CommandMenuFeedback, CommandMenuPill, highlightMatch } from './command-menu'
 export {
+  AgxFilterChip,
+  AgxFilterGroup,
+  AgxFilterMenu,
+  AgxFilterOption,
+} from './filter-menu'
+export {
   AgxModelPickerOption,
   AgxModelPickerToggle,
   AgxModelPickerTrigger,
