@@ -1648,6 +1648,7 @@
   "kubecode.research.exec.unknownHint": "Kubecode nie zmoh vysvietlić, što adbylosia z hetym pracesam. Jon nie ličycca paspiachovym i nie budzie zapuščany paŭtorna. Raskažycie, što vam viadoma.",
   "kubecode.research.exec.reconcile": "Udakladnić nieviadomy vynik",
   "kubecode.research.exec.exitCodeOptional": "Kod vychadu, kali vy jaho viedajecie",
+  "kubecode.research.exec.details": "Detali eksperimentu",
   "kubecode.research.exec.neverStarted": "Jon tak i nie zapusciŭsia",
   "kubecode.research.exec.didFinish": "Jon zavieršyŭsia",
   "kubecode.research.exec.waiting": "Čakaje: {member}, da {until}",

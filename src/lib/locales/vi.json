@@ -1648,6 +1648,7 @@
   "kubecode.research.exec.unknownHint": "Kubecode không xác định được điều gì đã xảy ra với tiến trình này. Nó không được coi là thành công và sẽ không được chạy lại. Hãy cho biết những gì bạn biết.",
   "kubecode.research.exec.reconcile": "Đối chiếu kết quả không rõ",
   "kubecode.research.exec.exitCodeOptional": "Mã thoát, nếu bạn biết",
+  "kubecode.research.exec.details": "Chi tiết thí nghiệm",
   "kubecode.research.exec.neverStarted": "Nó chưa từng khởi động",
   "kubecode.research.exec.didFinish": "Nó đã hoàn tất",
   "kubecode.research.exec.waiting": "Đang chờ: {member}, đến {until}",

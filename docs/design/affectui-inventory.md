@@ -723,3 +723,17 @@ change.
   captures ride slice L as before. The team suites cover propose and
   pause/resume; the members suites cover add/edit/remove/defaults and
   replace-session.
+- Slice K (#288), the recreation term the audit had left as "conformant":
+  the Experiment Card's compact disclosure — the compact header (title,
+  state and analysis badges, policy revision, the disclosure toggle)
+  always in view, with the command, exit/signal/reason facts, artifact
+  availability, the Leader's decisions and the output in a real fold
+  (click, tap, keyboard alike, no hover; reduced-motion flat). The
+  asked-of-you reconcile stays on the card's face, as do the wait line and
+  Stop; missing data still reads unknown. Re-verified against the issue's
+  terms: the discussion/threads, findings and import/export compositions
+  were already the shared shape over #280/#286/#278; the gallery shows the
+  experiment states through the production research surface and its suite
+  (the card is a research-owned composition — its states are exercised
+  there, not duplicated with a stub API in the gallery); zero
+  winner/uplift/confidence stands. Walkthrough captures ride slice L.

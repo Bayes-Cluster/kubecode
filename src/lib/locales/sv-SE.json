@@ -1648,6 +1648,7 @@
   "kubecode.research.exec.unknownHint": "Kubecode kunde inte fastställa vad som hände med den här processen. Den räknas inte som lyckad och körs inte igen. Berätta vad du vet.",
   "kubecode.research.exec.reconcile": "Avstäm okänt utfall",
   "kubecode.research.exec.exitCodeOptional": "Slutkod, om du känner till den",
+  "kubecode.research.exec.details": "Experimentdetaljer",
   "kubecode.research.exec.neverStarted": "Den startade aldrig",
   "kubecode.research.exec.didFinish": "Den blev klar",
   "kubecode.research.exec.waiting": "Väntar: {member}, till {until}",

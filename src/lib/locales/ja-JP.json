@@ -1648,6 +1648,7 @@
   "kubecode.research.exec.unknownHint": "Kubecode はこのプロセスに何が起きたかを確認できませんでした。成功とは見なされず、再実行もされません。わかっていることを入力してください。",
   "kubecode.research.exec.reconcile": "不明な結果を確定",
   "kubecode.research.exec.exitCodeOptional": "終了コード（わかる場合）",
+  "kubecode.research.exec.details": "実験の詳細",
   "kubecode.research.exec.neverStarted": "開始されなかった",
   "kubecode.research.exec.didFinish": "完了した",
   "kubecode.research.exec.waiting": "待機中：{member}（{until} まで）",

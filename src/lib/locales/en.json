@@ -1293,6 +1293,7 @@
   "kubecode.research.exec.unknownHint": "Kubecode could not establish what happened to this process. It is not treated as a success and will not be rerun. Say what you know.",
   "kubecode.research.exec.reconcile": "Reconcile unknown outcome",
   "kubecode.research.exec.exitCodeOptional": "Exit code, if you know it",
+  "kubecode.research.exec.details": "Experiment details",
   "kubecode.research.exec.neverStarted": "It never started",
   "kubecode.research.exec.didFinish": "It finished",
   "kubecode.research.exec.waiting": "Waiting: {member}, until {until}",
