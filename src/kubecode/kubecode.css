@@ -468,10 +468,6 @@
   min-width: 0;
   padding: 0 22px 0 6px;
 }
-.kubecode-terminal-navigator-row[data-active='true'] {
-  background: var(--surface-hover);
-  color: var(--text-primary);
-}
 .kubecode-terminal-navigator-row > svg,
 .kubecode-terminal-navigator-row > img {
   flex: 0 0 auto;

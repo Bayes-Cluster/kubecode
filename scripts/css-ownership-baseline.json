@@ -462,22 +462,6 @@
     },
     {
       "file": "src/kubecode/kubecode.css",
-      "text": "background: var(--surface-hover);",
-      "context": ".kubecode-terminal-navigator-row[data-active='true']",
-      "kind": "appearance-on-official",
-      "component": "Button",
-      "owner": "H #285 (UI2)"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": "color: var(--text-primary);",
-      "context": ".kubecode-terminal-navigator-row[data-active='true']",
-      "kind": "appearance-on-official",
-      "component": "Button",
-      "owner": "H #285 (UI2)"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
       "text": "height: 18px;",
       "context": ".kubecode-terminal-navigator-close",
       "kind": "appearance-on-official",
