@@ -1648,6 +1648,7 @@
   "kubecode.research.exec.unknownHint": "Kubecode nedokázal zistiť, čo sa s týmto procesom stalo. Nepovažuje sa za úspešný a nespustí sa znova. Uveďte, čo viete.",
   "kubecode.research.exec.reconcile": "Vyrovnať neznámy výsledok",
   "kubecode.research.exec.exitCodeOptional": "Návratový kód, ak ho poznáte",
+  "kubecode.research.exec.details": "Podrobnosti o experimente",
   "kubecode.research.exec.neverStarted": "Nikdy sa nespustil",
   "kubecode.research.exec.didFinish": "Dokončil sa",
   "kubecode.research.exec.waiting": "Čaká: {member}, do {until}",

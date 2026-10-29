@@ -1648,6 +1648,7 @@
   "kubecode.research.exec.unknownHint": "Kubecode non è riuscito a stabilire cosa sia successo a questo processo. Non è considerato riuscito e non verrà rieseguito. Indica ciò che sai.",
   "kubecode.research.exec.reconcile": "Riconcilia esito sconosciuto",
   "kubecode.research.exec.exitCodeOptional": "Codice di uscita, se lo conosci",
+  "kubecode.research.exec.details": "Dettagli dell'esperimento",
   "kubecode.research.exec.neverStarted": "Non è mai partito",
   "kubecode.research.exec.didFinish": "È terminato",
   "kubecode.research.exec.waiting": "In attesa: {member}, fino a {until}",

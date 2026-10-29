@@ -1648,6 +1648,7 @@
   "kubecode.research.exec.unknownHint": "Kubecode не зміг з’ясувати, що сталося з цим процесом. Його не вважають успішним і не запускатимуть повторно. Повідомте, що вам відомо.",
   "kubecode.research.exec.reconcile": "Узгодити невідомий результат",
   "kubecode.research.exec.exitCodeOptional": "Код завершення, якщо ви його знаєте",
+  "kubecode.research.exec.details": "Подробиці експерименту",
   "kubecode.research.exec.neverStarted": "Не запускався",
   "kubecode.research.exec.didFinish": "Завершився",
   "kubecode.research.exec.waiting": "Очікування: {member}, до {until}",

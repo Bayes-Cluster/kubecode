@@ -1648,6 +1648,7 @@
   "kubecode.research.exec.unknownHint": "Kubecode не змог высветліць, што адбылося з гэтым працэсам. Ён не лічыцца паспяховым і не будзе запушчаны паўторна. Раскажыце, што вам вядома.",
   "kubecode.research.exec.reconcile": "Удакладніць невядомы вынік",
   "kubecode.research.exec.exitCodeOptional": "Код выхаду, калі вы яго ведаеце",
+  "kubecode.research.exec.details": "Дэталі эксперыменту",
   "kubecode.research.exec.neverStarted": "Ён так і не запусціўся",
   "kubecode.research.exec.didFinish": "Ён завершыўся",
   "kubecode.research.exec.waiting": "Чакае: {member}, да {until}",

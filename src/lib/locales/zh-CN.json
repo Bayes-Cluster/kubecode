@@ -1648,6 +1648,7 @@
   "kubecode.research.exec.unknownHint": "Kubecode 无法确定此进程发生了什么。它不会被视为成功，也不会重新运行。请说明你所知道的情况。",
   "kubecode.research.exec.reconcile": "核对未知结果",
   "kubecode.research.exec.exitCodeOptional": "退出码（如果你知道）",
+  "kubecode.research.exec.details": "实验详情",
   "kubecode.research.exec.neverStarted": "从未启动",
   "kubecode.research.exec.didFinish": "已结束",
   "kubecode.research.exec.waiting": "等待中：{member}，直到 {until}",

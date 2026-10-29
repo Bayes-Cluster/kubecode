@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import { CircleAlert, TriangleAlert } from 'lucide-react'
+import { ChevronRight, CircleAlert, TriangleAlert } from 'lucide-react'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
@@ -517,6 +517,8 @@ function ExperimentCard({
   const [exitCode, setExitCode] = useState('')
   const action = useAction(t)
   const fieldId = useId()
+  const detailId = useId()
+  const [expanded, setExpanded] = useState(false)
   const title = experiment.label || commandText(experiment.argv)
   const openWait = waits.find((wait) => wait.state === 'open')
 
@@ -548,6 +550,9 @@ function ExperimentCard({
 
   return (
     <Item className="flex-col items-stretch gap-2" data-state={experiment.state} role="listitem" size="sm" variant="outline">
+      {/* The compact header: status and title always in view; the command,
+          the exit facts, the artifacts and the output fold beneath a real
+          disclosure (click, tap, keyboard alike — no hover). */}
       <div className="flex flex-wrap items-center gap-2">
         <ItemTitle className="[overflow-wrap:anywhere]">{title}</ItemTitle>
         <Badge variant={statusToneVariant(experiment.state === 'unknown' ? 'warn' : experiment.state === 'running' ? 'ok' : 'muted')}>
@@ -565,12 +570,73 @@ function ExperimentCard({
         <span className="text-xs text-muted-foreground">
           {t('kubecode.research.exec.policyRevision', { revision: experiment.policy_revision })}
         </span>
+        <button
+          aria-controls={detailId}
+          aria-expanded={expanded}
+          aria-label={`${title} · ${t('kubecode.research.exec.details')}`}
+          className="pointer-coarse:min-h-[44px] pointer-coarse:min-w-[44px] ml-auto flex-none rounded-md p-1 text-muted-foreground outline-none transition-transform duration-200 motion-reduce:transition-none focus-visible:ring-[3px] focus-visible:ring-ring aria-expanded:rotate-90 hover:bg-accent"
+          data-testid={`experiment-disclosure-${experiment.id}`}
+          type="button"
+          onClick={() => setExpanded((value) => !value)}
+        >
+          <ChevronRight aria-hidden size={16} />
+        </button>
       </div>
-      {experiment.label && <code className="text-xs [overflow-wrap:anywhere]">{commandText(experiment.argv)}</code>}
-      <span className="text-xs text-muted-foreground empty:hidden">
-        {experiment.exit_code !== null && t('kubecode.research.exec.exitCode', { code: experiment.exit_code })}
-        {experiment.signal !== null && ` · ${t('kubecode.research.exec.signal', { signal: experiment.signal })}`}
-        {experiment.reason ? ` · ${experiment.reason}` : ''}
+      <span className="kubecode-disclosure-fold" data-expanded={expanded || undefined} id={detailId}>
+        <span className="flex min-h-0 flex-col items-start gap-2 overflow-hidden text-xs" data-testid={`experiment-detail-${experiment.id}`}>
+        {experiment.label && <code className="[overflow-wrap:anywhere]">{commandText(experiment.argv)}</code>}
+        <span className="text-muted-foreground empty:hidden">
+          {experiment.exit_code !== null && t('kubecode.research.exec.exitCode', { code: experiment.exit_code })}
+          {experiment.signal !== null && ` · ${t('kubecode.research.exec.signal', { signal: experiment.signal })}`}
+          {experiment.reason ? ` · ${experiment.reason}` : ''}
+        </span>
+        {experiment.artifact_state.length > 0 && (
+          <ul className="m-0 flex list-none flex-col gap-0.5 p-0" aria-label={t('kubecode.research.exec.artifacts')}>
+            {experiment.artifact_state.map((artifact) => (
+              <li className="flex flex-wrap items-center gap-1.5" key={artifact.path}>
+                <code className="[overflow-wrap:anywhere]">{artifact.path}</code>
+                <Badge variant={availabilityVariant(artifact.availability)}>{availabilityLabel(t, artifact.availability)}</Badge>
+              </li>
+            ))}
+          </ul>
+        )}
+        {decisions.length > 0 && (
+          <ul className="m-0 flex list-none flex-col gap-1 p-0 text-sm" aria-label={t('kubecode.research.exec.decisions')}>
+            {decisions.map((decision) => (
+              <li className="[overflow-wrap:anywhere]" key={decision.id}>
+                <Badge variant="success">{t(DECISION_LABELS[decision.kind])}</Badge>{' '}
+                {decision.rationale}
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            aria-label={`${logs ? t('kubecode.research.exec.refreshOutput') : t('kubecode.research.exec.viewOutput')}: ${title}`}
+            disabled={action.busy}
+            size="xs"
+            variant="outline"
+            onClick={loadLogs}
+          >
+            {logs ? t('kubecode.research.exec.refreshOutput') : t('kubecode.research.exec.viewOutput')}
+          </Button>
+        </div>
+        {logs && (
+          <div className="flex flex-col gap-2">
+            {(['stdout', 'stderr'] as const).map((stream) => (
+              <section className="flex min-w-0 flex-col gap-1" key={stream} aria-label={t(`kubecode.research.exec.${stream}` as Parameters<Translator>[0])}>
+                <h5 className="m-0 text-xs font-semibold text-muted-foreground">{t(`kubecode.research.exec.${stream}` as Parameters<Translator>[0])}</h5>
+                <pre className="m-0 max-h-60 overflow-auto rounded-md border bg-muted p-2 font-mono text-xs whitespace-pre-wrap [overflow-wrap:anywhere]" tabIndex={0}>{logs[stream].text || t('kubecode.research.exec.emptyOutput')}</pre>
+                {logs[stream].truncated && (
+                  <span className="text-xs text-muted-foreground">
+                    {t('kubecode.research.exec.truncated', { bytes: logs[stream].total_bytes })}
+                  </span>
+                )}
+              </section>
+            ))}
+          </div>
+        )}
+        </span>
       </span>
       {experiment.state === 'unknown' && (
         <Alert aria-label={`${t('kubecode.research.exec.reconcile')}: ${title}`} role="group">
@@ -622,36 +688,7 @@ function ExperimentCard({
           {openWait.expected_follow_up ? ` · ${openWait.expected_follow_up}` : ''}
         </p>
       )}
-      {experiment.artifact_state.length > 0 && (
-        <ul className="m-0 flex list-none flex-col gap-0.5 p-0 text-xs" aria-label={t('kubecode.research.exec.artifacts')}>
-          {experiment.artifact_state.map((artifact) => (
-            <li className="flex flex-wrap items-center gap-1.5" key={artifact.path}>
-              <code className="[overflow-wrap:anywhere]">{artifact.path}</code>
-              <Badge variant={availabilityVariant(artifact.availability)}>{availabilityLabel(t, artifact.availability)}</Badge>
-            </li>
-          ))}
-        </ul>
-      )}
-      {decisions.length > 0 && (
-        <ul className="m-0 flex list-none flex-col gap-1 p-0 text-sm" aria-label={t('kubecode.research.exec.decisions')}>
-          {decisions.map((decision) => (
-            <li className="[overflow-wrap:anywhere]" key={decision.id}>
-              <Badge variant="success">{t(DECISION_LABELS[decision.kind])}</Badge>{' '}
-              {decision.rationale}
-            </li>
-          ))}
-        </ul>
-      )}
       <div className="flex flex-wrap items-center gap-2">
-        <Button
-          aria-label={`${logs ? t('kubecode.research.exec.refreshOutput') : t('kubecode.research.exec.viewOutput')}: ${title}`}
-          disabled={action.busy}
-          size="xs"
-          variant="outline"
-          onClick={loadLogs}
-        >
-          {logs ? t('kubecode.research.exec.refreshOutput') : t('kubecode.research.exec.viewOutput')}
-        </Button>
         {isActive(experiment.state) && experiment.state !== 'unknown' && !experiment.cancel_requested && (
           <Button
             disabled={action.busy}
@@ -667,21 +704,6 @@ function ExperimentCard({
           </Button>
         )}
       </div>
-      {logs && (
-        <div className="flex flex-col gap-2">
-          {(['stdout', 'stderr'] as const).map((stream) => (
-            <section className="flex min-w-0 flex-col gap-1" key={stream} aria-label={t(`kubecode.research.exec.${stream}` as Parameters<Translator>[0])}>
-              <h5 className="m-0 text-xs font-semibold text-muted-foreground">{t(`kubecode.research.exec.${stream}` as Parameters<Translator>[0])}</h5>
-              <pre className="m-0 max-h-60 overflow-auto rounded-md border bg-muted p-2 font-mono text-xs whitespace-pre-wrap [overflow-wrap:anywhere]" tabIndex={0}>{logs[stream].text || t('kubecode.research.exec.emptyOutput')}</pre>
-              {logs[stream].truncated && (
-                <span className="text-xs text-muted-foreground">
-                  {t('kubecode.research.exec.truncated', { bytes: logs[stream].total_bytes })}
-                </span>
-              )}
-            </section>
-          ))}
-        </div>
-      )}
       {action.error && <Alert variant="destructive"><AlertDescription>{action.error}</AlertDescription></Alert>}
     </Item>
   )

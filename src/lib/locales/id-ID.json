@@ -1648,6 +1648,7 @@
   "kubecode.research.exec.unknownHint": "Kubecode tidak dapat memastikan apa yang terjadi pada proses ini. Proses ini tidak dianggap berhasil dan tidak akan dijalankan ulang. Sampaikan apa yang Anda ketahui.",
   "kubecode.research.exec.reconcile": "Rekonsiliasi hasil yang tidak diketahui",
   "kubecode.research.exec.exitCodeOptional": "Kode keluar, jika Anda tahu",
+  "kubecode.research.exec.details": "Detail eksperimen",
   "kubecode.research.exec.neverStarted": "Tidak pernah dimulai",
   "kubecode.research.exec.didFinish": "Sudah selesai",
   "kubecode.research.exec.waiting": "Menunggu: {member}, hingga {until}",

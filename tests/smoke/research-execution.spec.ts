@@ -88,6 +88,8 @@ test('@smoke research execution shows processes, controls launches, and never ca
     const baseline = section.getByRole('listitem').filter({ hasText: 'baseline' }).first()
     await expect(baseline).toContainText('Awaiting analysis', { timeout: 15_000 })
     await expect(baseline).not.toContainText('Analyzed')
+    // The diagnostics live in the card's disclosure: open it first.
+    await baseline.getByRole('button', { name: /Experiment details/ }).click()
     await baseline.getByRole('button', { name: 'View output' }).click()
     await expect(baseline.locator('pre').first()).toHaveText('hello-from-baseline\n')
     await expect(baseline.getByRole('list', { name: 'Artifacts' })).toContainText('metrics.txt')
