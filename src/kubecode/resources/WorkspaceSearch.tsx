@@ -2,6 +2,8 @@ import { useEffect, useId, useRef, useState, type ReactNode, type Ref } from 're
 
 import { CheckIcon } from 'lucide-react'
 
+import { AgxPickerFill } from '@/components/agent-ui'
+
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Command, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
@@ -171,7 +173,11 @@ export function WorkspaceSearch({
         setRefusal(null)
       }}
     >
-      <div className="flex flex-col gap-2">
+      <div className="relative flex flex-col gap-2">
+        {/* The fill takes the wrapper as its coordinate space and scrolls
+            with the rows; it glides along cmdk's own selection, the
+            engines' highlight stepping aside (ADR 0257). */}
+        <AgxPickerFill />
         <CommandInput
           aria-describedby={scopeId}
           autoFocus={autoFocus}
@@ -301,7 +307,7 @@ export function WorkspaceSearch({
                 const removed = item.availability === 'removed'
                 return (
                   <CommandItem
-                    className="items-start gap-3"
+                    className="agx-pick__slot items-start gap-3 data-[selected=true]:bg-transparent data-[selected=true]:text-inherit"
                     data-availability={item.availability}
                     aria-current={result.key === selectedKey ? 'true' : undefined}
                     data-focus-key={focusKey}
@@ -332,7 +338,7 @@ export function WorkspaceSearch({
                   </CommandItem>
                 )
               })}
-            </CommandGroup>
+              </CommandGroup>
           )}
         </CommandList>
         {ready && search.loadMoreFailed && (
