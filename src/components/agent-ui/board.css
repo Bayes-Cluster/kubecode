@@ -11,8 +11,11 @@
   min-width: 0;
 }
 
-/* The column run: one scroller sideways, columns at least 224px wide. */
+/* The column run: one scroller sideways, columns at least 224px wide. The
+   columns are the compact mode's container: a lane narrower than 260px folds
+   the card lines the adapter marked secondary. */
 .agx-board__columns {
+  container-type: inline-size;
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: minmax(224px, 1fr);

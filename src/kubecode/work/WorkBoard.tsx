@@ -1,18 +1,18 @@
 import { useMemo, useRef, useState } from 'react'
 
+import {
+  AgxBoard,
+  AgxBoardColumn,
+  AgxBoardColumns,
+  AgxFilterChip,
+  AgxFilterGroup,
+  AgxFilterMenu,
+  AgxFilterOption,
+} from '@/components/agent-ui'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import type { Translator } from '@/lib/i18n'
@@ -198,6 +198,23 @@ export function WorkBoard({
 
   const attentionTotal = attention.reduce((sum, condition) => sum + conditionCount(condition), 0)
   const closedCards = board?.closed ?? []
+  // The filter menu's groups: folded unless they hold the active selection.
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({})
+  const groupOpen = (key: string, active: boolean) => openGroups[key] ?? active
+  const toggleGroup = (key: string) => (open: boolean) => {
+    setOpenGroups((current) => ({ ...current, [key]: open }))
+  }
+  const researchTitle = research.find((item) => item.id === filter.research_id)?.title
+  const sessionTitle = sessions.find((item) => item.id === filter.conversation_id)?.title
+  const sourceLabel = filter.origin === 'native'
+    ? t('kubecode.work.filter.workspace')
+    : filter.origin === 'legacy_team'
+      ? t('kubecode.work.legacy')
+      : null
+  const conditionLabel = filter.condition && filter.condition !== 'none'
+    ? t(CONDITION_LABELS[filter.condition as Exclude<WorkCondition, 'none'>])
+    : null
+  const filtersActive = !filterIsEmpty(filter)
 
   return (
     <section
@@ -252,50 +269,90 @@ export function WorkBoard({
           </form>
         )}
 
-        <div className="kubecode-work-filters" role="group" aria-label={t('kubecode.work.filters')}>
-          {research.length > 0 && (
-            <FilterSelect
-              label={t('kubecode.work.field.research')}
-              value={filter.research_id ?? ''}
-              onChange={(value) => patch({ research_id: value || undefined, round_id: undefined })}
-              options={research.map((item) => ({ value: item.id, label: item.title }))}
-              allLabel={t('kubecode.work.filter.all')}
-            />
-          )}
-          <FilterSelect
-            label={t('kubecode.work.field.agent')}
-            value={filter.conversation_id ?? ''}
-            onChange={(value) => patch({ conversation_id: value || undefined })}
-            options={sessions.map((item) => ({ value: item.id, label: item.title }))}
-            allLabel={t('kubecode.work.filter.all')}
-          />
-          <FilterSelect
-            label={t('kubecode.work.filter.source')}
-            value={filter.origin ?? ''}
-            onChange={(value) => patch({ origin: (value || undefined) as WorkBoardFilter['origin'] })}
-            options={[
-              { value: 'native', label: t('kubecode.work.filter.workspace') },
-              { value: 'legacy_team', label: t('kubecode.work.legacy') },
-            ]}
-            allLabel={t('kubecode.work.filter.all')}
-          />
-          <Field className="w-auto" orientation="horizontal">
-            <Checkbox
-              checked={Boolean(filter.include_closed)}
-              id="work-include-closed"
-              onCheckedChange={(checked) => patch({ include_closed: checked === true })}
-            />
-            <FieldLabel variant="option" htmlFor="work-include-closed">
-              {t('kubecode.work.filter.includeClosed')}
-            </FieldLabel>
-          </Field>
+        <div className="kubecode-work-filters">
+          <AgxFilterMenu
+            chips={(
+              <>
+                {researchTitle && <AgxFilterChip>{researchTitle}</AgxFilterChip>}
+                {sessionTitle && <AgxFilterChip>{sessionTitle}</AgxFilterChip>}
+                {sourceLabel && <AgxFilterChip>{sourceLabel}</AgxFilterChip>}
+                {conditionLabel && <AgxFilterChip>{conditionLabel}</AgxFilterChip>}
+                {filter.include_closed && <AgxFilterChip>{t('kubecode.work.filter.includeClosed')}</AgxFilterChip>}
+              </>
+            )}
+            clearDisabled={!filtersActive}
+            clearLabel={t('kubecode.work.filter.clear')}
+            title={t('kubecode.work.filters')}
+            onClear={filtersActive ? () => onFilterChange({}) : undefined}
+          >
+            {research.length > 0 && (
+              <AgxFilterGroup
+                count={research.length}
+                label={t('kubecode.work.field.research')}
+                open={groupOpen('research', Boolean(filter.research_id))}
+                picked={researchTitle}
+                onOpenChange={toggleGroup('research')}
+              >
+                {research.map((item) => (
+                  <AgxFilterOption
+                    checked={filter.research_id === item.id}
+                    key={item.id}
+                    label={item.title}
+                    onToggle={() => patch({ research_id: filter.research_id === item.id ? undefined : item.id, round_id: undefined })}
+                  />
+                ))}
+              </AgxFilterGroup>
+            )}
+            <AgxFilterGroup
+              count={sessions.length}
+              label={t('kubecode.work.field.agent')}
+              open={groupOpen('agent', Boolean(filter.conversation_id))}
+              picked={sessionTitle}
+              onOpenChange={toggleGroup('agent')}
+            >
+              {sessions.map((item) => (
+                <AgxFilterOption
+                  checked={filter.conversation_id === item.id}
+                  key={item.id}
+                  label={item.title}
+                  onToggle={() => patch({ conversation_id: filter.conversation_id === item.id ? undefined : item.id })}
+                />
+              ))}
+            </AgxFilterGroup>
+            <AgxFilterGroup
+              count={2}
+              label={t('kubecode.work.filter.source')}
+              open={groupOpen('origin', Boolean(filter.origin))}
+              picked={sourceLabel}
+              onOpenChange={toggleGroup('origin')}
+            >
+              <AgxFilterOption
+                checked={filter.origin === 'native'}
+                label={t('kubecode.work.filter.workspace')}
+                onToggle={() => patch({ origin: filter.origin === 'native' ? undefined : 'native' })}
+              />
+              <AgxFilterOption
+                checked={filter.origin === 'legacy_team'}
+                label={t('kubecode.work.legacy')}
+                onToggle={() => patch({ origin: filter.origin === 'legacy_team' ? undefined : 'legacy_team' })}
+              />
+            </AgxFilterGroup>
+            <AgxFilterGroup
+              count={1}
+              label={t('kubecode.work.closedLane')}
+              open={groupOpen('closed', Boolean(filter.include_closed))}
+              picked={filter.include_closed ? t('kubecode.work.filter.includeClosed') : undefined}
+              onOpenChange={toggleGroup('closed')}
+            >
+              <AgxFilterOption
+                checked={Boolean(filter.include_closed)}
+                label={t('kubecode.work.filter.includeClosed')}
+                onToggle={() => patch({ include_closed: filter.include_closed ? undefined : true })}
+              />
+            </AgxFilterGroup>
+          </AgxFilterMenu>
           {(effective.thread_id || effective.team_id || effective.round_id) && (
             <Badge variant="outline">{t('kubecode.work.filter.scoped')}</Badge>
-          )}
-          {!filterIsEmpty(filter) && (
-            <Button size="xs" variant="ghost" onClick={() => onFilterChange({})}>
-              {t('kubecode.work.filter.clear')}
-            </Button>
           )}
         </div>
 
@@ -337,18 +394,20 @@ export function WorkBoard({
           <ReaderEmpty>{filterIsEmpty(filter) ? t('kubecode.work.empty') : t('kubecode.work.emptyFiltered')}</ReaderEmpty>
         )}
 
-        <div className="kubecode-work-columns">
+        <AgxBoard>
+        <AgxBoardColumns data-testid="work-board-columns">
           {WORK_STAGES.map((stage) => {
             const cards = byStage.get(stage) ?? []
             const count = board?.stages.find((entry) => entry.stage === stage)?.count ?? cards.length
             return (
-              <section
+              <AgxBoardColumn
                 aria-label={t(STAGE_LABELS[stage])}
-                className={cn('kubecode-work-column', dropTarget === stage && 'is-drop-target')}
+                count={count}
                 data-column={stage}
-                data-empty={count === 0}
                 data-testid={`work-column-${stage}`}
                 key={stage}
+                label={t(STAGE_LABELS[stage])}
+                over={dropTarget === stage}
                 onDragLeave={() => setDropTarget((current) => (current === stage ? null : current))}
                 onDragOver={(event) => {
                   if (!dragging) return
@@ -360,37 +419,34 @@ export function WorkBoard({
                   void drop(stage)
                 }}
               >
-                <header>
-                  <h3 className="text-sm font-medium">{t(STAGE_LABELS[stage])}</h3>
-                  <Badge className="tabular-nums" variant="secondary">{count}</Badge>
-                </header>
-                <div>
-                  {cards.map((card) => (
-                    <WorkCardView
-                      card={card}
-                      draggable={card.operable === 'native'}
-                      key={card.item.id}
-                      selected={selectedId === card.item.id}
-                      t={t}
-                      onDragEnd={() => {
-                        setDragging(null)
-                        setDropTarget(null)
-                      }}
-                      onDragStart={setDragging}
-                      onSelect={(selected) => open(selected)}
-                    />
-                  ))}
-                </div>
-              </section>
+                {cards.map((card) => (
+                  <WorkCardView
+                    card={card}
+                    dragging={dragging?.item.id === card.item.id}
+                    draggable={card.operable === 'native'}
+                    key={card.item.id}
+                    selected={selectedId === card.item.id}
+                    t={t}
+                    onDragEnd={() => {
+                      setDragging(null)
+                      setDropTarget(null)
+                    }}
+                    onDragStart={setDragging}
+                    onSelect={(selected) => open(selected)}
+                  />
+                ))}
+              </AgxBoardColumn>
             )
           })}
-        </div>
+        </AgxBoardColumns>
 
         {(closedCards.length > 0 || dragging) && (
-          <section
+          <AgxBoardColumn
             aria-label={t('kubecode.work.closedLane')}
-            className={cn('kubecode-work-closed', dropTarget === 'closed' && 'is-drop-target')}
+            count={board?.closed_truncated ? `${closedCards.length}+` : closedCards.length}
             data-testid="work-closed-lane"
+            label={t('kubecode.work.closedLane')}
+            over={dropTarget === 'closed'}
             onDragOver={(event) => {
               if (!dragging) return
               event.preventDefault()
@@ -401,28 +457,21 @@ export function WorkBoard({
               void drop('closed')
             }}
           >
-            <header>
-              <h3 className="text-sm font-medium">{t('kubecode.work.closedLane')}</h3>
-              <Badge className="tabular-nums" variant="secondary">
-                {board?.closed_truncated ? `${closedCards.length}+` : closedCards.length}
-              </Badge>
-            </header>
-            <div>
-              {closedCards.map((card) => (
-                <WorkCardView
-                  card={card}
-                  draggable={false}
-                  key={card.item.id}
-                  selected={selectedId === card.item.id}
-                  t={t}
-                  onDragEnd={() => undefined}
-                  onDragStart={() => undefined}
-                  onSelect={(selected) => open(selected)}
-                />
-              ))}
-            </div>
-          </section>
+            {closedCards.map((card) => (
+              <WorkCardView
+                card={card}
+                draggable={false}
+                key={card.item.id}
+                selected={selectedId === card.item.id}
+                t={t}
+                onDragEnd={() => undefined}
+                onDragStart={() => undefined}
+                onSelect={(selected) => open(selected)}
+              />
+            ))}
+          </AgxBoardColumn>
         )}
+        </AgxBoard>
       </div>
 
       {selectedId && (
@@ -453,40 +502,5 @@ export function WorkBoard({
         />
       )}
     </section>
-  )
-}
-
-const ALL = '__all__'
-
-function FilterSelect({
-  allLabel,
-  label,
-  onChange,
-  options,
-  value,
-}: {
-  allLabel: string
-  label: string
-  onChange: (value: string) => void
-  options: Array<{ value: string; label: string }>
-  value: string
-}) {
-  return (
-    <Field className="w-auto" orientation="horizontal">
-      <FieldLabel className="shrink-0" variant="option">{label}</FieldLabel>
-      <Select value={value || ALL} onValueChange={(next) => onChange(next === ALL ? '' : next)}>
-        <SelectTrigger aria-label={label} className="max-w-48" size="sm">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectGroup>
-            <SelectItem value={ALL}>{allLabel}</SelectItem>
-            {options.map((option) => (
-              <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-            ))}
-          </SelectGroup>
-        </SelectContent>
-      </Select>
-    </Field>
   )
 }
