@@ -1,5 +1,6 @@
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
 
+import { AgxBoardColumn } from '@/components/agent-ui'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -200,42 +201,30 @@ export function TaskBoardView({
               return (
                 // Every column stays mounted: a wide board shows all four, a narrow one the picked stage.
                 <TabsContent asChild forceMount key={value} value={value}>
-                  <section
-                    // A column is named by its stage, not by its tab, and is no extra tab stop.
+                  <AgxBoardColumn
+                    // A column is named by its stage, not by its tab: the
+                    // tab's own labelledby yields, and it is no extra tab stop.
                     aria-label={stageLabel(t, value)}
                     aria-labelledby={undefined}
                     className="kubecode-task-column"
+                    count={column.length}
                     data-selected={stage === value}
                     data-stage={value}
+                    emptyLabel={t('kubecode.task.columnEmpty')}
+                    label={stageLabel(t, value)}
                     role="region"
-                    tabIndex={undefined}
                   >
-                    <h3 className="kubecode-task-column-heading flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                      {stageLabel(t, value)}
-                      <Badge variant="secondary">{column.length}</Badge>
-                    </h3>
-                    {column.length === 0 ? (
-                      <Empty size="compact" variant="outline">
-                        <EmptyHeader>
-                          <EmptyDescription>{t('kubecode.task.columnEmpty')}</EmptyDescription>
-                        </EmptyHeader>
-                      </Empty>
-                    ) : (
-                      <ul className="flex flex-col gap-2">
-                        {column.map((card) => (
-                          <li key={card.id}>
-                            <TaskCardView
-                              card={card}
-                              locale={locale}
-                              selected={selectedId === card.id}
-                              t={t}
-                              onOpen={() => onOpenTask(card.id)}
-                            />
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </section>
+                    {column.map((card) => (
+                      <TaskCardView
+                        card={card}
+                        key={card.id}
+                        locale={locale}
+                        selected={selectedId === card.id}
+                        t={t}
+                        onOpen={() => onOpenTask(card.id)}
+                      />
+                    ))}
+                  </AgxBoardColumn>
                 </TabsContent>
               )
             })}

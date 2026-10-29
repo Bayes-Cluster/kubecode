@@ -984,6 +984,7 @@
   "kubecode.task.action.answer": "Пытанне да вас",
   "kubecode.task.card.progress": "Выканана {done} з {total} частак працы",
   "kubecode.task.card.noWork": "Працы пакуль няма",
+  "kubecode.task.card.detail": "Дэталі задані",
   "kubecode.task.event.admitted": "Дададзена на дошку",
   "kubecode.task.event.execution_authorized": "Праца пачата",
   "kubecode.task.event.review_requested": "Запытана праверка",

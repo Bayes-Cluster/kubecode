@@ -984,6 +984,7 @@
   "kubecode.task.action.answer": "Pytańnie da vas",
   "kubecode.task.card.progress": "Vykanana {done} z {total} častak pracy",
   "kubecode.task.card.noWork": "Pracy pakul niama",
+  "kubecode.task.card.detail": "Detali zadani",
   "kubecode.task.event.admitted": "Dadadziena na došču",
   "kubecode.task.event.execution_authorized": "Praca pačata",
   "kubecode.task.event.review_requested": "Zapytana pravierka",

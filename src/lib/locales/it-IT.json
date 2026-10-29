@@ -984,6 +984,7 @@
   "kubecode.task.action.answer": "Domanda per te",
   "kubecode.task.card.progress": "{done} di {total} lavori completati",
   "kubecode.task.card.noWork": "Ancora nessun lavoro",
+  "kubecode.task.card.detail": "Dettagli dell'attività",
   "kubecode.task.event.admitted": "Aggiunto alla bacheca",
   "kubecode.task.event.execution_authorized": "Lavoro avviato",
   "kubecode.task.event.review_requested": "Revisione richiesta",

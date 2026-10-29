@@ -984,6 +984,7 @@
   "kubecode.task.action.answer": "Pertanyaan untuk Anda",
   "kubecode.task.card.progress": "{done} dari {total} item pekerjaan selesai",
   "kubecode.task.card.noWork": "Belum ada pekerjaan",
+  "kubecode.task.card.detail": "Detail tugas",
   "kubecode.task.event.admitted": "Ditambahkan ke papan",
   "kubecode.task.event.execution_authorized": "Pekerjaan dimulai",
   "kubecode.task.event.review_requested": "Tinjauan diminta",

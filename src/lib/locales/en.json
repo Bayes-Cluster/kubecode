@@ -1493,6 +1493,7 @@
   "kubecode.task.action.answer": "Question for you",
   "kubecode.task.card.progress": "{done} of {total} work items done",
   "kubecode.task.card.noWork": "No work yet",
+  "kubecode.task.card.detail": "Task details",
   "kubecode.task.event.admitted": "Added to the board",
   "kubecode.task.event.execution_authorized": "Work started",
   "kubecode.task.event.review_requested": "Review requested",

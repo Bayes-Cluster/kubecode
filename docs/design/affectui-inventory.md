@@ -74,13 +74,13 @@ per-file integration ledger for the programme in
 | [Plan vs Actual](https://www.affectui.com/components/plan-vs-actual) · [Demo JS](https://www.affectui.com/assets/demo.clean-wzchKI2C.js) · [Clean JS](https://www.affectui.com/assets/demo.clean-wzchKI2C.js) | Defer | #282 | Need reliable spans/parentage, timestamps, estimates and/or cost allocation; partial duration fields do not justify a complete trace or ETA. | Deferred (data/capability gap) |
 | [Profile Menu](https://www.affectui.com/components/profile-menu) · [Demo JS](https://www.affectui.com/assets/demo-Dk3NEbkP.js) · [Clean JS](https://www.affectui.com/assets/demo.clean-CPL7IiHS.js) | No fit | #279 | Connected SaaS catalog and signed-in account profile are outside the current local coding workspace product. | Closed (no fit) |
 | [Progress Tracker](https://www.affectui.com/components/progress-tracker) · [Demo JS](https://www.affectui.com/assets/demo-CRM2yhps.js) · [Clean JS](https://www.affectui.com/assets/demo.clean-DEuHi6CX.js) | Adapt | #279 | Project/provider setup and existing onboarding only; steps complete from real setup results, not timers. | Planned |
-| [Project Card](https://www.affectui.com/components/project-card) · [Demo JS](https://www.affectui.com/assets/demo-mVJMtnH2.js) · [Clean JS](https://www.affectui.com/assets/demo.clean-C-cDjx5G.js) | Adapt | #283 | Task summary/progress and focused evidence review; actual review outcomes and revisions only. No confidence score or approve-on-hover. | Planned |
+| [Project Card](https://www.affectui.com/components/project-card) · [Demo JS](https://www.affectui.com/assets/demo-mVJMtnH2.js) · [Clean JS](https://www.affectui.com/assets/demo.clean-C-cDjx5G.js) | Adapt | #283 | Task summary/progress and focused evidence review; actual review outcomes and revisions only. No confidence score or approve-on-hover. | Adapted in slice F (ADR 0257) |
 | [Prompt Library](https://www.affectui.com/components/prompt-library) · [Demo JS](https://www.affectui.com/assets/demo-Dag7eJtM.js) · [Clean JS](https://www.affectui.com/assets/demo.clean-CkmyfNZK.js) | Defer | #281 | No matching memory CRUD, template library or explicit decision-consequence graph in the audited composer; do not manufacture product features. | Deferred (data/capability gap) |
 | [Reaction Bar](https://www.affectui.com/components/reaction-bar) · [Demo JS](https://www.affectui.com/assets/demo-x4AxvLaI.js) · [Clean JS](https://www.affectui.com/assets/demo.clean-BwU0t77A.js) | No fit | #277 | No matching billing/email/OTP/social/voice feature; do not add a surface merely to use this reference. | Closed (no fit) |
-| [Review Center](https://www.affectui.com/components/review-center) · [Demo JS](https://www.affectui.com/assets/demo-ocpQ0Pxs.js) · [Clean JS](https://www.affectui.com/assets/demo.clean-CfzVMkMh.js) | Adapt | #283 | Task summary/progress and focused evidence review; actual review outcomes and revisions only. No confidence score or approve-on-hover. | Planned |
+| [Review Center](https://www.affectui.com/components/review-center) · [Demo JS](https://www.affectui.com/assets/demo-ocpQ0Pxs.js) · [Clean JS](https://www.affectui.com/assets/demo.clean-CfzVMkMh.js) | Adapt | #283 | Task summary/progress and focused evidence review; actual review outcomes and revisions only. No confidence score or approve-on-hover. | Adapted in slice F (ADR 0257) |
 | [Segmented Control](https://www.affectui.com/components/segmented-control) · [Demo JS](https://www.affectui.com/assets/demo-CROZOyTv.js) · [Clean JS](https://www.affectui.com/assets/demo.clean-DhJAipU6.js) | Recreate | #277 | Shared token-based controls/motion; numbers animate only after authoritative updates; reduce motion instantly. | Recreated in slice A (ADR 0257) |
 | [Setup Guide](https://www.affectui.com/components/setup-guide) · [Demo JS](https://www.affectui.com/assets/demo-CfJSX8BJ.js) · [Clean JS](https://www.affectui.com/assets/demo.clean-Bt_GjvlJ.js) | Adapt | #279 | Project/provider setup and existing onboarding only; steps complete from real setup results, not timers. | Planned |
-| [Smart Recommendation](https://www.affectui.com/components/smart-recommendation) · [Demo JS](https://www.affectui.com/assets/demo-Bmw88bzb.js) · [Clean JS](https://www.affectui.com/assets/demo.clean-CxJAxhV_.js) | Adapt | #283 | Task summary/progress and focused evidence review; actual review outcomes and revisions only. No confidence score or approve-on-hover. | Planned |
+| [Smart Recommendation](https://www.affectui.com/components/smart-recommendation) · [Demo JS](https://www.affectui.com/assets/demo-Bmw88bzb.js) · [Clean JS](https://www.affectui.com/assets/demo.clean-CxJAxhV_.js) | Adapt | #283 | Task summary/progress and focused evidence review; actual review outcomes and revisions only. No confidence score or approve-on-hover. | Audited in slice F (ADR 0257): the official Suggestion stays the engine; no production surface draws alternatives yet |
 | [Stepper Form](https://www.affectui.com/components/stepper-form) · [Demo JS](https://www.affectui.com/assets/demo-DnMvqnaQ.js) · [Clean JS](https://www.affectui.com/assets/demo.clean-CbPQYZdO.js) | Adapt | #279 | Project/provider setup and existing onboarding only; steps complete from real setup results, not timers. | Planned |
 | [Thinking Loader](https://www.affectui.com/components/thinking-loader) · [Demo JS](https://www.affectui.com/assets/demo-bbE4piWC.js) · [Clean JS](https://www.affectui.com/assets/demo.clean-Cbs39LcA.js) | Recreate | #277 | Shared token-based controls/motion; numbers animate only after authoritative updates; reduce motion instantly. | Recreated in slice A (ADR 0257) |
 | [Thinking State](https://www.affectui.com/components/thinking-state) · [Demo JS](https://www.affectui.com/assets/demo-DqeX2dbe.js) · [Clean JS](https://www.affectui.com/assets/demo.clean-CYLeMO3K.js) | Adapt | #282 | Real streamed reasoning, tool input/output, errors and run sections. Keep timers honest and disable unsupported retry operations. | Planned |
@@ -651,3 +651,25 @@ change.
   the wrong box), and the chips row only renders when a selection exists.
   A 200-card fixture pins the frame budget. Bundle delta vs the E1 head: +0.02 kB gz entry, +0.82 kB gz CSS —
   cumulative +13.55/+9.13 of the §8 budgets.
+- Slice F (#283): the Task board and its cards took the shared board
+  presentation and the Project Card's. TaskCardView presents on the board
+  shell with the derived progress ring (agent-ui/progress-ring: one segment
+  per work item while there are twelve or fewer, one proportional arc past
+  that, the tally said politely) and a real disclosure fold for the
+  participants and the latest event — click, tap and keyboard alike, no
+  hover; opening the Task stays the card's first button and the needs-you
+  mark rides the shell. The board's stage columns present through
+  AgxBoardColumn (the fold-out empty lane included), the tabs and their
+  narrow-board semantics unchanged, no drag and no admission control —
+  ADR 0221 stands. TaskResults' review composition (accept/send-back at the
+  displayed versions, stale-evidence refusal, partial acceptance, negative
+  and inconclusive outcomes) was already the Review Center's shape over
+  #280's decisions and #278's readers; its fourteen suite cases cover the
+  acceptance list, and the walkthrough captures (1024px review alignment)
+  ride slice L as before. Smart Recommendation: the official Suggestion
+  stays the engine — its only consumers are the gallery and the General
+  prototype, no production surface picks alternatives today, so the
+  adaptation records a decision, not a component: no confidence meter, no
+  general Undo. The Task panel points at Needs you and General rather than
+  drawing a second answer control. Bundle and capture evidence join the
+  slice's PR.

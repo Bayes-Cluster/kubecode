@@ -984,6 +984,7 @@
   "kubecode.task.action.answer": "Питання до вас",
   "kubecode.task.card.progress": "Виконано {done} з {total} робочих елементів",
   "kubecode.task.card.noWork": "Роботи ще немає",
+  "kubecode.task.card.detail": "Подробиці завдання",
   "kubecode.task.event.admitted": "Додано на дошку",
   "kubecode.task.event.execution_authorized": "Роботу розпочато",
   "kubecode.task.event.review_requested": "Запитано перевірку",

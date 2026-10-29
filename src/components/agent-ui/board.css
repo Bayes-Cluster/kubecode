@@ -50,6 +50,12 @@
   padding: 0 4px 0 8px;
 }
 
+/* The host may name the lane elsewhere (a stage picker): the head folds
+   away entirely. */
+.agx-board__column[data-headless] .agx-board__col-head {
+  display: none;
+}
+
 .agx-board__col-title {
   min-width: 0;
   overflow: hidden;

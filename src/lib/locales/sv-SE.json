@@ -984,6 +984,7 @@
   "kubecode.task.action.answer": "Fråga till dig",
   "kubecode.task.card.progress": "{done} av {total} arbetsmoment klara",
   "kubecode.task.card.noWork": "Inget arbete ännu",
+  "kubecode.task.card.detail": "Uppgiftsdetaljer",
   "kubecode.task.event.admitted": "Lades till på tavlan",
   "kubecode.task.event.execution_authorized": "Arbetet startade",
   "kubecode.task.event.review_requested": "Granskning begärd",

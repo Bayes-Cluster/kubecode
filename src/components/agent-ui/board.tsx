@@ -42,6 +42,7 @@ export function AgxBoardColumn({
   label,
   count,
   over = false,
+  headless = false,
   emptyLabel,
   children,
   className,
@@ -53,6 +54,8 @@ export function AgxBoardColumn({
   /** A drag is over this lane; whether the move is legal stays the
    * adapter's call at drop. */
   over?: boolean
+  /** The host names the lane elsewhere (a stage picker): no head here. */
+  headless?: boolean
   /** What an empty column says, if the adapter says anything. */
   emptyLabel?: ReactNode
   children?: ReactNode
@@ -62,6 +65,7 @@ export function AgxBoardColumn({
     <section
       {...props}
       className={className ? `agx-board__column ${className}` : 'agx-board__column'}
+      data-headless={headless || undefined}
       data-over={over ? '' : undefined}
     >
       <header className="agx-board__col-head">
