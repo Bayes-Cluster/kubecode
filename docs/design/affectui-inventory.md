@@ -695,3 +695,18 @@ change.
   explicitly (the ghost variant's dark accent would otherwise win the
   cascade). Bundle delta vs the F head: +1.58 kB gz entry, +0.56 kB gz
   CSS — cumulative +15.11/+9.69 of the §8 budgets.
+- Slice I (#286), the recreation terms the audit had left as "conformant":
+  the workspace search's result rows present through the shared picker
+  grammar (agent-ui/picker — the fill glides along cmdk's own selection,
+  the engines' highlight stepping aside at the call site), the same
+  composition the mention picker and the command suggestions use.
+  Re-verified against the issue's terms: the scope/filter selection, the
+  grouped sections, pagination, the changed-since and availability states
+  and the versioned attach flow were already the Files/Folder-adjacent
+  shape over the official readers; the resources list has no folder
+  hierarchy, so the screen's breadcrumb is a recorded deviation (the
+  groups and the Destination header stand in); Data Table's editable
+  spreadsheet and the Date Range Picker stay out of the read-only model.
+  RecordPreview and the readers verified previously (#278). The 108
+  resources tests cover the acceptance list; the preview-copy and 1024px
+  captures ride slice L as before.
