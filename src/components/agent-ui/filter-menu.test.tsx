@@ -43,8 +43,8 @@ describe('AgxFilterMenu', () => {
     render(<Menu />)
     const head = screen.getByRole('button', { name: /Source/ })
     expect(head).toHaveAttribute('aria-expanded', 'false')
-    // The panel is in the tree either way; the fold is the presentation.
-    const workspace = screen.getByRole('menuitemcheckbox', { name: 'Workspace' })
+    // The fold is the presentation; in jsdom the options answer either way.
+    const workspace = screen.getByRole('checkbox', { name: 'Workspace' })
     expect(workspace).toHaveAttribute('aria-checked', 'false')
     fireEvent.click(head)
     expect(head).toHaveAttribute('aria-expanded', 'true')
@@ -57,7 +57,7 @@ describe('AgxFilterMenu', () => {
   it('leaves a disabled option unanswered', () => {
     const onToggle = vi.fn()
     render(<AgxFilterOption checked={false} disabled label="Legacy" onToggle={onToggle} />)
-    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Legacy' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Legacy' }))
     expect(onToggle).not.toHaveBeenCalled()
   })
 

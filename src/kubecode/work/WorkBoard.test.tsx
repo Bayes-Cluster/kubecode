@@ -153,17 +153,17 @@ describe('WorkBoard', () => {
     expect(workBoard).toHaveBeenLastCalledWith('p1', {})
     // The menu discloses each group's options inline (#284, the Filter Menu).
     fireEvent.click(screen.getByRole('button', { name: /kubecode.work.field.research/ }))
-    fireEvent.click(await screen.findByRole('menuitemcheckbox', { name: 'Pruning' }))
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Pruning' }))
     expect(onFilterChange).toHaveBeenLastCalledWith({ research_id: 'r1' })
     fireEvent.click(screen.getByRole('button', { name: /kubecode.work.field.agent/ }))
-    fireEvent.click(await screen.findByRole('menuitemcheckbox', { name: 'Analyst' }))
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Analyst' }))
     expect(onFilterChange).toHaveBeenLastCalledWith({ conversation_id: 's2' })
     const waiting = within(screen.getByRole('status', { name: 'kubecode.work.attention' })).getByRole('radio', { name: /kubecode.work.condition.waiting/ })
     expect(waiting).toHaveAttribute('data-slot', 'toggle-group-item')
     fireEvent.click(waiting)
     expect(onFilterChange).toHaveBeenLastCalledWith({ condition: 'waiting' })
     fireEvent.click(screen.getByRole('button', { name: /kubecode.work.closedLane/ }))
-    fireEvent.click(await screen.findByRole('menuitemcheckbox', { name: 'kubecode.work.filter.includeClosed' }))
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'kubecode.work.filter.includeClosed' }))
     expect(onFilterChange).toHaveBeenLastCalledWith({ include_closed: true })
 
     // The host applies a filter: the board asks for exactly that, the chip

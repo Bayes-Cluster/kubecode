@@ -9,13 +9,13 @@ import './tokens.css'
 export { BlurSwap, type BlurSwapProps } from './blur-swap'
 export {
   AgxBoard,
+  AgxBoardCardBody,
   AgxBoardCard,
   AgxBoardChips,
   AgxBoardChip,
   AgxBoardColumn,
   AgxBoardColumns,
   AgxBoardDrop,
-  AgxBoardCardBody,
 } from './board'
 export {
   AgxComposer,

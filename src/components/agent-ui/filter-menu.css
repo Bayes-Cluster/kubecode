@@ -178,9 +178,14 @@
   min-height: 0;
   overflow: hidden;
   opacity: 0;
+  /* A folded group's options stay out of the tab order: invisible means
+     gone, not merely transparent (the fold still animates — the visibility
+     flips after the rows have collapsed). */
+  visibility: hidden;
   transition:
     opacity 220ms ease,
-    padding 320ms var(--agx-ease);
+    padding 320ms var(--agx-ease),
+    visibility 0s linear 320ms;
 }
 
 .agx-filt__group[data-open] .agx-filt__panel-inner {
@@ -189,6 +194,11 @@
   max-height: 320px;
   overflow-y: auto;
   overscroll-behavior: contain;
+  visibility: visible;
+  transition:
+    opacity 220ms ease,
+    padding 320ms var(--agx-ease),
+    visibility 0s;
 }
 
 /* One option: the checkbox lined up with its text. */
@@ -301,12 +311,17 @@
   .agx-filt__group-head {
     min-height: 44px;
   }
+
+  .agx-filt__clear {
+    min-height: 44px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .agx-filt__panel,
   .agx-filt__panel-inner,
   .agx-filt__chevron,
+  .agx-filt__box,
   .agx-filt__box svg,
   .agx-filt__group-head,
   .agx-filt__option,

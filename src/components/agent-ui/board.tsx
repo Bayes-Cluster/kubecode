@@ -50,7 +50,8 @@ export function AgxBoardColumn({
   label: ReactNode
   /** The live count from the server projection, not the rendered length. */
   count: ReactNode
-  /** A supported move would land here. */
+  /** A drag is over this lane; whether the move is legal stays the
+   * adapter's call at drop. */
   over?: boolean
   /** What an empty column says, if the adapter says anything. */
   emptyLabel?: ReactNode
@@ -76,7 +77,8 @@ export function AgxBoardColumn({
 }
 
 /** The card shell: frame, drag states, arrival. The adapter's button inside
- * carries the interaction and the content. */
+ * carries the interaction and the content; its `compact` mode folds the
+ * lines the adapter marked `agx-board__card-secondary`. */
 export function AgxBoardCard({
   dragging = false,
   compact = false,
@@ -85,7 +87,6 @@ export function AgxBoardCard({
   ...props
 }: HTMLAttributes<HTMLDivElement> & {
   dragging?: boolean
-  /** Secondary lines marked `agx-board__card-secondary` fold away. */
   compact?: boolean
 }) {
   return (

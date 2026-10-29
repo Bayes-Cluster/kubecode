@@ -39,4 +39,23 @@ describe('AgentUiMatrix', () => {
     fireEvent.click(screen.getByRole('button', { name: translate('en-US', 'kubecode.matrix.sample.swap') }))
     expect(screen.getByText(translate('en-US', 'kubecode.matrix.sample.swapped'))).toBeInTheDocument()
   })
+
+  it('shows the board and the filter menu specimens in their states (#284)', () => {
+    const t = (key: TranslationKey) => translate('en-US', key)
+    render(<AgentUiMatrix t={t} />)
+    // The board: two tray columns, a card with its fact chips, the drop
+    // indicator and the dashed empty lane.
+    expect(document.querySelectorAll('.agx-board__column')).toHaveLength(2)
+    expect(document.querySelector('.agx-board__card')).not.toBeNull()
+    expect(document.querySelector('.agx-board__drop')).not.toBeNull()
+    expect(document.querySelector('.agx-board__empty')).not.toBeNull()
+    // The filter menu: the group stands open with a picked option, the chip
+    // rides the line, and clearing disarms the pick.
+    expect(document.querySelector('.agx-filt__group')).toHaveAttribute('data-open')
+    expect(document.querySelector('.agx-filt__group-picked')).not.toBeNull()
+    fireEvent.click(screen.getByRole('checkbox', { name: translate('en-US', 'kubecode.matrix.sample.viewChart') }))
+    expect(document.querySelector('.agx-filt__group-picked')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: translate('en-US', 'kubecode.work.filter.clear') }))
+    expect(document.querySelector('.agx-filt__chips')).toBeNull()
+  })
 })

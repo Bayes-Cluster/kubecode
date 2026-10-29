@@ -311,7 +311,6 @@ export function AgentUiMatrix({ locale = 'en', t }: { locale?: AppLocale; t: Tra
                   <AgxBoardCardBody>
                     <span className="agx-board__card-secondary agx-pick__hint">{t('kubecode.matrix.sample.viewBoard')}</span>
                     <AgxBoardChips>
-                      <AgxBoardChip>2</AgxBoardChip>
                       <AgxBoardChip tone="warn">{t('kubecode.matrix.sample.running')}</AgxBoardChip>
                     </AgxBoardChips>
                   </AgxBoardCardBody>
@@ -324,7 +323,7 @@ export function AgentUiMatrix({ locale = 'en', t }: { locale?: AppLocale; t: Tra
         </div>
         <div className="kubecode-control-matrix-narrow">
           <AgxFilterMenu
-            chips={<AgxFilterChip>{t('kubecode.matrix.sample.viewChart')}</AgxFilterChip>}
+            chips={filterPicked ? <AgxFilterChip>{t('kubecode.matrix.sample.viewChart')}</AgxFilterChip> : undefined}
             clearDisabled={false}
             clearLabel={t('kubecode.work.filter.clear')}
             title={t('kubecode.work.filters')}

@@ -270,8 +270,9 @@ export function WorkBoard({
         )}
 
         <div className="kubecode-work-filters">
+          <div className="kubecode-work-filter-menu">
           <AgxFilterMenu
-            chips={(
+            chips={filtersActive ? (
               <>
                 {researchTitle && <AgxFilterChip>{researchTitle}</AgxFilterChip>}
                 {sessionTitle && <AgxFilterChip>{sessionTitle}</AgxFilterChip>}
@@ -279,7 +280,7 @@ export function WorkBoard({
                 {conditionLabel && <AgxFilterChip>{conditionLabel}</AgxFilterChip>}
                 {filter.include_closed && <AgxFilterChip>{t('kubecode.work.filter.includeClosed')}</AgxFilterChip>}
               </>
-            )}
+            ) : undefined}
             clearDisabled={!filtersActive}
             clearLabel={t('kubecode.work.filter.clear')}
             title={t('kubecode.work.filters')}
@@ -351,6 +352,7 @@ export function WorkBoard({
               />
             </AgxFilterGroup>
           </AgxFilterMenu>
+          </div>
           {(effective.thread_id || effective.team_id || effective.round_id) && (
             <Badge variant="outline">{t('kubecode.work.filter.scoped')}</Badge>
           )}

@@ -1135,9 +1135,9 @@
 
 /* The filter menu holds itself to the reference card's width; the scoped
    badge rides beside it. */
-.kubecode-work-filters > .agx-filt { max-width: 400px; }
+.kubecode-work-filter-menu { max-width: 400px; }
 
-.kubecode-work-card [data-lifecycle]:not([data-lifecycle='active']) { opacity: 0.8; }
+.kubecode-work-card[data-lifecycle]:not([data-lifecycle='active']) { opacity: 0.8; }
 .kubecode-work-card-title {
   font-size: 13px;
   font-weight: 550;

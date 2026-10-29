@@ -124,7 +124,7 @@ export function AgxFilterOption({
       aria-checked={checked}
       aria-disabled={disabled || undefined}
       className="agx-filt__option"
-      role="menuitemcheckbox"
+      role="checkbox"
       type="button"
       onClick={() => {
         if (!disabled) onToggle()

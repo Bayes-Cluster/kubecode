@@ -11,11 +11,8 @@
   min-width: 0;
 }
 
-/* The column run: one scroller sideways, columns at least 224px wide. The
-   columns are the compact mode's container: a lane narrower than 260px folds
-   the card lines the adapter marked secondary. */
+/* The column run: one scroller sideways, columns at least 224px wide. */
 .agx-board__columns {
-  container-type: inline-size;
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: minmax(224px, 1fr);
@@ -58,14 +55,14 @@
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--agx-ink);
 }
 
 .agx-board__col-count {
   flex: none;
-  font-size: 12.5px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
   color: var(--agx-faint);
 }
@@ -114,16 +111,14 @@
   padding: 10px 12px 11px;
 }
 
-/* The compact mode hides every secondary line; the title and the counts
-   stay. The adapter decides what is secondary by marking it. */
-.agx-board__card-secondary {
-  min-width: 0;
+/* The adapter's compact mode hides the lines it marked secondary; the title
+   and the counts stay. */
+.agx-board__card[data-compact] .agx-board__card-secondary {
+  display: none;
 }
 
-@container (max-width: 259px) {
-  .agx-board__card-secondary {
-    display: none;
-  }
+.agx-board__card-secondary {
+  min-width: 0;
 }
 
 /* One fact chip: key, value, a tone. */
@@ -136,7 +131,7 @@
   padding: 0 7px;
   border-radius: 7px;
   box-shadow: inset 0 0 0 1px var(--agx-line);
-  font-size: 11.5px;
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   color: var(--agx-text);
@@ -181,7 +176,7 @@
   min-height: 72px;
   border: 1px dashed var(--agx-line-strong);
   border-radius: 12px;
-  font-size: 12.5px;
+  font-size: 12px;
   color: var(--agx-faint);
   text-align: center;
   padding: 4px 10px;
