@@ -79,6 +79,9 @@ export function TaskBoardView({
     if (followed) setStage(followed)
   }, [followed, followedId, setStage])
   const switchId = useId()
+  // On the narrow board one stage shows at a time and its tab names it: the
+  // column head would say the same thing twice, so it folds away there.
+  const narrowBoard = useNarrowBoard()
 
   // Closing a Task gives focus back to its card when nothing else took it
   // (the inspector was opened elsewhere, or its opener was replaced), and
@@ -211,6 +214,7 @@ export function TaskBoardView({
                     data-selected={stage === value}
                     data-stage={value}
                     emptyLabel={t('kubecode.task.columnEmpty')}
+                    headless={narrowBoard}
                     label={stageLabel(t, value)}
                     role="region"
                   >
@@ -278,4 +282,22 @@ function BoardRow({ children, current, id, onOpen, title }: {
       </button>
     </Item>
   )
+}
+
+/** Whether the viewport is at the narrow-board width, where one stage shows
+ * at a time and its tab already names it. */
+function useNarrowBoard(): boolean {
+  const [narrow, setNarrow] = useState(() => (
+    typeof window.matchMedia === 'function'
+      ? window.matchMedia('(max-width: 640px)').matches
+      : false
+  ))
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return
+    const media = window.matchMedia('(max-width: 640px)')
+    const handleChange = (event: MediaQueryListEvent) => setNarrow(event.matches)
+    media.addEventListener('change', handleChange)
+    return () => media.removeEventListener('change', handleChange)
+  }, [])
+  return narrow
 }

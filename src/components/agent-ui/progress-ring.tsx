@@ -11,7 +11,8 @@ import './progress-ring.css'
  * presents; where the count comes from and what a done unit means belong to
  * the adapter (#283: a Task's work rollup).
  *
- * States: `#/controls` (AgentUiMatrix) shows the ring beside a Task card.
+ * States: `#/controls` (AgentUiMatrix) shows the ring with the board and
+ * filter specimens.
  */
 
 export function AgxProgressRing({
@@ -27,6 +28,7 @@ export function AgxProgressRing({
   label: string
 }) {
   const id = useId()
+  if (total <= 0) return null
   const clampedDone = Math.max(0, Math.min(done, total))
   const segmented = total > 0 && total <= 12
   const count = segmented ? total : 24

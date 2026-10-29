@@ -87,7 +87,7 @@ describe('TaskBoardView', () => {
     expect(onOpenTask).toHaveBeenCalledWith('r4')
   })
 
-  it('has no drag and no control that moves, admits or starts a Task: a card is one button', () => {
+  it('has no drag and no control that moves, admits or starts a Task: the card holds an open button and its own disclosure, nothing else', () => {
     const { container } = view({
       board: board([card({ id: 'r1' }), card({ id: 'r2', stage: 'review', review_requested: true })]),
       drafts: [draft()],
