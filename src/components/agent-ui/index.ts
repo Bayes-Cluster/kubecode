@@ -25,6 +25,7 @@ export {
   AgxComposerRail,
 } from './composer'
 export { CommandMenuFeedback, CommandMenuPill, highlightMatch } from './command-menu'
+export { AgxChangeSummaryRow } from './change-summary'
 export {
   AgxFilterChip,
   AgxFilterGroup,

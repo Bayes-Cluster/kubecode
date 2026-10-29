@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { ChevronDown, File, Folder, GitCommitHorizontal, GitCompare, Minus, Plus, RotateCw, Search, Trash2, TriangleAlert, X } from 'lucide-react'
+import { AlertOctagon, ChevronDown, CircleCheck, File, FilePen, Folder, GitCommitHorizontal, GitCompare, Minus, Plus, RotateCw, Search, Trash2, TriangleAlert, X } from 'lucide-react'
 import { Virtuoso } from 'react-virtuoso'
+
+import { AgxChangeSummaryRow } from '@/components/agent-ui'
 
 import { IconButton } from '@/components/workspace/IconButton'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -579,7 +581,10 @@ export function ContextWorkbench({
             value={`editor:${activeDocumentKey}`}
           >
             <div className="flex h-10 shrink-0 items-center justify-between gap-2 border-b px-3">
-              <span className="min-w-0 truncate text-sm text-muted-foreground" title={activeDocument.document.path}>{activeDocument.document.path}</span>
+              <span className="flex min-w-0 items-center gap-1.5 text-sm font-medium" title={activeDocument.document.path}>
+                <MaterialFileIcon id={resolveFileIcon(activeDocument.document.path)} />
+                <span className="truncate">{activeDocument.document.path}</span>
+              </span>
               <div className="flex shrink-0 items-center gap-1.5">
                 {dirty && <Badge variant="warning">{t('kubecode.unsaved')}</Badge>}
                 <Button disabled={!dirty} size="xs" onClick={() => void save()}>{t('kubecode.save')}</Button>
@@ -781,10 +786,17 @@ function GitChangeGroup({
   return (
     <section data-group={group} data-virtualized={isVirtualized || undefined}>
       {label && (
-        <header className="flex h-7 items-center justify-between px-1.5 text-xs font-semibold uppercase text-muted-foreground">
-          <span>{label}</span>
-          <Badge variant="secondary">{changes.length}</Badge>
-        </header>
+        <AgxChangeSummaryRow
+          count={changes.length}
+          data-testid={`git-group-head-${group}`}
+          icon={group === 'conflict'
+            ? <AlertOctagon aria-hidden />
+            : group === 'staged'
+              ? <CircleCheck aria-hidden />
+              : <FilePen aria-hidden />}
+          label={label}
+          tone={group === 'conflict' ? 'bad' : group === 'staged' ? 'info' : undefined}
+        />
       )}
       {isVirtualized ? (
         <Virtuoso

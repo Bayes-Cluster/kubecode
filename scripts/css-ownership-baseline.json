@@ -430,14 +430,6 @@
     },
     {
       "file": "src/kubecode/kubecode.css",
-      "text": "font-weight: 550;",
-      "context": ".kubecode-file-tree-row[aria-expanded]",
-      "kind": "appearance-on-official",
-      "component": "Button",
-      "owner": "H #285 (UI2)"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
       "text": "border-radius: 3px;",
       "context": ".kubecode-terminal-navigator-row",
       "kind": "appearance-on-official",
@@ -456,22 +448,6 @@
       "file": "src/kubecode/kubecode.css",
       "text": "padding: 0 22px 0 6px;",
       "context": ".kubecode-terminal-navigator-row",
-      "kind": "appearance-on-official",
-      "component": "Button",
-      "owner": "H #285 (UI2)"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": "background: var(--surface-hover);",
-      "context": ".kubecode-terminal-navigator-row[data-active='true']",
-      "kind": "appearance-on-official",
-      "component": "Button",
-      "owner": "H #285 (UI2)"
-    },
-    {
-      "file": "src/kubecode/kubecode.css",
-      "text": "color: var(--text-primary);",
-      "context": ".kubecode-terminal-navigator-row[data-active='true']",
       "kind": "appearance-on-official",
       "component": "Button",
       "owner": "H #285 (UI2)"

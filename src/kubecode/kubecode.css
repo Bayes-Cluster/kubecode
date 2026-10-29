@@ -379,7 +379,6 @@
   margin-left: 13px;
   min-width: calc(100% - 13px);
 }
-.kubecode-file-tree-row[aria-expanded] { font-weight: 550; }
 .kubecode-file-tree-row svg { color: var(--text-muted); flex: 0 0 auto; height: 16px; width: 16px; }
 .kubecode-file-tree-row span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kubecode-file-tree-spacer { flex: 0 0 16px; }
@@ -467,10 +466,6 @@
   justify-content: flex-start;
   min-width: 0;
   padding: 0 22px 0 6px;
-}
-.kubecode-terminal-navigator-row[data-active='true'] {
-  background: var(--surface-hover);
-  color: var(--text-primary);
 }
 .kubecode-terminal-navigator-row > svg,
 .kubecode-terminal-navigator-row > img {
