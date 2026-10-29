@@ -984,6 +984,7 @@
   "kubecode.task.action.answer": "Frage an Sie",
   "kubecode.task.card.progress": "{done} von {total} Arbeitsschritten erledigt",
   "kubecode.task.card.noWork": "Noch keine Arbeit",
+  "kubecode.task.card.detail": "Aufgabendetails",
   "kubecode.task.event.admitted": "Zum Board hinzugefügt",
   "kubecode.task.event.execution_authorized": "Arbeit gestartet",
   "kubecode.task.event.review_requested": "Prüfung angefordert",

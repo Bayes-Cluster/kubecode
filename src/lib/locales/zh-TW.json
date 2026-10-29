@@ -984,6 +984,7 @@
   "kubecode.task.action.answer": "有問題待你回答",
   "kubecode.task.card.progress": "已完成 {done}/{total} 項工作",
   "kubecode.task.card.noWork": "尚無工作",
+  "kubecode.task.card.detail": "任務詳情",
   "kubecode.task.event.admitted": "已新增到看板",
   "kubecode.task.event.execution_authorized": "工作已開始",
   "kubecode.task.event.review_requested": "已要求審閱",

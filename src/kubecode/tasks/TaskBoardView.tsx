@@ -1,5 +1,6 @@
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
 
+import { AgxBoardColumn } from '@/components/agent-ui'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -78,6 +79,9 @@ export function TaskBoardView({
     if (followed) setStage(followed)
   }, [followed, followedId, setStage])
   const switchId = useId()
+  // On the narrow board one stage shows at a time and its tab names it: the
+  // column head would say the same thing twice, so it folds away there.
+  const narrowBoard = useNarrowBoard()
 
   // Closing a Task gives focus back to its card when nothing else took it
   // (the inspector was opened elsewhere, or its opener was replaced), and
@@ -200,42 +204,31 @@ export function TaskBoardView({
               return (
                 // Every column stays mounted: a wide board shows all four, a narrow one the picked stage.
                 <TabsContent asChild forceMount key={value} value={value}>
-                  <section
-                    // A column is named by its stage, not by its tab, and is no extra tab stop.
+                  <AgxBoardColumn
+                    // A column is named by its stage, not by its tab: the
+                    // tab's own labelledby yields, and it is no extra tab stop.
                     aria-label={stageLabel(t, value)}
                     aria-labelledby={undefined}
                     className="kubecode-task-column"
+                    count={column.length}
                     data-selected={stage === value}
                     data-stage={value}
+                    emptyLabel={t('kubecode.task.columnEmpty')}
+                    headless={narrowBoard}
+                    label={stageLabel(t, value)}
                     role="region"
-                    tabIndex={undefined}
                   >
-                    <h3 className="kubecode-task-column-heading flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                      {stageLabel(t, value)}
-                      <Badge variant="secondary">{column.length}</Badge>
-                    </h3>
-                    {column.length === 0 ? (
-                      <Empty size="compact" variant="outline">
-                        <EmptyHeader>
-                          <EmptyDescription>{t('kubecode.task.columnEmpty')}</EmptyDescription>
-                        </EmptyHeader>
-                      </Empty>
-                    ) : (
-                      <ul className="flex flex-col gap-2">
-                        {column.map((card) => (
-                          <li key={card.id}>
-                            <TaskCardView
-                              card={card}
-                              locale={locale}
-                              selected={selectedId === card.id}
-                              t={t}
-                              onOpen={() => onOpenTask(card.id)}
-                            />
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </section>
+                    {column.map((card) => (
+                      <TaskCardView
+                        card={card}
+                        key={card.id}
+                        locale={locale}
+                        selected={selectedId === card.id}
+                        t={t}
+                        onOpen={() => onOpenTask(card.id)}
+                      />
+                    ))}
+                  </AgxBoardColumn>
                 </TabsContent>
               )
             })}
@@ -289,4 +282,22 @@ function BoardRow({ children, current, id, onOpen, title }: {
       </button>
     </Item>
   )
+}
+
+/** Whether the viewport is at the narrow-board width, where one stage shows
+ * at a time and its tab already names it. */
+function useNarrowBoard(): boolean {
+  const [narrow, setNarrow] = useState(() => (
+    typeof window.matchMedia === 'function'
+      ? window.matchMedia('(max-width: 640px)').matches
+      : false
+  ))
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return
+    const media = window.matchMedia('(max-width: 640px)')
+    const handleChange = (event: MediaQueryListEvent) => setNarrow(event.matches)
+    media.addEventListener('change', handleChange)
+    return () => media.removeEventListener('change', handleChange)
+  }, [])
+  return narrow
 }

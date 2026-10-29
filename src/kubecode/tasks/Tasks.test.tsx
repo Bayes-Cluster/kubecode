@@ -36,8 +36,10 @@ describe('TaskBoardView', () => {
         card({ id: 'r3', title: 'Awaiting', stage: 'review', review_requested: true }),
       ]),
     })
-    expect(screen.getByTestId('task-card-r3')).toHaveAttribute('data-needs-you', 'true')
-    expect(screen.getByTestId('task-card-r1')).not.toHaveAttribute('data-needs-you')
+    // The needs-you mark rides the card shell (the shell carries the card's
+    // own state; the buttons inside carry the actions).
+    expect(screen.getByTestId('task-card-r3').closest('.agx-board__card')).toHaveAttribute('data-needs-you', 'true')
+    expect(screen.getByTestId('task-card-r1').closest('.agx-board__card')).not.toHaveAttribute('data-needs-you')
   })
 
   it('shows one lifecycle: four stages, with conditions, the action asked of you and progress on the cards', () => {
@@ -63,7 +65,11 @@ describe('TaskBoardView', () => {
     // Why, in words on the card itself (reachable on touch), in the app's language.
     expect(running.getByText('All of its active work is blocked.')).toBeVisible()
     expect(running.queryByText('needs GPU')).not.toBeInTheDocument()
-    expect(running.getByText('1 of 2 work items done')).toBeInTheDocument()
+    // The derived progress ring says the tally; the detail fold holds the
+    // participants and the latest event, opened by its own disclosure.
+    expect(running.getByRole('img', { name: '1 of 2 work items done' })).toBeInTheDocument()
+    fireEvent.click(running.getByTestId('task-disclosure-r2'))
+    expect(running.getByText('1 of 2 work items done')).toBeVisible()
     expect(running.getByText(/^Work started · /)).toBeInTheDocument()
     expect(running.getAllByText('Analyst').length).toBeGreaterThan(0)
     expect(running.getByText('Question for you')).toBeInTheDocument()
@@ -71,19 +77,23 @@ describe('TaskBoardView', () => {
     expect(review.getByText('Review results')).toBeInTheDocument()
     expect(review.getByText('Brief changed')).toBeInTheDocument()
     expect(within(screen.getByRole('region', { name: 'Done' })).getByText('Valid negative result')).toBeInTheDocument()
-    expect(within(screen.getByRole('region', { name: 'Ready' })).getByText('No work yet')).toBeInTheDocument()
+    // No ring and no work line until the detail fold opens.
+    const ready = within(screen.getByRole('region', { name: 'Ready' }))
+    expect(ready.queryByRole('img', { name: /work items done/ })).toBeNull()
+    fireEvent.click(ready.getByTestId('task-disclosure-r1'))
+    expect(ready.getByText('No work yet')).toBeInTheDocument()
     expect(screen.queryByText(/Project manager/)).not.toBeInTheDocument()
     fireEvent.click(screen.getByTestId('task-card-r4'))
     expect(onOpenTask).toHaveBeenCalledWith('r4')
   })
 
-  it('has no drag and no control that moves, admits or starts a Task: a card is one button', () => {
+  it('has no drag and no control that moves, admits or starts a Task: the card holds an open button and its own disclosure, nothing else', () => {
     const { container } = view({
       board: board([card({ id: 'r1' }), card({ id: 'r2', stage: 'review', review_requested: true })]),
       drafts: [draft()],
     })
     expect(container.querySelectorAll('[draggable="true"]')).toHaveLength(0)
-    for (const button of screen.getAllByTestId(/^task-card-/)) expect(button.closest('[data-slot="card"]')).not.toBeNull()
+    for (const button of screen.getAllByTestId(/^task-card-/)) expect(button.closest('.agx-board__card')).not.toBeNull()
     for (const button of screen.getAllByTestId(/^task-card-/)) {
       expect(button.tagName).toBe('BUTTON')
       expect(button.querySelectorAll('button, a, input, select, textarea, [tabindex]')).toHaveLength(0)
@@ -223,7 +233,7 @@ describe('TaskBoardView on official components (#259)', () => {
     fireEvent.click(screen.getByText(/Proposals/))
     expect(screen.getByRole('button', { name: /Quantize/ })).toHaveAttribute('data-slot', 'item')
     const review = screen.getAllByRole('region').find((region) => region.getAttribute('data-stage') === 'review') as HTMLElement
-    expect(within(review).getByText('Nothing here.').closest('[data-slot="empty"]')).not.toBeNull()
+    expect(within(review).getByText('Nothing here.').closest('.agx-board__empty')).not.toBeNull()
     fireEvent.click(screen.getByRole('switch'))
     expect(screen.getByText('Nothing on the board needs you right now.').closest('[data-slot="empty"]')).not.toBeNull()
   })
@@ -285,7 +295,7 @@ describe('board under rapid updates and at scale (ADR 0257, slice G)', () => {
     ]
     const props = { drafts: [] as TaskDraft[], status: 'ready' as const, t }
     const mounted = view({ board: board(cards), ...props })
-    const selected = within(screen.getByRole('region', { name: 'Review' })).getByRole('button', { name: /Third/ })
+    const selected = within(screen.getByRole('region', { name: 'Review' })).getByTestId('task-card-r3')
     act(() => {
       selected.focus()
     })
@@ -306,7 +316,7 @@ describe('board under rapid updates and at scale (ADR 0257, slice G)', () => {
     // The inspected card keeps its identity and its focus, and the columns
     // keep their order.
     expect(document.activeElement).toBe(
-      within(screen.getByRole('region', { name: 'Review' })).getByRole('button', { name: /Third/ }),
+      within(screen.getByRole('region', { name: 'Review' })).getByTestId('task-card-r3'),
     )
     const order = screen.getAllByRole('region').filter((r) => r.hasAttribute('data-stage'))
       .map((r) => r.getAttribute('data-stage'))

@@ -984,6 +984,7 @@
   "kubecode.task.action.answer": "あなたへの質問",
   "kubecode.task.card.progress": "作業 {total} 件中 {done} 件完了",
   "kubecode.task.card.noWork": "作業はまだありません",
+  "kubecode.task.card.detail": "タスクの詳細",
   "kubecode.task.event.admitted": "ボードに追加",
   "kubecode.task.event.execution_authorized": "作業開始",
   "kubecode.task.event.review_requested": "レビュー依頼",

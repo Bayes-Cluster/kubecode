@@ -1,0 +1,53 @@
+/* ADR 0257, the affectUI "Project Card" presentation's derived progress
+   (Clean, captured 2026-10-29): a small ring of segments — one per unit of
+   the adapter's own count, the done ones in the accent — with the number in
+   the middle. The count comes from the adapter's actual data; nothing here
+   estimates. Many units draw one proportional arc instead of unreadable
+   slivers. Colour and motion come from the Kubecode tokens. */
+
+.agx-ring {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+}
+
+.agx-ring > * {
+  grid-area: 1 / 1;
+}
+
+.agx-ring__svg {
+  fill: none;
+  width: 32px;
+  height: 32px;
+}
+
+.agx-ring__seg {
+  fill: none;
+  stroke: var(--agx-line-strong);
+  stroke-linecap: round;
+  stroke-width: 3;
+  transition:
+    stroke var(--agx-dur-base) var(--agx-ease),
+    stroke-width var(--agx-dur-base) var(--agx-ease);
+}
+
+.agx-ring__seg[data-done] {
+  stroke: var(--agx-solid);
+}
+
+.agx-ring__num {
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--agx-ink);
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agx-ring__seg {
+    transition: none;
+  }
+}

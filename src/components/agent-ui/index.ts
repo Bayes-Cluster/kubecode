@@ -43,6 +43,7 @@ export {
   AgxPickerGroup,
   AgxPickerRow,
 } from './picker'
+export { AgxProgressRing } from './progress-ring'
 export { FLIP_DURATION, FLIP_EASING, playFlip, readRect, useFlipGroup, type FlipOptions, type FlipRect } from './flip'
 export { ShimmerBlock, ShimmerText, type ShimmerBlockProps, type ShimmerTextProps } from './shimmer'
 export { CopyAction, type CopyActionProps } from './message-actions'

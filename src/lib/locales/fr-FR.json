@@ -984,6 +984,7 @@
   "kubecode.task.action.answer": "Question pour vous",
   "kubecode.task.card.progress": "{done} travaux sur {total} terminés",
   "kubecode.task.card.noWork": "Aucun travail pour l'instant",
+  "kubecode.task.card.detail": "Détails de la tâche",
   "kubecode.task.event.admitted": "Ajoutée au tableau",
   "kubecode.task.event.execution_authorized": "Travail démarré",
   "kubecode.task.event.review_requested": "Relecture demandée",

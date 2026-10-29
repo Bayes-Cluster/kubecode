@@ -984,6 +984,7 @@
   "kubecode.task.action.answer": "답변이 필요한 질문",
   "kubecode.task.card.progress": "작업 항목 {total}개 중 {done}개 완료",
   "kubecode.task.card.noWork": "아직 작업 없음",
+  "kubecode.task.card.detail": "작업 세부 정보",
   "kubecode.task.event.admitted": "보드에 추가됨",
   "kubecode.task.event.execution_authorized": "작업 시작됨",
   "kubecode.task.event.review_requested": "검토 요청됨",

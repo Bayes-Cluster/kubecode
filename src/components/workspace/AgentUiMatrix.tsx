@@ -34,6 +34,7 @@ import {
   AgxPickerFoot,
   AgxPickerGroup,
   AgxPickerRow,
+  AgxProgressRing,
 } from '@/components/agent-ui'
 import { Button } from '@/components/ui/button'
 import { Command, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
@@ -321,6 +322,7 @@ export function AgentUiMatrix({ locale = 'en', t }: { locale?: AppLocale; t: Tra
             </AgxBoardColumns>
           </AgxBoard>
         </div>
+        <AgxProgressRing done={2} label={t('kubecode.task.card.progress', { done: 2, total: 3 })} total={3} />
         <div className="kubecode-control-matrix-narrow">
           <AgxFilterMenu
             chips={filterPicked ? <AgxFilterChip>{t('kubecode.matrix.sample.viewChart')}</AgxFilterChip> : undefined}

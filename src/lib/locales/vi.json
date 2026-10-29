@@ -984,6 +984,7 @@
   "kubecode.task.action.answer": "Câu hỏi dành cho bạn",
   "kubecode.task.card.progress": "Đã xong {done}/{total} hạng mục công việc",
   "kubecode.task.card.noWork": "Chưa có công việc",
+  "kubecode.task.card.detail": "Chi tiết công việc",
   "kubecode.task.event.admitted": "Đã thêm vào bảng",
   "kubecode.task.event.execution_authorized": "Đã bắt đầu công việc",
   "kubecode.task.event.review_requested": "Đã yêu cầu xem xét",

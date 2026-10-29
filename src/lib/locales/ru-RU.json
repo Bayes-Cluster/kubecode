@@ -984,6 +984,7 @@
   "kubecode.task.action.answer": "Вопрос к вам",
   "kubecode.task.card.progress": "Выполнено работ: {done} из {total}",
   "kubecode.task.card.noWork": "Работы пока нет",
+  "kubecode.task.card.detail": "Сведения о задаче",
   "kubecode.task.event.admitted": "Добавлено на доску",
   "kubecode.task.event.execution_authorized": "Работа начата",
   "kubecode.task.event.review_requested": "Запрошена проверка",

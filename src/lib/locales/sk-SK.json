@@ -984,6 +984,7 @@
   "kubecode.task.action.answer": "Otázka pre vás",
   "kubecode.task.card.progress": "Hotové: {done} z {total} pracovných položiek",
   "kubecode.task.card.noWork": "Zatiaľ žiadna práca",
+  "kubecode.task.card.detail": "Podrobnosti o úlohe",
   "kubecode.task.event.admitted": "Pridané na tabuľu",
   "kubecode.task.event.execution_authorized": "Práca sa začala",
   "kubecode.task.event.review_requested": "Vyžiadaná kontrola",
