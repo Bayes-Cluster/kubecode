@@ -8,6 +8,16 @@ import './tokens.css'
 
 export { BlurSwap, type BlurSwapProps } from './blur-swap'
 export {
+  AgxBoard,
+  AgxBoardCard,
+  AgxBoardChips,
+  AgxBoardChip,
+  AgxBoardColumn,
+  AgxBoardColumns,
+  AgxBoardDrop,
+  AgxBoardCardBody,
+} from './board'
+export {
   AgxComposer,
   AgxComposerChip,
   AgxComposerField,
