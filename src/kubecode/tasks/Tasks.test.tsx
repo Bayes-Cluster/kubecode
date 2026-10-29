@@ -295,7 +295,7 @@ describe('board under rapid updates and at scale (ADR 0257, slice G)', () => {
     ]
     const props = { drafts: [] as TaskDraft[], status: 'ready' as const, t }
     const mounted = view({ board: board(cards), ...props })
-    const selected = within(screen.getByRole('region', { name: 'Review' })).getByRole('button', { name: /Third/ })
+    const selected = within(screen.getByRole('region', { name: 'Review' })).getByTestId('task-card-r3')
     act(() => {
       selected.focus()
     })
@@ -316,7 +316,7 @@ describe('board under rapid updates and at scale (ADR 0257, slice G)', () => {
     // The inspected card keeps its identity and its focus, and the columns
     // keep their order.
     expect(document.activeElement).toBe(
-      within(screen.getByRole('region', { name: 'Review' })).getByRole('button', { name: /Third/ }),
+      within(screen.getByRole('region', { name: 'Review' })).getByTestId('task-card-r3'),
     )
     const order = screen.getAllByRole('region').filter((r) => r.hasAttribute('data-stage'))
       .map((r) => r.getAttribute('data-stage'))

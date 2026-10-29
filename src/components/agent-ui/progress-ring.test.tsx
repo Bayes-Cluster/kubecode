@@ -28,4 +28,22 @@ describe('AgxProgressRing', () => {
     expect(screen.getByRole('img', { name: '5 of 5 work items done' })).toHaveTextContent('5/5')
     expect(document.querySelectorAll('.agx-ring__seg[data-done]')).toHaveLength(5)
   })
+
+  it('places the first segment at the ring top and closes the last at the wrap', () => {
+    render(<AgxProgressRing done={2} label="2 of 4 work items done" total={4} />)
+    const segments = document.querySelectorAll('.agx-ring__seg')
+    const circumference = 2 * Math.PI * 13
+    // Segment 0 starts at the rotated top, shifted half a gap...
+    expect(segments[0].getAttribute('stroke-dashoffset')).toBe('-2.5')
+    // ...and the last segment ends the arc at the wrap point.
+    const last = segments[segments.length - 1]
+    const span = circumference / 4 - 5
+    expect(Number(last.getAttribute('stroke-dashoffset'))).toBeCloseTo(-(3 * (circumference / 4) + 5 / 2), 5)
+    expect(last.getAttribute('stroke-dasharray')).toBe(`${span} ${circumference}`)
+  })
+
+  it('draws nothing when the adapter has no units', () => {
+    const { container } = render(<AgxProgressRing done={0} label="0 of 0 work items done" total={0} />)
+    expect(container).toBeEmptyDOMElement()
+  })
 })

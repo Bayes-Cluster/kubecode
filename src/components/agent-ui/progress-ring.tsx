@@ -34,9 +34,9 @@ export function AgxProgressRing({
   const count = segmented ? total : 24
   const radius = 13
   const circumference = 2 * Math.PI * radius
-  // The ring runs from the top; a little spacing between segments keeps
-  // single-unit rings readable.
-  const gap = segmented && total > 1 ? 2 : 0
+  // The ring runs from the top; round caps paint past the dash, so the gap
+  // clears the stroke width and single-unit rings stay readable.
+  const gap = segmented && total > 1 ? 5 : 0
   const span = circumference / count - gap
   return (
     <span className="agx-ring">

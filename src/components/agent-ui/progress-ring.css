@@ -29,9 +29,8 @@
   stroke-linecap: round;
   stroke-width: 3;
   transition:
-    stroke 220ms ease,
-    stroke-width 240ms var(--agx-ease),
-    opacity 220ms ease;
+    stroke var(--agx-dur-base) var(--agx-ease),
+    stroke-width var(--agx-dur-base) var(--agx-ease);
 }
 
 .agx-ring__seg[data-done] {

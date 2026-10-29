@@ -1138,6 +1138,35 @@
 .kubecode-work-filter-menu { max-width: 400px; }
 
 .kubecode-work-card[data-lifecycle]:not([data-lifecycle='active']) { opacity: 0.8; }
+
+/* The Task card's detail fold: the layer's rows collapse (0fr→1fr), the
+   content stays mounted — a folded fold keeps its lines out of reach. */
+.kubecode-task-card-fold {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 320ms var(--ws-ease, ease),
+    opacity 220ms ease,
+    visibility 0s linear 320ms;
+  visibility: hidden;
+}
+
+.kubecode-task-card-fold[data-expanded] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  visibility: visible;
+  transition:
+    grid-template-rows 320ms var(--ws-ease, ease),
+    opacity 320ms ease 100ms,
+    visibility 0s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kubecode-task-card-fold {
+    transition: none;
+  }
+}
 .kubecode-work-card-title {
   font-size: 13px;
   font-weight: 550;

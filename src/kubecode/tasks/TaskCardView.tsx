@@ -78,8 +78,8 @@ export function TaskCardView({ card, locale, onOpen, selected, t }: {
           <button
             aria-controls={detailId}
             aria-expanded={expanded}
-            aria-label={t('kubecode.task.card.detail')}
-            className="pointer-coarse:min-h-[44px] pointer-coarse:min-w-[44px] flex-none rounded-md p-1 text-muted-foreground outline-none transition-transform duration-200 focus-visible:ring-[3px] focus-visible:ring-ring aria-expanded:rotate-90 hover:bg-accent"
+            aria-label={`${card.title} · ${t('kubecode.task.card.detail')}`}
+            className="pointer-coarse:min-h-[44px] pointer-coarse:min-w-[44px] flex-none rounded-md p-1 text-muted-foreground outline-none transition-transform duration-200 motion-reduce:transition-none focus-visible:ring-[3px] focus-visible:ring-ring aria-expanded:rotate-90 hover:bg-accent"
             data-testid={`task-card-toggle-${card.id}`}
             type="button"
             onClick={() => setExpanded((value) => !value)}
@@ -87,8 +87,10 @@ export function TaskCardView({ card, locale, onOpen, selected, t }: {
             <ChevronRight aria-hidden size={16} />
           </button>
         </div>
-        {expanded && (
-          <span className="flex flex-col items-start gap-2 text-xs" data-testid={`task-open-detail-${card.id}`} id={detailId}>
+        {/* The fold keeps the layer's collapse: the rows fold, the content
+            stays mounted, hidden by the collapsed grid. */}
+        <span className="kubecode-task-card-fold" data-expanded={expanded || undefined}>
+          <span className="flex min-h-0 flex-col items-start gap-2 overflow-hidden text-xs" data-testid={`task-open-detail-${card.id}`} id={detailId}>
             {specialists.length > 0 && (
               <span className="flex flex-wrap gap-x-3 gap-y-1">
                 {specialists.map((member) => (
@@ -104,7 +106,7 @@ export function TaskCardView({ card, locale, onOpen, selected, t }: {
             </span>
             {event && <span className="text-muted-foreground">{event}</span>}
           </span>
-        )}
+        </span>
       </div>
     </AgxBoardCard>
   )
