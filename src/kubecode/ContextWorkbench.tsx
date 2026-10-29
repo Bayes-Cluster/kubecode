@@ -581,7 +581,10 @@ export function ContextWorkbench({
             value={`editor:${activeDocumentKey}`}
           >
             <div className="flex h-10 shrink-0 items-center justify-between gap-2 border-b px-3">
-              <span className="min-w-0 truncate text-sm text-muted-foreground" title={activeDocument.document.path}>{activeDocument.document.path}</span>
+              <span className="flex min-w-0 items-center gap-1.5 text-sm font-medium" title={activeDocument.document.path}>
+                <MaterialFileIcon id={resolveFileIcon(activeDocument.document.path)} />
+                <span className="truncate">{activeDocument.document.path}</span>
+              </span>
               <div className="flex shrink-0 items-center gap-1.5">
                 {dirty && <Badge variant="warning">{t('kubecode.unsaved')}</Badge>}
                 <Button disabled={!dirty} size="xs" onClick={() => void save()}>{t('kubecode.save')}</Button>

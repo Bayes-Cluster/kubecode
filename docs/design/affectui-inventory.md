@@ -673,3 +673,20 @@ change.
   general Undo. The Task panel points at Needs you and General rather than
   drawing a second answer control. Bundle and capture evidence join the
   slice's PR.
+- Slice H (#285), the recreation terms the audit had left as "conformant":
+  the Git change groups present through the Change Summary's hierarchy
+  (agent-ui/change-summary — the tinted square, the ink label, the real
+  tally; conflicts in the error tone, staged in the accent; line counts
+  stay absent because the API has none); the file rows take the Files
+  screen's row treatment at the call site (label weight, the wash hover,
+  the selected row on its tinted fill with the hairline ring — the 26px
+  tree density and the ARIA contract stand; the screen's 52px rows belong
+  to a flat grid and stay a recorded deviation); the terminal navigator's
+  active row presents as the selected row does everywhere, with the
+  superseded surface-hover rule retired from the product stylesheet and
+  its two grandfathered baseline entries; the editor's file header carries
+  the file's icon and its path at label weight. The tool-panel
+  hierarchy/disclosure verified against the App Shell frame: the
+  Collapsible sections with the turning chevron were already the shape,
+  the engines untouched (CodeMirror, xterm, virtualization, ownership).
+  Large-diff and 200k-line measurements remain with slice L's captures.

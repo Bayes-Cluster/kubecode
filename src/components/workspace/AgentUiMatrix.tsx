@@ -17,6 +17,7 @@ import {
 import { AiActionCard } from '@/components/AiActionCard'
 import {
   AgxBoard,
+  AgxChangeSummaryRow,
   AgxBoardCardBody,
   AgxBoardCard,
   AgxBoardChips,
@@ -323,6 +324,14 @@ export function AgentUiMatrix({ locale = 'en', t }: { locale?: AppLocale; t: Tra
           </AgxBoard>
         </div>
         <AgxProgressRing done={2} label={t('kubecode.task.card.progress', { done: 2, total: 3 })} total={3} />
+        <div className="kubecode-control-matrix-narrow">
+          <AgxChangeSummaryRow
+            count={1}
+            icon={<svg viewBox="0 0 16 16"><path d="M8 3 14 13H2Z" fill="none" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.4" /></svg>}
+            label={t('kubecode.work.attention')}
+            tone="bad"
+          />
+        </div>
         <div className="kubecode-control-matrix-narrow">
           <AgxFilterMenu
             chips={filterPicked ? <AgxFilterChip>{t('kubecode.matrix.sample.viewChart')}</AgxFilterChip> : undefined}
