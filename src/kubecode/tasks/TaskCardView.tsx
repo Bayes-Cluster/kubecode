@@ -80,7 +80,7 @@ export function TaskCardView({ card, locale, onOpen, selected, t }: {
             aria-expanded={expanded}
             aria-label={`${card.title} · ${t('kubecode.task.card.detail')}`}
             className="pointer-coarse:min-h-[44px] pointer-coarse:min-w-[44px] flex-none rounded-md p-1 text-muted-foreground outline-none transition-transform duration-200 motion-reduce:transition-none focus-visible:ring-[3px] focus-visible:ring-ring aria-expanded:rotate-90 hover:bg-accent"
-            data-testid={`task-card-toggle-${card.id}`}
+            data-testid={`task-disclosure-${card.id}`}
             type="button"
             onClick={() => setExpanded((value) => !value)}
           >

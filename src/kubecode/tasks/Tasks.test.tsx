@@ -68,7 +68,7 @@ describe('TaskBoardView', () => {
     // The derived progress ring says the tally; the detail fold holds the
     // participants and the latest event, opened by its own disclosure.
     expect(running.getByRole('img', { name: '1 of 2 work items done' })).toBeInTheDocument()
-    fireEvent.click(running.getByTestId('task-card-toggle-r2'))
+    fireEvent.click(running.getByTestId('task-disclosure-r2'))
     expect(running.getByText('1 of 2 work items done')).toBeVisible()
     expect(running.getByText(/^Work started · /)).toBeInTheDocument()
     expect(running.getAllByText('Analyst').length).toBeGreaterThan(0)
@@ -80,7 +80,7 @@ describe('TaskBoardView', () => {
     // No ring and no work line until the detail fold opens.
     const ready = within(screen.getByRole('region', { name: 'Ready' }))
     expect(ready.queryByRole('img', { name: /work items done/ })).toBeNull()
-    fireEvent.click(ready.getByTestId('task-card-toggle-r1'))
+    fireEvent.click(ready.getByTestId('task-disclosure-r1'))
     expect(ready.getByText('No work yet')).toBeInTheDocument()
     expect(screen.queryByText(/Project manager/)).not.toBeInTheDocument()
     fireEvent.click(screen.getByTestId('task-card-r4'))
